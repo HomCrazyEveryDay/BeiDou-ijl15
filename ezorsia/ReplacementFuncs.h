@@ -78,9 +78,17 @@ bool Hook_CreateMutexA(bool bEnable)	//ty darter	//ty angel!
 		//Multi-Client Check Removal
 		if (lpName && strstr(lpName, "WvsClientMtx"))
 		{
-			return (HANDLE)0x0BADF00D;
-			//char szMutex[128];
-			//lpName = szMutex;
+			// 将原互斥体映射到两个槽位，只允许双开。
+			char szMutex[128];
+			for (int i = 0; i < 2; ++i) {
+				sprintf_s(szMutex, "%s_%d", lpName, i);
+				HANDLE hMutex = _CreateMutexA(lpMutexAttributes, bInitialOwner, szMutex);
+				if (GetLastError() != ERROR_ALREADY_EXISTS) {
+					return hMutex;
+				}
+				CloseHandle(hMutex);
+			}
+			return _CreateMutexA(lpMutexAttributes, bInitialOwner, szMutex);
 		}
 
 		return _CreateMutexA(lpMutexAttributes, bInitialOwner, lpName);
