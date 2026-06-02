@@ -4,30 +4,32 @@
 #include "FixIme.h"
 #include "FixBuddy.h"
 
-int Client::m_nGameHeight = 720; // ��Ϸ���ڸ߶�
-int Client::m_nGameWidth = 1280; // ��Ϸ���ڿ���
-int Client::MsgAmount = 26; // ��Ϣ��ʾ����
-bool Client::CustomLoginFrame = true; // ʹ���Զ����¼����
-bool Client::WindowedMode = true; // ����ģʽ
-bool Client::RemoveLogos = true; // �Ƴ�����Logo
-int Client::setDamageCap = 199999; // �����˺�����
-int Client::setMAtkCap = 1999; // ħ����������
-int Client::setAccCap = 999; // ��������
-int Client::setAvdCap = 999; // �ر�����
-double Client::setAtkOutCap = 199999; // �����ʾ����
-bool Client::useTubi = false; // ʹ��Tubi����
-bool Client::bigLoginFrame = false; // ���͵�¼��
-bool Client::SwitchChinese = false; // �л�����ģʽ
-int Client::speedMovementCap = 140; // �ƶ��ٶ�����
-bool Client::noPassword = false; // ������ģʽ
-bool Client::debug = false; // ����ģʽ
-bool Client::climbSpeedAuto = false; // �Զ������ٶ�
-float Client::climbSpeed = 1.0; // �����ٶ�
-unsigned char Client::imeType = 1; // ���뷨����
-std::string Client::ServerIP_AddressFromINI = "127.0.0.1"; // ������IP��ַ
-int Client::serverIP_Port = 8484; // �������˿�
-bool Client::talkRepeat = false; // �ظ�˵��
-int Client::talkTime = 2000; // ˵�����ʱ��
+// 以下为客户端补丁层内部默认值。除输入法、分辨率、服务器地址和端口外，
+// 不再从 config.ini 读取，避免公开配置覆盖战斗、登录、聊天等敏感行为。
+int Client::m_nGameHeight = 720; // 游戏窗口高度，允许 config.ini 覆盖
+int Client::m_nGameWidth = 1280; // 游戏窗口宽度，允许 config.ini 覆盖
+int Client::MsgAmount = 10; // 右下角消息显示数量，发行包固定
+bool Client::CustomLoginFrame = true; // 使用分辨率适配后的登录框资源
+bool Client::WindowedMode = true; // 强制窗口模式
+bool Client::RemoveLogos = true; // 跳过启动 Logo 动画
+int Client::setDamageCap = 1999999; // 物理攻击面板显示上限
+int Client::setMAtkCap = 1999; // 魔攻/魔防面板显示上限
+int Client::setAccCap = 999; // 命中面板显示上限
+int Client::setAvdCap = 999; // 回避面板显示上限
+double Client::setAtkOutCap = 1999999; // 真实输出显示上限
+bool Client::useTubi = true; // 启用 Tubi 补丁，减少升级和宠物拾取时的客户端停顿
+bool Client::bigLoginFrame = true; // 登录界面使用大边框布局
+bool Client::SwitchChinese = true; // 启用客户端文字汉化补丁
+int Client::speedMovementCap = 140; // 移动速度上限
+bool Client::noPassword = false; // 免密模式，发行包固定关闭
+bool Client::debug = false; // 调试模式，发行包固定关闭
+bool Client::climbSpeedAuto = false; // 爬绳速度是否随移动速度自适应
+float Client::climbSpeed = 1.0; // 固定爬绳基础速度系数
+unsigned char Client::imeType = 1; // 输入法修复方案，允许 config.ini 覆盖
+std::string Client::ServerIP_AddressFromINI = "127.0.0.1"; // 服务器地址，允许 config.ini 覆盖
+int Client::serverIP_Port = 8484; // 服务器端口，允许 config.ini 覆盖
+bool Client::talkRepeat = false; // 是否允许重复发送相同聊天内容，发行包固定关闭
+int Client::talkTime = 2000; // 连续聊天间隔限制，单位毫秒
 
 void Client::UpdateGameStartup() {
 	//Memory::CodeCave(cc0x0044E550, dw0x0044E550, dw0x0044E550Nops); //run from packed client //skip //sub_44E546

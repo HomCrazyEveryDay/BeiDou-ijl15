@@ -64,37 +64,17 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	{
 		//CreateConsole();	//console for devs, use this to log stuff if you want
 
+		// 对外配置只开放输入法、分辨率和服务器连接信息。
+		// 其余补丁参数统一使用代码内默认值，避免玩家通过 config.ini 覆盖敏感行为。
 		INIReader reader("config.ini");
 		if (reader.ParseError() == 0) {
+			// 分辨率和输入法属于客户端兼容配置，允许按本地环境调整。
 			Client::m_nGameWidth = reader.GetInteger("general", "width", 1280);
 			Client::m_nGameHeight = reader.GetInteger("general", "height", 720);
-			Client::MsgAmount = reader.GetInteger("general", "MsgAmount", 26);
-			Client::CustomLoginFrame = reader.GetBoolean("general", "CustomLoginFrame", true);
-			Client::WindowedMode = reader.GetBoolean("general", "WindowedMode", true);
-			Client::RemoveLogos = reader.GetBoolean("general", "RemoveLogos", true);
-			Memory::UseVirtuProtect = reader.GetBoolean("general", "UseVirtuProtect", true);
-			Client::setDamageCap = reader.GetReal("optional", "setDamageCap", 199999);
-			Client::setMAtkCap = reader.GetReal("optional", "setMAtkCap", 1999);
-			Client::setAccCap = reader.GetReal("optional", "setAccCap", 999);
-			Client::setAvdCap = reader.GetReal("optional", "setAvdCap", 999);
-			Client::setAtkOutCap = reader.GetReal("optional", "setAtkOutCap", 199999);
-			Client::useTubi = reader.GetBoolean("optional", "useTubi", false);
-			Client::bigLoginFrame = reader.GetBoolean("general", "bigLoginFrame", false);
-			Client::SwitchChinese = reader.GetBoolean("general", "SwitchChinese", false);
-			Client::speedMovementCap = reader.GetInteger("optional", "speedMovementCap", 140);
-			Client::jumpCap = reader.GetInteger("optional", "jumpCap", 123);
-			Client::debug = reader.GetBoolean("debug", "debug", false);
-			Client::noPassword = reader.GetBoolean("debug", "noPassword", false);
 			Client::imeType = reader.GetInteger("general", "imeType", 1);
-			ownLoginFrame = reader.GetBoolean("optional", "ownLoginFrame", false);
-			ownCashShopFrame = reader.GetBoolean("optional", "ownCashShopFrame", false);
-			EzorsiaV2WzIncluded = reader.GetBoolean("general", "EzorsiaV2WzIncluded", true);
+			// 服务器地址支持域名；写入客户端前会解析为 IPv4 字符串。
 			Client::ServerIP_AddressFromINI = ResolveToIpv4String(reader.Get("general", "ServerIP_Address", "127.0.0.1"));
 			Client::serverIP_Port = reader.GetInteger("general", "serverIP_Port", 8484);
-			Client::climbSpeedAuto = reader.GetBoolean("optional", "climbSpeedAuto", false);
-			Client::climbSpeed = reader.GetFloat("optional", "climbSpeed", 1.0);
-			Client::talkRepeat = reader.GetBoolean("optional", "talkRepeat", false);
-			Client::talkTime = reader.GetInteger("optional", "talkTime", 2000);
 		}
 
 		Hook_CreateMutexA(true); //multiclient //ty darter, angel, and alias!
