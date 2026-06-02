@@ -133,6 +133,9 @@ void Client::UpdateGameStartup() {
 	Memory::WriteString(0x00AFE084 + 16, serverIP_Address);//write the user-set IP address
 	Memory::WriteString(0x00AFE084 + 32, serverIP_Address);//write the user-set IP address
 	Memory::WriteInt(0x007519C1 + 1, serverIP_Port);//µÇÂ¼¶Ë¿Ú
+	Memory::FillBytes(0x005F6BCD, 0x90, 9);
+	unsigned char bdClientSignature[] = { 0x68, 0x42, 0x44, 0x11, 0x00 };
+	Memory::WriteByteArray(0x005F6BCD, bdClientSignature, sizeof(bdClientSignature));
 
 	//optional non-resolution related stuff
 	if (useTubi) { Memory::FillBytes(0x00485C32, 0x90, 2); }
