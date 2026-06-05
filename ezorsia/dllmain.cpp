@@ -64,15 +64,15 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	{
 		//CreateConsole();	//console for devs, use this to log stuff if you want
 
-		// 对外配置只开放输入法、分辨率和服务器连接信息。
-		// 其余补丁参数统一使用代码内默认值，避免玩家通过 config.ini 覆盖敏感行为。
+		// Only expose local compatibility and connection settings through config.ini.
+		// Other patch behavior stays in code defaults.
 		INIReader reader("config.ini");
 		if (reader.ParseError() == 0) {
-			// 分辨率和输入法属于客户端兼容配置，允许按本地环境调整。
+			// Resolution and IME are local client compatibility settings.
 			Client::m_nGameWidth = reader.GetInteger("general", "width", 1280);
 			Client::m_nGameHeight = reader.GetInteger("general", "height", 720);
 			Client::imeType = reader.GetInteger("general", "imeType", 1);
-			// 服务器地址支持域名；写入客户端前会解析为 IPv4 字符串。
+			// Server address may be a hostname; resolve it before writing into the client patch.
 			Client::ServerIP_AddressFromINI = ResolveToIpv4String(reader.Get("general", "ServerIP_Address", "127.0.0.1"));
 			Client::serverIP_Port = reader.GetInteger("general", "serverIP_Port", 8484);
 		}
@@ -86,6 +86,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		HookCWvsApp__Dir_BackSlashToSlash(true);
 		HookCWvsApp__Dir_upDir(true);
 		Hookbstr_ctor(true);
+		HookAvatarLayerBuild(true);
 		HookIWzFileSystem__Init(true);
 		HookIWzNameSpace__Mount(true);
 		HookCWvsApp__InitializeResMan(false); //experimental //ty to all the contributors of the ragezone release: Client load .img instead of .wz v62~v92

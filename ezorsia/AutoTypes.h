@@ -80,6 +80,46 @@ static auto _bstr_ctor = reinterpret_cast<_bstr_ctor_t>(0x00406301);
 static _bstr_ctor_t _bstr_ctor_Hook = [](void* pThis, void* edx, const char* str) {
 	return _bstr_ctor(pThis, edx, str); };
 
+static DWORD SafeReadPreviewDword(DWORD address)
+{
+	__try {
+		return *(DWORD*)address;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return 0xFFFFFFFF;
+	}
+}
+
+typedef void(__thiscall* _AvatarLayerBuild_t)(void* pThis, int a1, int a2, int a3, DWORD a4, DWORD a5, DWORD a6, DWORD a7, DWORD a8, DWORD a9, DWORD a10);
+static auto _AvatarLayerBuild = reinterpret_cast<_AvatarLayerBuild_t>(0x00407757);
+
+static void __fastcall AvatarLayerBuild_Hook(void* pThis, void* edx, int a1, int a2, int a3, DWORD a4, DWORD a5, DWORD a6, DWORD a7, DWORD a8, DWORD a9, DWORD a10)
+{
+	const bool highHairPreview = a3 >= 40000 && a3 < 90000;
+	DWORD fixedAvatar[0xD0 / sizeof(DWORD)]{};
+	DWORD callA4 = a4;
+	int callA3 = a3;
+
+	if (highHairPreview) {
+		const DWORD sourceHair = SafeReadPreviewDword(a4);
+		if (sourceHair != 0xFFFFFFFF && sourceHair >= 30000 && sourceHair < 90000) {
+			for (int i = 0; i < _countof(fixedAvatar); ++i) {
+				fixedAvatar[i] = SafeReadPreviewDword(a4 + i * sizeof(DWORD));
+			}
+			fixedAvatar[0] = (DWORD)a3;
+			callA4 = (DWORD)fixedAvatar;
+			callA3 = 0;
+		}
+	}
+
+	_AvatarLayerBuild(pThis, a1, a2, callA3, callA4, a5, a6, a7, a8, a9, a10);
+}
+
+bool HookAvatarLayerBuild(bool bEnable)
+{
+	return Memory::SetHook(bEnable, reinterpret_cast<void**>(&_AvatarLayerBuild), AvatarLayerBuild_Hook);
+}
+
 //Ztl_bstr_t
 //Ztl_variant_t
 //_Ztl_bstr__ctor_Ztl_bstr_t
