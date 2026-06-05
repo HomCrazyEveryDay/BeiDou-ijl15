@@ -6,10 +6,7 @@
 
 /*
 客户端补丁层内部默认值：
-- 允许 config.ini 覆盖：输入法、分辨率、服务器地址、服务器端口。
-- 固定为发行包策略：消息数量、登录框、窗口模式、跳过 Logo、汉化、Tubi、面板上限、移动/爬绳、聊天限制、debug 和免密。
-- 不再从 config.ini 读取敏感项，避免玩家通过公开配置覆盖战斗、登录、聊天等行为。
-*/
+- 允许 config.ini 覆盖：输入法、分辨率、服务器地址、服务器端口�?- 固定为发行包策略：消息数量、登录框、窗口模式、跳�?Logo、汉化、Tubi、面板上限、移�?爬绳、聊天限制、debug 和免密�?- 不再�?config.ini 读取敏感项，避免玩家通过公开配置覆盖战斗、登录、聊天等行为�?*/
 int Client::m_nGameHeight = 720;
 int Client::m_nGameWidth = 1280;
 int Client::MsgAmount = 10;
@@ -140,6 +137,10 @@ void Client::UpdateGameStartup() {
 	Memory::WriteString(0x00AFE084 + 32, serverIP_Address);//write the user-set IP address
 	Memory::WriteInt(0x007519C1 + 1, serverIP_Port);//��¼�˿�
 	Memory::FillBytes(0x005F6BCD, 0x90, 9);
+
+	// ɾ����ɫʱ�ͻ���ֻ���� PIC ״̬Ϊ 1������˹ر� PIC ���·� 2������Ź��������С�
+	Memory::WriteByte(0x005F7CA6, 0xEB);
+
 	unsigned char bdClientSignature[] = { 0x68, 0x42, 0x44, 0x11, 0x00 };
 	Memory::WriteByteArray(0x005F6BCD, bdClientSignature, sizeof(bdClientSignature));
 
