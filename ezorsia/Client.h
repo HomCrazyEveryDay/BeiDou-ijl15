@@ -43,3 +43,7 @@ public:
 	static bool talkRepeat;
 	static int talkTime;
 };
+
+__declspec(selectany) DWORD g_facePreviewFaceId = 0;
+__declspec(selectany) DWORD g_facePreviewFaceId2 = 0;
+__declspec(selectany) DWORD g_facePreviewFaceId3 = 0;

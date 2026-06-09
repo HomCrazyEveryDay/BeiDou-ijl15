@@ -90,29 +90,99 @@ static DWORD SafeReadPreviewDword(DWORD address)
 	}
 }
 
+static bool SafeWritePreviewDword(DWORD address, DWORD value)
+{
+	__try {
+		*(DWORD*)address = value;
+		return true;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return false;
+	}
+}
+
+static bool IsKnownFacePreviewId(DWORD itemid)
+{
+	if (itemid >= 20000 && itemid < 30000) {
+		return true;
+	}
+	if (itemid >= 50000 && itemid < 60000) {
+		return true;
+	}
+	if (itemid >= 80000 && itemid < 90000) {
+		return true;
+	}
+	if (itemid == 40902 || itemid == 40991) {
+		return true;
+	}
+	if (itemid >= 42150 && itemid <= 42157) {
+		return true;
+	}
+	return itemid >= 42160 && itemid <= 42167;
+}
+
+static bool IsKnownHairPreviewId(DWORD itemid)
+{
+	if (IsKnownFacePreviewId(itemid)) {
+		return false;
+	}
+	return (itemid >= 30000 && itemid < 50000) || (itemid >= 60000 && itemid < 80000);
+}
+
 typedef void(__thiscall* _AvatarLayerBuild_t)(void* pThis, int a1, int a2, int a3, DWORD a4, DWORD a5, DWORD a6, DWORD a7, DWORD a8, DWORD a9, DWORD a10);
 static auto _AvatarLayerBuild = reinterpret_cast<_AvatarLayerBuild_t>(0x00407757);
 
 static void __fastcall AvatarLayerBuild_Hook(void* pThis, void* edx, int a1, int a2, int a3, DWORD a4, DWORD a5, DWORD a6, DWORD a7, DWORD a8, DWORD a9, DWORD a10)
 {
-	const bool highHairPreview = a3 >= 40000 && a3 < 90000;
-	DWORD fixedAvatar[0xD0 / sizeof(DWORD)]{};
+	const int avatarPrefixDwords = 0x10;
+	const int avatarBodyDwords = 0xD0 / sizeof(DWORD);
+	DWORD fixedAvatar[avatarPrefixDwords + avatarBodyDwords]{};
+	DWORD* fixedAvatarBase = fixedAvatar + avatarPrefixDwords;
 	DWORD callA4 = a4;
 	int callA3 = a3;
+	const bool facePreview = IsKnownFacePreviewId((DWORD)a3);
+	const bool lowFacePreview = facePreview && (DWORD)a3 >= 20000 && (DWORD)a3 < 30000;
+	const bool hairPreview = IsKnownHairPreviewId((DWORD)a3);
+	const DWORD sourceHair = SafeReadPreviewDword(a4);
+	const DWORD previewFace2 = SafeReadPreviewDword(a4 - sizeof(DWORD) * 2);
+	const DWORD previewFace3 = SafeReadPreviewDword(a4 - sizeof(DWORD) * 3);
 
-	if (highHairPreview) {
-		const DWORD sourceHair = SafeReadPreviewDword(a4);
-		if (sourceHair != 0xFFFFFFFF && sourceHair >= 30000 && sourceHair < 90000) {
-			for (int i = 0; i < _countof(fixedAvatar); ++i) {
-				fixedAvatar[i] = SafeReadPreviewDword(a4 + i * sizeof(DWORD));
+	if (facePreview) {
+		if (lowFacePreview) {
+			callA4 = a4;
+			callA3 = a3;
+		}
+		else {
+			SafeWritePreviewDword(a4 - sizeof(DWORD) * 2, (DWORD)a3);
+			callA4 = a4;
+			callA3 = 0;
+		}
+	}
+	else if (hairPreview) {
+		if (sourceHair != 0xFFFFFFFF && IsKnownHairPreviewId(sourceHair)) {
+			for (int i = 0; i < avatarBodyDwords; ++i) {
+				fixedAvatarBase[i] = SafeReadPreviewDword(a4 + i * sizeof(DWORD));
 			}
-			fixedAvatar[0] = (DWORD)a3;
-			callA4 = (DWORD)fixedAvatar;
+			fixedAvatarBase[0] = (DWORD)a3;
+			callA4 = (DWORD)fixedAvatarBase;
 			callA3 = 0;
 		}
 	}
 
+	const DWORD previousFacePreviewFaceId = g_facePreviewFaceId;
+	const DWORD previousFacePreviewFaceId2 = g_facePreviewFaceId2;
+	const DWORD previousFacePreviewFaceId3 = g_facePreviewFaceId3;
+	if (facePreview) {
+		g_facePreviewFaceId = (DWORD)a3;
+		g_facePreviewFaceId2 = IsKnownFacePreviewId(previewFace2) ? previewFace2 : 0;
+		g_facePreviewFaceId3 = IsKnownFacePreviewId(previewFace3) ? previewFace3 : 0;
+	}
 	_AvatarLayerBuild(pThis, a1, a2, callA3, callA4, a5, a6, a7, a8, a9, a10);
+	if (facePreview) {
+		g_facePreviewFaceId = previousFacePreviewFaceId;
+		g_facePreviewFaceId2 = previousFacePreviewFaceId2;
+		g_facePreviewFaceId3 = previousFacePreviewFaceId3;
+	}
 }
 
 bool HookAvatarLayerBuild(bool bEnable)
