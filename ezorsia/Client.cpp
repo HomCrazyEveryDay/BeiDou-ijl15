@@ -18,6 +18,7 @@ int Client::setMAtkCap = 1999;
 int Client::setAccCap = 999;
 int Client::setAvdCap = 999;
 double Client::setAtkOutCap = 1999999;
+double Client::setSnipeAtkOutCap = 199999;
 bool Client::useTubi = true;
 bool Client::bigLoginFrame = true;
 bool Client::SwitchChinese = true;
@@ -162,8 +163,7 @@ void Client::UpdateGameStartup() {
 	Memory::WriteInt(0x007918FC + 1, 2147483646); //CalcDamage::MDamage 999，意义不明，int 4字节
 
 	Memory::WriteDouble(0x00AFE8A0, setAtkOutCap);	// 输出显示上限，默认199999，double 8字节
-
-
+	Memory::WriteInt(0x0078E543 + 2, (DWORD)&setSnipeAtkOutCap); // Snipe uses this display cap instead of the raised global cap.
 	Memory::WriteInt(0x00780743 + 3, speedMovementCap); //set speed cap //ty ronan
 	Memory::WriteInt(0x008C4286 + 1, speedMovementCap); //set speed cap //ty ronan
 	Memory::WriteInt(0x0094D91E + 1, speedMovementCap); //set speed cap //ty ronan

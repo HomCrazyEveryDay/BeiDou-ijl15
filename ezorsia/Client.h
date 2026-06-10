@@ -28,6 +28,7 @@ public:
 	static int setAccCap;
 	static int setAvdCap;
 	static double setAtkOutCap;
+	static double setSnipeAtkOutCap;
 	static bool useTubi;
 	static bool bigLoginFrame;
 	static bool SwitchChinese;
