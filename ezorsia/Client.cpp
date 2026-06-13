@@ -769,6 +769,11 @@ void Client::Chinese() {
 		Memory::WriteString(0x00AF2B28, "对联盟     ");
 		Memory::ReplaceString(0x00B3C0D4, "已更改设置，\r\n'%s'可以接收悄悄话。", "Change has been made so\r\n'%s' can receive whisper.");
 
+		// 好友列表提示
+		Memory::ReplaceString(0x00AF0738, "默认分组", "Default Group");
+		Memory::ReplaceString(0x00B3C158, "双击发送短信。", "Double-click to send a note.");
+		Memory::ReplaceString(0x00B3C194, "双击修改分组。", "Double-click to make changes to the group.");
+
 		// 有效期字体大小
 		Memory::WriteByte(0x008E55ED + 1, 0x0B);
 
