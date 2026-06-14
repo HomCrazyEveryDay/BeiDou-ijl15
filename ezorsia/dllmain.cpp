@@ -7,6 +7,7 @@
 #include <comutil.h>
 #include "BossHP.h"
 #include "HpMpAlert.h"
+#include "MovementKeyHook.h"
 
 // config.ini can use IP or hostname (ServerIP_Address=...).
 // The patch expects an IPv4 dotted string; resolve hostnames to IPv4.
@@ -75,6 +76,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 			// Server address may be a hostname; resolve it before writing into the client patch.
 			Client::ServerIP_AddressFromINI = ResolveToIpv4String(reader.Get("general", "ServerIP_Address", "127.0.0.1"));
 			Client::serverIP_Port = reader.GetInteger("general", "serverIP_Port", 8484);
+			Client::enableMovementKeyRebind = reader.GetBoolean("general", "enableMovementKeyRebind", false);
 		}
 
 		Hook_CreateMutexA(true); //multiclient //ty darter, angel, and alias!
@@ -106,6 +108,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Client::FixMouseWheel();
 		Client::Chinese();
 		Client::LongQuickSlot();
+		if (Client::enableMovementKeyRebind) {
+			MovementKeyHook::Hook(true);
+			Client::MovementKeyRebind();
+		}
 		Client::FixDateFormat();
 		Client::FixItemType();
 		Client::JumpCap();

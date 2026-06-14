@@ -1116,7 +1116,7 @@ unsigned char Array_aDefaultQKM_0[] = {
 	29, 0, 0, 0,
 };
 
-unsigned char Array_Expanded[312] = { 4, 4, 0, 0,
+unsigned char Array_Expanded[360] = { 4, 4, 0, 0,
 	0, 0, 0, 0,
 	0, 0, 0, 0,
 	4, 0, 0, 0,
@@ -1193,9 +1193,21 @@ unsigned char Array_Expanded[312] = { 4, 4, 0, 0,
 	0, 0, 0, 0,
 	5, 53, 0, 0,
 	0, 0, 0, 0,
+	0, 0, 0, 0,
+	4, 107, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	4, 108, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	4, 109, 0, 0,
+	0, 0, 0, 0,
+	0, 0, 0, 0,
+	4, 110, 0, 0,
+	0, 0, 0, 0,
 	0, 0, 0, 0 };
 
-unsigned char Array_Expanded_Testing_Cooldown_fix[312] = { 0 };
+unsigned char Array_Expanded_Testing_Cooldown_fix[360] = { 0 };
 
 unsigned char cooldown_Array[124] = { 255, 255, 255, 255, 255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255,255, 255, 255, 255 };
 
@@ -1207,12 +1219,114 @@ DWORD Array_mystery_Address_plus = (DWORD)&Array_Expanded + 1;
 DWORD cooldown_Array_Address = (DWORD)&cooldown_Array;
 DWORD Array_Expanded_Testing_Cooldown_fix_Address = (DWORD)&Array_Expanded_Testing_Cooldown_fix;
 
+DWORD KeyConfig_KeepMovementAvailable_Retn = 0x008365A8;
+__declspec(naked) void KeyConfig_KeepMovementAvailable_cave()
+{
+	__asm {
+		mov eax, dword ptr[esp + 8]
+		cmp eax, 26
+		je keep_available
+		cmp eax, 27
+		je keep_available
+		cmp eax, 28
+		je keep_available
+		cmp eax, 29
+		je keep_available
+		cmp eax, 30
+		je keep_available
+		cmp eax, 31
+		je keep_available
+		cmp eax, 107
+		je keep_available
+		cmp eax, 108
+		je keep_available
+		cmp eax, 109
+		je keep_available
+		cmp eax, 110
+		je keep_available
+
+		cmp dword ptr[esp + 4], 5
+		jmp KeyConfig_KeepMovementAvailable_Retn
+
+	keep_available:
+		ret 8
+	}
+}
+DWORD KeyConfig_KeepMovementTrayVisible_Retn = 0x00833DE4;
+DWORD KeyConfig_KeepMovementTrayHidden_Retn = 0x00833FA2;
+__declspec(naked) void KeyConfig_KeepMovementTrayVisible_cave()
+{
+	__asm {
+		cmp dword ptr[eax], edi
+		je show_candidate
+
+		mov ecx, dword ptr[ebp - 18h]
+		cmp ecx, 26
+		je clear_and_show_candidate
+		cmp ecx, 27
+		je clear_and_show_candidate
+		cmp ecx, 28
+		je clear_and_show_candidate
+		cmp ecx, 29
+		je clear_and_show_candidate
+
+		jmp KeyConfig_KeepMovementTrayHidden_Retn
+
+	clear_and_show_candidate:
+		and dword ptr[eax], 0
+
+	show_candidate:
+		jmp KeyConfig_KeepMovementTrayVisible_Retn
+	}
+}
+DWORD KeyConfig_GetIconIndex_Retn = 0x00836C98;
+
+__declspec(naked) void KeyConfig_GetIconIndex_cave()
+{
+	__asm {
+		mov eax, dword ptr[esp + 4]
+		cmp eax, 26
+		je move_up
+		cmp eax, 27
+		je move_down
+		cmp eax, 28
+		je move_left
+		cmp eax, 29
+		je move_right
+
+		cmp eax, 0x1C
+		jl original_done
+		cmp eax, 0x21
+		jge original_large
+		add eax, 0x16
+		jmp original_done
+
+	original_large:
+		add eax, 0x43
+		jmp original_done
+
+	move_up:
+		mov eax, 107
+		jmp original_done
+	move_down:
+		mov eax, 108
+		jmp original_done
+	move_left:
+		mov eax, 109
+		jmp original_done
+	move_right:
+		mov eax, 110
+
+	original_done:
+		jmp KeyConfig_GetIconIndex_Retn
+	}
+}
 DWORD CompareValidate_Retn = 0x8DD8BD;
 _declspec(naked) void CompareValidateFuncKeyMappedInfo_cave()
 {
 	_asm
 	{
-		push 0x138;
+		push 0x168;
 		push 0x0;
 		push eax;
 		pushad;
@@ -1237,7 +1351,7 @@ _declspec(naked) void sub_9FA0CB_cave()
 		//ret;
 		jmp sub_9FA0CB_cave_retn_1
 			label :
-		push 0x138;
+		push 0x168;
 		push 0x0;
 		push eax;
 		pushad;
@@ -1306,7 +1420,7 @@ _declspec(naked) void Restore_Array_Expanded() //Thank you Max
 		push ecx
 		mov esi, [Array_Expanded_Testing_Cooldown_fix_Address]
 		mov edi, Array_mystery_Address
-		mov ecx, 78
+		mov ecx, 90
 		rep movsd
 		pop ecx
 		pop edi

@@ -32,6 +32,7 @@ std::string Client::ServerIP_AddressFromINI = "127.0.0.1";
 int Client::serverIP_Port = 8484;
 bool Client::talkRepeat = false;
 int Client::talkTime = 2000;
+bool Client::enableMovementKeyRebind = false;
 
 void Client::UpdateGameStartup() {
 	//Memory::CodeCave(cc0x0044E550, dw0x0044E550, dw0x0044E550Nops); //run from packed client //skip //sub_44E546
@@ -862,13 +863,25 @@ void Client::LongQuickSlot() {
 	Memory::WriteByte(0x00836A1E + 1, 0x68); // push 68h (triple)
 	Memory::WriteByte(0x00836A21 + 2, 0x6C); // triple the base value at this hex (old->24h)
 
-
 	// CODECAVES CLIENT EDITS ---- 
 	Memory::CodeCave(CompareValidateFuncKeyMappedInfo_cave, 0x8DD8B8, 5);
 	Memory::CodeCave(sub_9FA0CB_cave, 0x9FA0DB, 5);
 	Memory::CodeCave(sDefaultQuickslotKeyMap_cave, 0x72B7BC, 5);
 	Memory::CodeCave(DefaultQuickslotKeyMap_cave, 0x72B8E6, 5);
 	Memory::CodeCave(Restore_Array_Expanded, 0x008CFDFD, 6); //restores the skill array to 0s
+}
+
+void Client::MovementKeyRebind() {
+	//----CDraggableMenu::OnDropped
+	Memory::WriteByte(0x004F928A + 2, 0x1E); // allow movement key templates
+	//----CDraggableMenu::MapFuncKey
+	Memory::WriteByte(0x004F93F9 + 2, 0x1E); // allow movement key templates
+	//----CUIKeyConfig::CNoticeDlg::CNoticeDlg
+	Memory::WriteByte(0x00836627 + 2, 0x1E); // keep movement template icons in the function-key group
+
+	Memory::CodeCave(KeyConfig_KeepMovementAvailable_cave, 0x008365A3, 5); // keep movement templates visible after binding
+	Memory::CodeCave(KeyConfig_KeepMovementTrayVisible_cave, 0x00833DDC, 8); // keep movement templates in the default drag tray
+	Memory::CodeCave(KeyConfig_GetIconIndex_cave, 0x00836C82, 5); // map movement actions to dedicated key config icons
 }
 
 void Client::FixDateFormat() {

@@ -9,6 +9,7 @@ public:
 	static void FixMouseWheel();
 	static void Chinese();
 	static void LongQuickSlot();
+	static void MovementKeyRebind();
 	static void FixDateFormat();
 	static void FixItemType();
 	static void JumpCap();
@@ -43,6 +44,7 @@ public:
 	static int serverIP_Port;
 	static bool talkRepeat;
 	static int talkTime;
+	static bool enableMovementKeyRebind;
 };
 
 __declspec(selectany) DWORD g_facePreviewFaceId = 0;

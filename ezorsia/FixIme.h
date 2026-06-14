@@ -28,7 +28,7 @@ void DisableIme() {
 	}
 }
 
-BYTE enabled = 1;
+BYTE enabled = 0;
 
 DWORD funcEnableImeAddr = 0x009E85F3;
 
@@ -63,6 +63,7 @@ __declspec(naked) void switchIme() {
 		label_jz :
 		push 0
 		call funcEnableImeAddr
+		mov enabled, 0
 		jmp  disableRtnAddr
 	}
 }
@@ -81,6 +82,7 @@ __declspec(naked) void switchMLIme() {
 		label_jz :
 		push 0
 		call funcEnableImeAddr
+		mov enabled, 0
 		jmp  disableMLRtnAddr
 	}
 }
@@ -97,6 +99,7 @@ __declspec(naked) void newSwitchIme() {
 
 		label_disable :
 		call DisableIme
+		mov enabled, 0
 		jmp newSwitchImeRtnAddr
 	}
 }

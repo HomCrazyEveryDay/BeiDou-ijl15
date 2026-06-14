@@ -150,6 +150,9 @@
     <ClInclude Include="FixBuddy.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="MovementKeyHook.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="dllmain.cpp">
