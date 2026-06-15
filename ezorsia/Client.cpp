@@ -766,6 +766,11 @@ void Client::Chinese() {
 
 	FixBuddy::Hook();
 	if(SwitchChinese) {
+		//创建角色界面女
+		Memory::WriteString(0x00AF6D1C, "  女  ");
+		//创建角色界面男
+		Memory::WriteString(0x00AF6D24, " 男 ");
+
 		// 聊天栏选项
 		Memory::WriteString(0x00AF2B28, "对联盟     ");
 		Memory::ReplaceString(0x00B3C0D4, "已更改设置，\r\n'%s'可以接收悄悄话。", "Change has been made so\r\n'%s' can receive whisper.");
