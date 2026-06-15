@@ -2121,6 +2121,68 @@ KeyValuePair newKeyValuePairs[] = {
     {5617, "和 \r"},
     {5639, " 金币"},
 };
+static bool LocalizeBlessingTooltipString(ZXString<char>* ret)
+{
+	if (!Client::SwitchChinese || !ret || !static_cast<const char*>(*ret))
+	{
+		return false;
+	}
+
+	const char* text = static_cast<const char*>(*ret);
+	if (strstr(text, "Spirits who receive") && strstr(text, "Skill Point will be granted"))
+	{
+		*ret = "得到#c%s#力量的精灵会强化当前角色。#c%s#每提升10级时，技能等级都会上升。";
+		return true;
+	}
+	if (strcmp(text, "Spirits who receive ") == 0)
+	{
+		*ret = "得到#c";
+		return true;
+	}
+	if (strcmp(text, "'s energy will give your character a boost. ") == 0 ||
+		strcmp(text, "'s energy will give your character a boost.") == 0)
+	{
+		*ret = "#力量的精灵会强化当前角色。";
+		return true;
+	}
+	if (strcmp(text, "'s energy will give your character a boost. 1 Skill Point will be granted each time ") == 0)
+	{
+		*ret = "#力量的精灵会强化当前角色。#c";
+		return true;
+	}
+	if (strcmp(text, "1 Skill Point will be granted each time ") == 0)
+	{
+		*ret = "#c";
+		return true;
+	}
+	if (strcmp(text, "'s level increases by 10.") == 0)
+	{
+		*ret = "#每提升10级时，技能等级都会上升。";
+		return true;
+	}
+	if (strcmp(text, "Current Level") == 0)
+	{
+		*ret = "现在等级";
+		return true;
+	}
+	if (strcmp(text, "Next Level") == 0)
+	{
+		*ret = "下次等级";
+		return true;
+	}
+	if (strcmp(text, "[Current Level %d]") == 0)
+	{
+		*ret = "[现在等级 %d]";
+		return true;
+	}
+	if (strcmp(text, "[Next Level %d]") == 0)
+	{
+		*ret = "[下次等级 %d]";
+		return true;
+	}
+
+	return false;
+}
 bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //ty !! popcorn //ty darter
 {
 	_StringPool__GetString_t _StringPool__GetString_Hook = [](void* pThis, void* edx, ZXString<char>* result, unsigned int nIdx, char formal) ->  ZXString<char>*
@@ -2171,6 +2233,7 @@ bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //t
 				}
 				break;
 		}
+		LocalizeBlessingTooltipString(ret);
 		return ret;
 	};
 	return Memory::SetHook(bEnable, reinterpret_cast<void**>(&_StringPool__GetString), _StringPool__GetString_Hook);
