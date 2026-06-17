@@ -8,6 +8,87 @@
 #include "BossHP.h"
 #include "HpMpAlert.h"
 #include "MovementKeyHook.h"
+#include <wincrypt.h>
+
+static bool ReadCurrentExeSha256(BYTE hash[32])
+{
+	WCHAR exePath[MAX_PATH]{};
+	if (GetModuleFileNameW(nullptr, exePath, MAX_PATH) == 0) {
+		return false;
+	}
+
+	HANDLE file = CreateFileW(exePath, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (file == INVALID_HANDLE_VALUE) {
+		return false;
+	}
+
+	HCRYPTPROV provider = 0;
+	HCRYPTHASH hasher = 0;
+	bool ok = false;
+
+	if (CryptAcquireContextW(&provider, nullptr, nullptr, PROV_RSA_AES, CRYPT_VERIFYCONTEXT)
+		&& CryptCreateHash(provider, CALG_SHA_256, 0, 0, &hasher)) {
+		BYTE buffer[8192]{};
+		DWORD bytesRead = 0;
+		ok = true;
+		while (true) {
+			if (!ReadFile(file, buffer, sizeof(buffer), &bytesRead, nullptr)) {
+				ok = false;
+				break;
+			}
+			if (bytesRead == 0) {
+				break;
+			}
+			if (!CryptHashData(hasher, buffer, bytesRead, 0)) {
+				ok = false;
+				break;
+			}
+		}
+
+		DWORD hashLen = 32;
+		ok = ok && CryptGetHashParam(hasher, HP_HASHVAL, hash, &hashLen, 0) && hashLen == 32;
+	}
+
+	if (hasher) {
+		CryptDestroyHash(hasher);
+	}
+	if (provider) {
+		CryptReleaseContext(provider, 0);
+	}
+	CloseHandle(file);
+
+	return ok;
+}
+
+static void DecodeExpectedExeSha256(BYTE expected[32])
+{
+	static const BYTE encoded[32] = {
+		0x6F, 0x39, 0xDB, 0xB9, 0xA1, 0xDE, 0x1A, 0xEB,
+		0xD5, 0x09, 0xD2, 0x54, 0x5A, 0x22, 0xAE, 0xFE,
+		0x74, 0x4E, 0x4E, 0x23, 0x7F, 0x6D, 0x30, 0x34,
+		0x01, 0xB4, 0xC7, 0x6C, 0x9B, 0x76, 0x42, 0xFB
+	};
+
+	for (int i = 0; i < 32; i++) {
+		expected[i] = encoded[i] ^ static_cast<BYTE>(0xA7 + i * 0x3D);
+	}
+}
+
+static bool VerifyCurrentExe()
+{
+	BYTE actual[32]{};
+	BYTE expected[32]{};
+	if (!ReadCurrentExeSha256(actual)) {
+		return false;
+	}
+
+	DecodeExpectedExeSha256(expected);
+	DWORD diff = 0;
+	for (int i = 0; i < 32; i++) {
+		diff |= actual[i] ^ expected[i];
+	}
+	return diff == 0;
+}
 
 // config.ini can use IP or hostname (ServerIP_Address=...).
 // The patch expects an IPv4 dotted string; resolve hostnames to IPv4.
@@ -63,6 +144,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	switch (ul_reason_for_call) {
 	case DLL_PROCESS_ATTACH:
 	{
+		if (!VerifyCurrentExe()) {
+			return FALSE;
+		}
+
 		//CreateConsole();	//console for devs, use this to log stuff if you want
 
 		// Only expose local compatibility and connection settings through config.ini.
