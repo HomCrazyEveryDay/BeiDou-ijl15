@@ -33,6 +33,7 @@ int Client::serverIP_Port = 8484;
 bool Client::talkRepeat = false;
 int Client::talkTime = 2000;
 bool Client::enableMovementKeyRebind = false;
+static const char kMakerUnknownItemText[] = "\xCE\xB4\xD6\xAA\xCE\xEF\xC6\xB7";
 
 void Client::UpdateGameStartup() {
 	//Memory::CodeCave(cc0x0044E550, dw0x0044E550, dw0x0044E550Nops); //run from packed client //skip //sub_44E546
@@ -779,6 +780,16 @@ void Client::Chinese() {
 		Memory::ReplaceString(0x00AF0738, "默认分组", "Default Group");
 		Memory::ReplaceString(0x00B3C158, "双击发送短信。", "Double-click to send a note.");
 		Memory::ReplaceString(0x00B3C194, "双击修改分组。", "Double-click to make changes to the group.");
+
+		// Maker UI localization
+		Memory::WriteInt(0x0082312F + 1, 1757); // Etc -> StringPool 1757
+		Memory::WriteInt(0x008237E8 + 1, 1757); // Etc -> StringPool 1757
+		Memory::WriteInt(0x0082313A + 1, 1763); // Use -> StringPool 1763
+		Memory::WriteInt(0x00823743 + 1, 1763); // Use -> StringPool 1763
+		Memory::WriteInt(0x008234D6 + 1, 5530); // Category -> localized category label
+		Memory::WriteInt(0x00823823 + 1, (DWORD)kMakerUnknownItemText); // ??? -> unknown item
+		Memory::WriteInt(0x008239F0 + 1, (DWORD)kMakerUnknownItemText); // ??? -> unknown item
+		Memory::ReplaceString(0x00B39390, "%d\xB8\xF6", "%d/???");
 
 		// 有效期字体大小
 		Memory::WriteByte(0x008E55ED + 1, 0x0B);
