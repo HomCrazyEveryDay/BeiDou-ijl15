@@ -192,8 +192,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Client::UpdateResolution();
 		Client::FixMouseWheel();
 		Client::Chinese();
-		Client::LongQuickSlot();
 		if (Client::enableMovementKeyRebind) {
+			Client::LongQuickSlot();
 			MovementKeyHook::Hook(true);
 			Client::MovementKeyRebind();
 		}
