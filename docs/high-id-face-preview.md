@@ -32,9 +32,10 @@ For high ID face previews:
 
 1. Detect face IDs, including old `20000-29999`, new `50000-59999`, `80000-89999`, and known `4xxxx` face IDs.
 2. For old low face IDs, pass through normally.
-3. For high face IDs, write the requested face ID into `a4 - 2`.
-4. Call the original builder with `a3 = 0` and the original avatar pointer.
-5. Keep the `a4 - 2` write in the preview buffer instead of restoring it immediately.
+3. Only treat a high face ID as an NPC preview when the preview buffer layout matches: `a4 - 3` is the requested face and `a4 - 2` is a known current face.
+4. For matched high face previews, write the requested face ID into `a4 - 2`.
+5. Call the original builder with `a3 = 0` and the original avatar pointer.
+6. Keep the `a4 - 2` write in the preview buffer instead of restoring it immediately.
 
 This avoids the crash-prone high ID `a3` path while making the client's later face-layer reads see the requested preview face.
 
@@ -43,8 +44,10 @@ Hair preview still uses the prior proven pattern: copy avatar data, replace hair
 ## Related Code
 
 - `ezorsia/AutoTypes.h`
-  - `IsKnownFacePreviewId`
-  - `IsKnownHairPreviewId`
+  - `IsKnownFaceId`
+  - `IsHighFacePreviewTarget`
+  - `IsKnownHairId`
+  - `IsHighHairPreviewTarget`
   - `AvatarLayerBuild_Hook`
 - `ezorsia/Client.h`
   - `g_facePreviewFaceId`
@@ -96,3 +99,15 @@ The final code intentionally does not keep:
 - low ID filler workaround in the NPC list
 
 Keep the final fix small. The important behavior is the high face preview branch in `AvatarLayerBuild_Hook`.
+
+## 2026-06-23 Guard Tightening
+
+`AvatarLayerBuild_Hook` is global. ID ranges alone are not enough to decide that the current call is an NPC preview, because normal character rendering can pass the same face or hair IDs.
+
+The face branch now separates resource classification from preview handling:
+
+- `IsKnownFaceId` only identifies face resources.
+- `IsHighFacePreviewTarget` only identifies high face IDs that need preview compatibility.
+- The high face workaround runs only when `a4 - 3` equals the requested target face and `a4 - 2` contains a known face ID.
+
+This keeps normal character rendering away from the preview-only `a4 - 2` mutation while preserving the high face preview fix.

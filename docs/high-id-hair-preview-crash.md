@@ -44,19 +44,20 @@ ezorsia/dllmain.cpp
 ezorsia/ezorsia.vcxproj
 ```
 
-新增 `AvatarLayerBuild_Hook`，检测到预览 ID 是高编号发型时：
+新增 `AvatarLayerBuild_Hook`，检测到调用确实属于高编号发型预览时：
 
 1. 从 `a4` 指向的当前 avatar 数据复制一份临时结构。
 2. 把临时 avatar 的 hair 字段替换成要预览的发型 ID。
 3. 调用原始 `AvatarLayerBuild` 时把 `a3` 改成 `0`，并传入临时 avatar 数据。
 
-当前判断范围：
+判断分两层：
 
 ```cpp
-const bool highHairPreview = a3 >= 40000 && a3 < 90000;
+IsKnownHairId(itemid)
+IsHighHairPreviewTarget(itemid)
 ```
 
-这个范围覆盖当前 `40000+` 到 `69000+` 的新增发型，并给后续高编号发型留了空间。如果以后发型编号超过 `90000`，需要重新评估这个范围。
+`IsKnownHairId` 只表示资源类型是发型，覆盖旧发型和新增发型。`IsHighHairPreviewTarget` 才表示需要走高编号预览兼容逻辑，目前只覆盖 `40000-49999` 和 `60000-79999`，并排除已知脸型 ID。这样普通 `30000-39999` 发型不会误入预览 workaround。
 
 `dllmain.cpp` 中启用 hook：
 
@@ -240,6 +241,26 @@ wmic process where ProcessId=<PID> call terminate
 - 不再需要补 `42001` / `52001` 这类客户端内部派生编号。
 - Release x86 编译通过。
 - 新 `ijl15.dll` 覆盖客户端后测试通过。
+
+## 2026-06-23 普通角色渲染误入预览分支
+
+后续线上出现 `0x80004003 / E_POINTER` 崩溃。x86 dump 的异常上下文里同时出现：
+
+```text
+/Data/Character/Hair/00037545.img
+error code : -2147467261 (无效指针)
+```
+
+`00037545.img` 本身存在，且与同组 `37540-37547` 结构一致。数据库确认 `37545` 属于同场景玩家 `红脸大蘑菇`，不是崩溃角色自身发型。
+
+根因是前一次脸型预览修复把发型判断扩成了 `30000-49999`、`60000-79999`。`AvatarLayerBuild_Hook` 是全局头像图层构建 hook，只靠 ID 范围会把普通角色发型 `37545` 当成发型预览处理，并把栈上的临时 avatar 数据传给原始构建函数，正常角色渲染后续再读到这份临时数据时可能触发无效指针。
+
+修复策略：
+
+- 资源类型判断和预览 workaround 判断分离。
+- `30000-39999` 普通发型不再进入高编号发型预览 workaround。
+- 高编号发型预览若目标与当前发型不同，继续使用临时 avatar 数据替换 hair slot。
+- 高编号发型预览若目标与当前发型相同，只把 `a3` 改为 `0` 并保留原始 avatar 指针，避免走客户端会派生编号的 item-preview 路径，也避免给普通渲染留下栈上临时指针。
 
 WZ 文本汉化验证：
 
