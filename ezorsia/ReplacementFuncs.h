@@ -2121,6 +2121,27 @@ KeyValuePair newKeyValuePairs[] = {
     {5617, "和 \r"},
     {5639, " 金币"},
 };
+static bool LocalizeClientMessageString(ZXString<char>* ret)
+{
+	if (!Client::SwitchChinese || !ret || !static_cast<const char*>(*ret))
+	{
+		return false;
+	}
+
+	const char* text = static_cast<const char*>(*ret);
+	if (strcmp(text, "This scroll cannot be used.") == 0)
+	{
+		*ret = "该卷轴无法使用。";
+		return true;
+	}
+	if (strcmp(text, "You got a title!") == 0)
+	{
+		*ret = "获得称号！";
+		return true;
+	}
+
+	return false;
+}
 static bool LocalizeBlessingTooltipString(ZXString<char>* ret)
 {
 	if (!Client::SwitchChinese || !ret || !static_cast<const char*>(*ret))
@@ -2233,6 +2254,7 @@ bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //t
 				}
 				break;
 		}
+		LocalizeClientMessageString(ret);
 		LocalizeBlessingTooltipString(ret);
 		return ret;
 	};
