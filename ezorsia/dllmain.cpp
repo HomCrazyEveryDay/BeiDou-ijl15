@@ -8,6 +8,7 @@
 #include "BossHP.h"
 #include "HpMpAlert.h"
 #include "MovementKeyHook.h"
+#include "NpcShopCurrency.h"
 #include <wincrypt.h>
 
 enum class ExeVerifyResult {
@@ -327,6 +328,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Client::JumpCap();
 		Client::FixChatPosHook();
 		Client::NoPassword();
+		NpcShopCurrency::Install();
 		Client::MoreHook();
 		BossHP::Hook();
 		Client::WorldMap();
