@@ -2140,6 +2140,12 @@ static bool LocalizeClientMessageString(ZXString<char>* ret)
 		return true;
 	}
 
+	if (strcmp(text, "You need %d more %s(s)") == 0 ||
+		strcmp(text, "You need %d more %s(s).") == 0)
+	{
+		*ret = "\xC4\xE3\xBB\xB9\xD0\xE8\xD2\xAA %d \xB8\xF6%s\xA1\xA3";
+		return true;
+	}
 	return false;
 }
 static bool LocalizeBlessingTooltipString(ZXString<char>* ret)
