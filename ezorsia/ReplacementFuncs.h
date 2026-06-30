@@ -2140,6 +2140,13 @@ static bool LocalizeClientMessageString(ZXString<char>* ret)
 		return true;
 	}
 
+	if (strcmp(text, "Movement is possible only within the account") == 0 ||
+		strcmp(text, "Movement is possible only within the account.") == 0)
+	{
+		*ret = "仅可在同一账号内移动";
+		return true;
+	}
+
 	if (strcmp(text, "You need %d more %s(s)") == 0 ||
 		strcmp(text, "You need %d more %s(s).") == 0)
 	{
