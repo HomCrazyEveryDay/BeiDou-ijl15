@@ -9,7 +9,7 @@
 - 允许 config.ini 覆盖：输入法、分辨率、服务器地址、服务器端口�?- 固定为发行包策略：消息数量、登录框、窗口模式、跳�?Logo、汉化、Tubi、面板上限、移�?爬绳、聊天限制、debug 和免密�?- 不再�?config.ini 读取敏感项，避免玩家通过公开配置覆盖战斗、登录、聊天等行为�?*/
 int Client::m_nGameHeight = 720;
 int Client::m_nGameWidth = 1280;
-int Client::MsgAmount = 10;
+int Client::MsgAmount = 6;
 bool Client::CustomLoginFrame = true;
 bool Client::WindowedMode = true;
 bool Client::RemoveLogos = true;
@@ -457,7 +457,11 @@ void Client::UpdateResolution() {
 		Memory::FillBytes(0x0062EE54, 0x90, 21);	//no Logo @launch //Thanks Denki!!
 	}
 
-	int msgAmntOffset, msgAmnt; msgAmnt = MsgAmount; msgAmntOffset = msgAmnt * 14;
+	int msgAmnt = MsgAmount;
+	if (msgAmnt > 6) {
+		msgAmnt = 6; // The original gain-message queue is only stable at 6 entries.
+	}
+	int msgAmntOffset = msgAmnt * 14;
 
 	Memory::WriteInt(0x0089B639 + 1, m_nGameHeight - 6 - msgAmntOffset - 80);//inventory/exp gain y axis //####hd100 //90
 	Memory::WriteInt(0x0089B6F7 + 1, m_nGameWidth - 405);//inventory/exp gain x axis //310 //####hd415 //405
@@ -466,12 +470,14 @@ void Client::UpdateResolution() {
 	Memory::WriteInt(0x0089B2C6 + 1, 400);//address to move the message in the canvas adjusted above to the center of the new canvas  //thanks chris
 
 	Memory::WriteInt(0x0089AEE2 + 3, msgAmnt);//moregainmsgs part 1
-	MoreGainMsgsOffset = msgAmnt;	//param for ccmoregainmssgs
-	Memory::CodeCave(ccMoreGainMsgs, dwMoreGainMsgs, MoreGainMsgsNOPs); //moregainmsgs part 2
-	MoreGainMsgsFadeOffset = 15000;	//param for ccmoregainmssgsFade
-	Memory::CodeCave(ccMoreGainMsgsFade, dwMoreGainMsgsFade, MoreGainMsgsFadeNOPs); //moregainmsgsFade
-	MoreGainMsgsFade1Offset = 255 * 4 / 3;	//param for ccmoregainmssgsFade
-	Memory::CodeCave(ccMoreGainMsgsFade1, dwMoreGainMsgsFade1, MoreGainMsgsFade1NOPs); //moregainmsgsFade1
+	if (msgAmnt > 6) {
+		MoreGainMsgsOffset = msgAmnt;	//param for ccmoregainmssgs
+		Memory::CodeCave(ccMoreGainMsgs, dwMoreGainMsgs, MoreGainMsgsNOPs); //moregainmsgs part 2
+		MoreGainMsgsFadeOffset = 15000;	//param for ccmoregainmssgsFade
+		Memory::CodeCave(ccMoreGainMsgsFade, dwMoreGainMsgsFade, MoreGainMsgsFadeNOPs); //moregainmsgsFade
+		MoreGainMsgsFade1Offset = 255 * 4 / 3;	//param for ccmoregainmssgsFade
+		Memory::CodeCave(ccMoreGainMsgsFade1, dwMoreGainMsgsFade1, MoreGainMsgsFade1NOPs); //moregainmsgsFade1
+	}
 
 	Memory::WriteInt(0x0045B337 + 1, m_nGameWidth);//related to smega display  //likely screen area where pop up starts for smega
 	Memory::WriteInt(0x0045B417 + 1, m_nGameWidth - 225);//smega with avatar x axis for duration on screen
@@ -941,7 +947,9 @@ void Client::FixChatPosHook() {
 	// Memory::WriteByte(0x008DD05A + 2, 0x4);
 	// Memory::WriteByte(0x008DD067 + 2, 0x3);
 	// �Ϸ����������������ʱ����ʾ����Ϣ̫ƫ����
-	Memory::CodeCave(chatTextPos, 0x008DD06F, 6);
+	// Disabled: this hook runs while expanding the chat log with ';' and can
+	// leave the client in the E_POINTER error path.
+	// Memory::CodeCave(chatTextPos, 0x008DD06F, 6);
 }
 
 void Client::NoPassword() {
