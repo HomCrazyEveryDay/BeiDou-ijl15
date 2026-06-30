@@ -28,6 +28,28 @@ struct ExeVerifyInfo {
 	DWORD lastError = 0;
 };
 
+static DWORD g_TextGlyphCodepointReturn = 0x00842505;
+
+__declspec(naked) void TextGlyphCodepointGuardCave()
+{
+	__asm {
+		mov si, word ptr[eax + ecx * 2]
+		cmp si, 0738Ch
+		jne done
+		// U+738C is missing from the text glyph table; reuse a glyph that the same table resolves.
+		mov si, 03E8h
+
+	done:
+		push 20h
+		jmp dword ptr[g_TextGlyphCodepointReturn]
+	}
+}
+
+static void InstallTextGlyphCodepointGuard()
+{
+	Memory::CodeCave(TextGlyphCodepointGuardCave, 0x008424FF, 6);
+}
+
 static const char* ExeVerifyResultName(ExeVerifyResult result)
 {
 	switch (result) {
@@ -319,6 +341,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Client::FixMouseWheel();
 		Client::Chinese();
 		Client::LongQuickSlot();
+		InstallTextGlyphCodepointGuard();
 		if (Client::enableMovementKeyRebind) {
 			MovementKeyHook::Hook(true);
 			Client::MovementKeyRebind();

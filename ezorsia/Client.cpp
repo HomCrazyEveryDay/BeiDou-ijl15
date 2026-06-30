@@ -947,9 +947,7 @@ void Client::FixChatPosHook() {
 	// Memory::WriteByte(0x008DD05A + 2, 0x4);
 	// Memory::WriteByte(0x008DD067 + 2, 0x3);
 	// 老方法导致收起聊天框时，显示的信息太偏下了
-	// Disabled: this hook runs while expanding the chat log with ';' and can
-	// leave the client in the E_POINTER error path.
-	// Memory::CodeCave(chatTextPos, 0x008DD06F, 6);
+	Memory::CodeCave(chatTextPos, 0x008DD06F, 6);
 }
 
 void Client::NoPassword() {
