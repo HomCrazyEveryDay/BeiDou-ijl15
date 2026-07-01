@@ -2104,7 +2104,7 @@ KeyValuePair newKeyValuePairs[] = {
     {5566, "游戏文件损坏，无法持有物品。请重新安装游戏后，再重新尝试。"},
     {5567, "你的密码错误，请重试。"},
     {5568, "密码至少要 %d位以上。"},
-    {5571, "该道具丢弃后将无法找回。\r\n不过，可以通过仓库转移给同一账号下的其他角色。\r\n\r\n确定要丢弃该道具吗？"},
+    {5571, "丢弃后无法找回。\r\n可用仓库转给同账号角色。\r\n\r\n确定要丢弃吗？"},
     {5572, "这件物品无法使用"},
     {5573, "未满7岁的人无法购买\r\n该物品。"},
     {5574, "未满7岁的人无法接收\r\n该物品。"},
@@ -2137,6 +2137,13 @@ static bool LocalizeClientMessageString(ZXString<char>* ret)
 	if (strcmp(text, "You got a title!") == 0)
 	{
 		*ret = "获得称号！";
+		return true;
+	}
+
+	if (strcmp(text, "This item cannot be recovered once dropped. However, It is possible to transfer it to a different character on the same account by using the storage system.\r\n\r\nDo you really want to drop this item?") == 0 ||
+		strcmp(text, "This item cannot be recovered once dropped. However, It is possible to transfer it to a different character on the same account by using the storage system.\n\nDo you really want to drop this item?") == 0)
+	{
+		*ret = "丢弃后无法找回。\r\n可用仓库转给同账号角色。\r\n\r\n确定要丢弃吗？";
 		return true;
 	}
 
