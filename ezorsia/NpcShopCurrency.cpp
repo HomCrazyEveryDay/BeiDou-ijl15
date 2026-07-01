@@ -53,33 +53,6 @@ DWORD ReadDwordOrZero(DWORD address)
 	return value;
 }
 
-void ReleaseComObject(DWORD object)
-{
-	if (!object)
-	{
-		return;
-	}
-
-	DWORD vtable = ReadDwordOrZero(object);
-	DWORD release = ReadDwordOrZero(vtable + 8);
-	if (!release)
-	{
-		return;
-	}
-
-	typedef ULONG(__stdcall* ReleaseFunc)(void*);
-	reinterpret_cast<ReleaseFunc>(release)(reinterpret_cast<void*>(object));
-}
-
-void ClearCachedCostIcon()
-{
-	if (g_cachedCostIcon)
-	{
-		ReleaseComObject(g_cachedCostIcon);
-		g_cachedCostIcon = 0;
-	}
-}
-
 DWORD LoadItemIconCanvas(DWORD itemId)
 {
 	DWORD itemInfo = ReadDwordOrZero(kItemInfo);
@@ -109,14 +82,32 @@ DWORD GetOrLoadCostIcon(DWORD costItemId, DWORD fallbackIcon)
 		return fallbackIcon;
 	}
 
-	if (g_cachedCostItemId != costItemId)
+	if (g_cachedCostItemId != costItemId || !g_cachedCostIcon)
 	{
-		ClearCachedCostIcon();
 		g_cachedCostItemId = costItemId;
 		g_cachedCostIcon = LoadItemIconCanvas(costItemId);
 	}
 
 	return g_cachedCostIcon ? g_cachedCostIcon : fallbackIcon;
+}
+
+DWORD __stdcall GetListCostIcon(DWORD shopWindow, DWORD shopItem)
+{
+	DWORD fallbackIcon = 0;
+	__try
+	{
+		fallbackIcon = ReadDwordOrZero(shopWindow + 0xEC);
+		g_currentFallbackIcon = fallbackIcon;
+		DWORD costItemId = ReadDwordOrZero(shopItem + 0x20);
+		g_currentListCostItemId = costItemId;
+		return GetOrLoadCostIcon(costItemId, fallbackIcon);
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		g_currentListCostItemId = 0;
+		g_currentFallbackIcon = fallbackIcon;
+		return fallbackIcon;
+	}
 }
 
 DWORD CallCanvasDraw(DWORD destCanvas, DWORD sourceCanvas, int x, int y, const CanvasVariant& alpha)
@@ -167,25 +158,6 @@ DWORD CallCanvasCopyScaled(DWORD destCanvas, DWORD sourceCanvas, int x, int y, i
 	__except (EXCEPTION_EXECUTE_HANDLER)
 	{
 		return kHResultUnexpected;
-	}
-}
-
-DWORD __stdcall GetListCostIcon(DWORD shopWindow, DWORD shopItem)
-{
-	DWORD fallbackIcon = 0;
-	__try
-	{
-		fallbackIcon = ReadDwordOrZero(shopWindow + 0xEC);
-		g_currentFallbackIcon = fallbackIcon;
-		DWORD costItemId = ReadDwordOrZero(shopItem + 0x20);
-		g_currentListCostItemId = costItemId;
-		return GetOrLoadCostIcon(costItemId, fallbackIcon);
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
-	{
-		g_currentListCostItemId = 0;
-		g_currentFallbackIcon = fallbackIcon;
-		return fallbackIcon;
 	}
 }
 
@@ -262,8 +234,6 @@ __declspec(naked) void DrawListCostIconCave()
 	{
 		push ecx
 		push edx
-		push esi
-		push edi
 		mov eax, dword ptr [ebp + 8]
 		mov dword ptr [ebp - 24h], eax
 		lea edx, [ebp - 138h]
@@ -275,10 +245,11 @@ __declspec(naked) void DrawListCostIconCave()
 		push dword ptr [ebp - 14h]
 		push eax
 		call DrawListCostIcon
-		pop edi
-		pop esi
 		pop edx
 		pop ecx
+		mov esi, ebp
+		sub esi, 128h
+		mov edi, dword ptr [ebp - 1Ch]
 		jmp dword ptr [kDrawListCostIconRetn]
 	}
 }
