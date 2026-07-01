@@ -29,6 +29,7 @@ struct ExeVerifyInfo {
 };
 
 static DWORD g_TextGlyphCodepointReturn = 0x00842505;
+static DWORD g_QuestTextGlyphCodepointReturn = 0x00881C54;
 
 __declspec(naked) void TextGlyphCodepointGuardCave()
 {
@@ -48,6 +49,25 @@ __declspec(naked) void TextGlyphCodepointGuardCave()
 static void InstallTextGlyphCodepointGuard()
 {
 	Memory::CodeCave(TextGlyphCodepointGuardCave, 0x008424FF, 6);
+}
+
+__declspec(naked) void QuestTextGlyphCodepointGuardCave()
+{
+	__asm {
+		mov si, word ptr[eax + ecx * 2]
+		cmp si, 0738Ch
+		jne done
+		mov si, 03E8h
+
+	done:
+		push 20h
+		jmp dword ptr[g_QuestTextGlyphCodepointReturn]
+	}
+}
+
+static void InstallQuestTextGlyphCodepointGuard()
+{
+	Memory::CodeCave(QuestTextGlyphCodepointGuardCave, 0x00881C4E, 6);
 }
 
 static const char* ExeVerifyResultName(ExeVerifyResult result)
@@ -342,6 +362,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Client::Chinese();
 		Client::LongQuickSlot();
 		InstallTextGlyphCodepointGuard();
+		InstallQuestTextGlyphCodepointGuard();
 		if (Client::enableMovementKeyRebind) {
 			MovementKeyHook::Hook(true);
 			Client::MovementKeyRebind();
