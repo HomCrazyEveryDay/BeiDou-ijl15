@@ -2140,6 +2140,12 @@ static bool LocalizeClientMessageString(ZXString<char>* ret)
 		return true;
 	}
 
+	if (strcmp(text, "Unique Equipped Item") == 0)
+	{
+		*ret = "唯一装备道具";
+		return true;
+	}
+
 	if (strcmp(text, "This item cannot be recovered once dropped. However, It is possible to transfer it to a different character on the same account by using the storage system.\r\n\r\nDo you really want to drop this item?") == 0 ||
 		strcmp(text, "This item cannot be recovered once dropped. However, It is possible to transfer it to a different character on the same account by using the storage system.\n\nDo you really want to drop this item?") == 0)
 	{
