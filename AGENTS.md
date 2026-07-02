@@ -1,5 +1,11 @@
 # BeiDou ijl15 工程协作规范
 
+## 汉化改动禁止项
+
+- 汉化默认属于 WZ/XML/IMG 资源工作，不属于 DLL hook 工作。
+- 除非已经用搜索或反汇编证明目标文字硬编码在 `BeiDou.exe` 中，禁止为了汉化修改 `ijl15.dll`、DLL hook 源码或重新发布 DLL。
+- 如果文字来自 `String.wz`、`Item.wz`、`Quest.wz`、客户端 `Data/**/*.img` 等资源，必须回到对应 WZ/XML 源和客户端 IMG 同步流程处理。
+
 ## 工程定位
 
 - 本工程生成客户端加载用的 `ijl15.dll`。
