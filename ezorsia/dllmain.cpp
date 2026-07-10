@@ -9,6 +9,7 @@
 #include "HpMpAlert.h"
 #include "MovementKeyHook.h"
 #include "NpcShopCurrency.h"
+#include "CrashReporter.h"
 #include <wincrypt.h>
 
 enum class ExeVerifyResult {
@@ -321,6 +322,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		// Only expose local compatibility and connection settings through config.ini.
 		// Other patch behavior stays in code defaults.
 		INIReader reader("config.ini");
+		bool enableCrashDump = true;
+		std::string crashDumpType = "mini";
 		if (reader.ParseError() == 0) {
 			// Resolution and IME are local client compatibility settings.
 			Client::m_nGameWidth = reader.GetInteger("general", "width", 1280);
@@ -330,6 +333,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 			Client::ServerIP_AddressFromINI = ResolveToIpv4String(reader.Get("general", "ServerIP_Address", "127.0.0.1"));
 			Client::serverIP_Port = reader.GetInteger("general", "serverIP_Port", 8484);
 			Client::enableMovementKeyRebind = reader.GetBoolean("general", "enableMovementKeyRebind", false);
+			enableCrashDump = reader.GetBoolean("debug", "enableCrashDump", true);
+			crashDumpType = reader.Get("debug", "crashDumpType", "mini");
 		}
 
 		Hook_CreateMutexA(true); //multiclient //ty darter, angel, and alias!
@@ -378,6 +383,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Client::WorldMap();
 		std::cout << "GetModuleFileName hook created" << std::endl;
 		ijl15::CreateHook(); //NMCO::CreateHook();
+		CrashReporter::Install(enableCrashDump, crashDumpType);
 		std::cout << "NMCO hook initialized" << std::endl;
 		break;
 	}
