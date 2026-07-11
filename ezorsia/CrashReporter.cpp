@@ -43,6 +43,21 @@ void WriteHexLine(HANDLE file, const char* key, ULONG_PTR value)
 	WriteLine(file, key, line);
 }
 
+bool TryReadPointer(ULONG_PTR address, ULONG_PTR* value)
+{
+	if (value == nullptr || address == 0) {
+		return false;
+	}
+
+	__try {
+		*value = *reinterpret_cast<ULONG_PTR*>(address);
+		return true;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return false;
+	}
+}
+
 bool GetExeDirectory(WCHAR dir[MAX_PATH])
 {
 	if (GetModuleFileNameW(nullptr, dir, MAX_PATH) == 0) {
@@ -124,6 +139,66 @@ void WriteModuleInfo(HANDLE file, const char* keyPrefix, void* address)
 	WriteHexLine(file, (std::string(keyPrefix) + "ModuleOffset").c_str(), target >= moduleBase ? target - moduleBase : 0);
 }
 
+bool DescribeModuleAddress(char* output, size_t outputSize, ULONG_PTR address)
+{
+	if (output == nullptr || outputSize == 0) {
+		return false;
+	}
+
+	HMODULE module = nullptr;
+	if (!GetModuleHandleExW(
+		GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+		reinterpret_cast<LPCWSTR>(address),
+		&module)) {
+		output[0] = '\0';
+		return false;
+	}
+
+	WCHAR modulePath[MAX_PATH]{};
+	GetModuleFileNameW(module, modulePath, MAX_PATH);
+
+	const WCHAR* moduleName = modulePath;
+	for (const WCHAR* cursor = modulePath; *cursor != L'\0'; cursor++) {
+		if (*cursor == L'\\' || *cursor == L'/') {
+			moduleName = cursor + 1;
+		}
+	}
+
+	char moduleNameUtf8[MAX_PATH * 3]{};
+	WideCharToMultiByte(CP_UTF8, 0, moduleName, -1, moduleNameUtf8, sizeof(moduleNameUtf8), nullptr, nullptr);
+
+	const ULONG_PTR moduleBase = reinterpret_cast<ULONG_PTR>(module);
+#ifdef _WIN64
+	StringCchPrintfA(
+		output,
+		outputSize,
+		"%s+0x%llX",
+		moduleNameUtf8,
+		static_cast<unsigned long long>(address >= moduleBase ? address - moduleBase : 0));
+#else
+	StringCchPrintfA(
+		output,
+		outputSize,
+		"%s+0x%lX",
+		moduleNameUtf8,
+		static_cast<unsigned long>(address >= moduleBase ? address - moduleBase : 0));
+#endif
+	return true;
+}
+
+void WriteExceptionParameters(HANDLE file, const EXCEPTION_RECORD* record)
+{
+	if (record == nullptr) {
+		return;
+	}
+
+	for (DWORD i = 0; i < record->NumberParameters && i < EXCEPTION_MAXIMUM_PARAMETERS; i++) {
+		char key[64]{};
+		StringCchPrintfA(key, ARRAYSIZE(key), "exceptionInformation%lu", i);
+		WriteHexLine(file, key, record->ExceptionInformation[i]);
+	}
+}
+
 void WriteContext(HANDLE file, const CONTEXT* context)
 {
 	if (context == nullptr) {
@@ -153,6 +228,60 @@ void WriteContext(HANDLE file, const CONTEXT* context)
 	WriteHexLine(file, "RIP", context->Rip);
 	WriteHexLine(file, "EFLAGS", context->EFlags);
 #endif
+}
+
+void WriteStackSnapshot(HANDLE file, const CONTEXT* context)
+{
+	if (context == nullptr) {
+		return;
+	}
+
+#if defined(_M_IX86)
+	ULONG_PTR stack = context->Esp;
+#elif defined(_M_X64)
+	ULONG_PTR stack = context->Rsp;
+#else
+	ULONG_PTR stack = 0;
+#endif
+
+	if (stack == 0) {
+		return;
+	}
+
+	WriteText(file, "stackSnapshot=begin\r\n");
+	for (int i = 0; i < 96; i++) {
+		const ULONG_PTR address = stack + static_cast<ULONG_PTR>(i * sizeof(ULONG_PTR));
+		ULONG_PTR value = 0;
+		if (!TryReadPointer(address, &value)) {
+			break;
+		}
+
+		char moduleDescription[MAX_PATH * 3]{};
+		DescribeModuleAddress(moduleDescription, ARRAYSIZE(moduleDescription), value);
+
+		char line[512]{};
+#ifdef _WIN64
+		StringCchPrintfA(
+			line,
+			ARRAYSIZE(line),
+			"stack%02d=0x%016llX:0x%016llX %s\r\n",
+			i,
+			static_cast<unsigned long long>(address),
+			static_cast<unsigned long long>(value),
+			moduleDescription);
+#else
+		StringCchPrintfA(
+			line,
+			ARRAYSIZE(line),
+			"stack%02d=0x%08lX:0x%08lX %s\r\n",
+			i,
+			static_cast<unsigned long>(address),
+			static_cast<unsigned long>(value),
+			moduleDescription);
+#endif
+		WriteText(file, line);
+	}
+	WriteText(file, "stackSnapshot=end\r\n");
 }
 
 void WriteTextReport(const WCHAR* textPath, const WCHAR* dumpPath, EXCEPTION_POINTERS* exceptionInfo, BOOL dumpWritten)
@@ -191,9 +320,11 @@ void WriteTextReport(const WCHAR* textPath, const WCHAR* dumpPath, EXCEPTION_POI
 		WriteHexLine(file, "exceptionFlags", record->ExceptionFlags);
 		WriteHexLine(file, "exceptionAddress", reinterpret_cast<ULONG_PTR>(record->ExceptionAddress));
 		WriteModuleInfo(file, "fault", record->ExceptionAddress);
+		WriteExceptionParameters(file, record);
 	}
 
 	WriteContext(file, exceptionInfo != nullptr ? exceptionInfo->ContextRecord : nullptr);
+	WriteStackSnapshot(file, exceptionInfo != nullptr ? exceptionInfo->ContextRecord : nullptr);
 	CloseHandle(file);
 }
 
