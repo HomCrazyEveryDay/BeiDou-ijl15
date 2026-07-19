@@ -7,7 +7,11 @@ constexpr DWORD kHpAlertOffset = 0x80;
 constexpr DWORD kMpAlertOffset = 0x84;
 constexpr DWORD kClientSocketPtr = 0x00BE7914;
 constexpr DWORD kProcessPacketAddr = 0x004965F1;
+constexpr DWORD kMobPoolPtr = 0x00BEBFA4;
+constexpr DWORD kFindMobAddr = 0x00441AE8;
+constexpr DWORD kShowMobDamageAddr = 0x006691D3;
 constexpr WORD kOpcodeSetHpMpAlert = 0x1000;
+constexpr WORD kOpcodeShowMobDamage = 0x1001;
 struct COutPacket {
     int Loopback;
     union {
@@ -32,6 +36,10 @@ struct CInPacket {
 };
 using SendPacket_t = void(__fastcall*)(void* pThis, void* edx, COutPacket* packet);
 static SendPacket_t g_SendPacket = reinterpret_cast<SendPacket_t>(0x0049637B);
+using FindMob_t = void* (__thiscall*)(void* pThis, int objectId);
+static FindMob_t g_FindMob = reinterpret_cast<FindMob_t>(kFindMobAddr);
+using ShowMobDamage_t = void(__thiscall*)(void* pThis, int damage, int lineIndex, int extra, int compact);
+static ShowMobDamage_t g_ShowMobDamage = reinterpret_cast<ShowMobDamage_t>(kShowMobDamageAddr);
 static bool TryReadDword(DWORD address, DWORD& out) {
     __try {
         out = *reinterpret_cast<DWORD*>(address);
@@ -45,6 +53,16 @@ static unsigned char ClampAlert(int value) {
     if (value < 0) return 0;
     if (value > 20) return 20;
     return static_cast<unsigned char>(value);
+}
+static unsigned short ReadUInt16LE(const unsigned char* data) {
+    return static_cast<unsigned short>(data[0] | (data[1] << 8));
+}
+static int ReadInt32LE(const unsigned char* data) {
+    return static_cast<int>(
+        static_cast<unsigned int>(data[0]) |
+        (static_cast<unsigned int>(data[1]) << 8) |
+        (static_cast<unsigned int>(data[2]) << 16) |
+        (static_cast<unsigned int>(data[3]) << 24));
 }
 static void SendHpMpAlertFromStatusBar() {
     DWORD statusBar = 0;
@@ -108,6 +126,46 @@ static void HandleHpMpAlertPacket(CInPacket* packet) {
         return;
     }
 }
+static bool HandleShowMobDamagePacket(CInPacket* packet) {
+    if (packet == nullptr) {
+        return false;
+    }
+    __try {
+        if (packet->Data == nullptr || packet->Size < 16) {
+            return false;
+        }
+        const unsigned char* data = reinterpret_cast<const unsigned char*>(packet->Data);
+        const unsigned short opcode = ReadUInt16LE(data + 4);
+        if (opcode != kOpcodeShowMobDamage) {
+            return false;
+        }
+
+        const int objectId = ReadInt32LE(data + 6);
+        const int damage = ReadInt32LE(data + 10);
+        const bool critical = data[14] != 0;
+        const int lineIndex = data[15] & 0x0F;
+
+        if (damage <= 0) {
+            return true;
+        }
+
+        DWORD mobPool = 0;
+        if (!TryReadDword(kMobPoolPtr, mobPool) || mobPool == 0) {
+            return true;
+        }
+
+        void* mob = g_FindMob(reinterpret_cast<void*>(mobPool), objectId);
+        if (mob == nullptr) {
+            return true;
+        }
+
+        // 006691D3's third argument selects the alternate damage number resource used by critical hits.
+        g_ShowMobDamage(mob, damage, lineIndex, critical ? 1 : 0, 0);
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return true;
+    }
+}
 using SaveGlobal_t = void(__fastcall*)(void* pThis, void* edx);
 static SaveGlobal_t s_SaveGlobal = reinterpret_cast<SaveGlobal_t>(kSaveGlobalAddr);
 static void __fastcall SaveGlobal_Hook(void* pThis, void* edx) {
@@ -117,6 +175,9 @@ static void __fastcall SaveGlobal_Hook(void* pThis, void* edx) {
 using ProcessPacket_t = void(__fastcall*)(void* pThis, void* edx, CInPacket* packet);
 static ProcessPacket_t s_ProcessPacket = reinterpret_cast<ProcessPacket_t>(kProcessPacketAddr);
 static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* packet) {
+    if (HandleShowMobDamagePacket(packet)) {
+        return;
+    }
     HandleHpMpAlertPacket(packet);
     s_ProcessPacket(pThis, edx, packet);
 }
