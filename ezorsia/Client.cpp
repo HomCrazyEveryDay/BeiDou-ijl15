@@ -147,6 +147,15 @@ void Client::UpdateGameStartup() {
 	unsigned char bdClientSignature[] = { 0x68, 0x42, 0x44, 0x16, 0x00 };
 	Memory::WriteByteArray(0x005F6BCD, bdClientSignature, sizeof(bdClientSignature));
 
+	// Ice/Lightning Chain Lightning (2221006) normally bounces only in the facing direction.
+	// Keep serial bounces, but search both sides within 180px and match the vertical range.
+	Memory::WriteInt(0x00955EF1, 180);
+	Memory::CodeCave(chainLightningBidirectionalBounceRange, 0x0067889A, 9);
+	unsigned char chainLightningBounceYMax[] = { 0x8B, 0x4D, 0x18, 0x03, 0xCF, 0x90 };
+	Memory::WriteByteArray(0x006788EE, chainLightningBounceYMax, sizeof(chainLightningBounceYMax));
+	unsigned char chainLightningBounceYMin[] = { 0x2B, 0x7D, 0x18, 0x90, 0x90, 0x90 };
+	Memory::WriteByteArray(0x006788F6, chainLightningBounceYMin, sizeof(chainLightningBounceYMin));
+
 	//optional non-resolution related stuff
 	if (useTubi) { Memory::FillBytes(0x00485C32, 0x90, 2); }
 

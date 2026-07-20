@@ -1694,6 +1694,36 @@ __declspec(naked) void faceHairCave()
 	}
 }
 
+// Ice/Lightning Chain Lightning (2221006) shares this client bounce helper with other skills.
+// Gate on its caller and 180px argument so unrelated callers keep the original one-way search.
+DWORD chainLightningBounceDirectionRet = 0x006788A3;
+DWORD chainLightningBounceRectRet = 0x006788EE;
+__declspec(naked) void chainLightningBidirectionalBounceRange()
+{
+	__asm {
+		cmp dword ptr[ebp + 4], 0955F0Dh
+		jne label_original
+		cmp dword ptr[ebp + 18h], 0B4h
+		je label_bidirectional
+
+	label_original:
+		cmp dword ptr[ebp + 14h], 0
+		mov esi, [eax]
+		mov edi, [eax + 4]
+		jmp chainLightningBounceDirectionRet
+
+	label_bidirectional:
+		mov esi, [eax]
+		mov edi, [eax + 4]
+		mov ecx, esi
+		sub ecx, [ebp + 18h]
+		mov [ebp - 4], ecx
+		mov eax, esi
+		add eax, [ebp + 18h]
+		jmp chainLightningBounceRectRet
+	}
+}
+
 DWORD canSendPkgTimeCaveRtn = 0x00485C32;
 __declspec(naked) void canSendPkgTimeCave()
 {
