@@ -155,7 +155,9 @@ void Client::UpdateGameStartup() {
 	Memory::WriteByteArray(0x006788EE, chainLightningBounceYMax, sizeof(chainLightningBounceYMax));
 	unsigned char chainLightningBounceYMin[] = { 0x2B, 0x7D, 0x18, 0x90, 0x90, 0x90 };
 	Memory::WriteByteArray(0x006788F6, chainLightningBounceYMin, sizeof(chainLightningBounceYMin));
-
+	// Big Bang stays on the local keydown attack path; the cave finishes it immediately after key press starts the charge state.
+	Memory::CodeCave(bigBangCastOnKeyDown, 0x0096B073, 5);
+	Memory::CodeCave(bigBangForceFullCharge, 0x0095C0FC, 5);
 	//optional non-resolution related stuff
 	if (useTubi) { Memory::FillBytes(0x00485C32, 0x90, 2); }
 

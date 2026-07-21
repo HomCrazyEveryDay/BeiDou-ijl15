@@ -1724,6 +1724,53 @@ __declspec(naked) void chainLightningBidirectionalBounceRange()
 	}
 }
 
+DWORD bigBangCastOnKeyDownRet = 0x0096B078;
+DWORD bigBangStartSkillEffect = 0x0093640B;
+DWORD bigBangReleaseSkill = 0x0095BEDF;
+__declspec(naked) void bigBangCastOnKeyDown()
+{
+	__asm {
+		mov eax, bigBangStartSkillEffect
+		call eax
+		cmp dword ptr[ebp - 10h], 0205D29h
+		je bigBangKeyDown_release
+		cmp dword ptr[ebp - 10h], 021E3C9h
+		je bigBangKeyDown_release
+		cmp dword ptr[ebp - 10h], 0236A69h
+		jne bigBangKeyDown_done
+
+	bigBangKeyDown_release:
+		mov ecx, esi
+		mov eax, bigBangReleaseSkill
+		call eax
+
+	bigBangKeyDown_done:
+		jmp bigBangCastOnKeyDownRet
+	}
+}
+
+DWORD bigBangForceFullChargeRet = 0x0095C101;
+__declspec(naked) void bigBangForceFullCharge()
+{
+	__asm {
+		mov eax, [edi]
+		cmp eax, 0205D29h
+		je bigBangCharge_full
+		cmp eax, 021E3C9h
+		je bigBangCharge_full
+		cmp eax, 0236A69h
+		je bigBangCharge_full
+
+		push dword ptr[ebp - 4]
+		mov ecx, esi
+		jmp bigBangForceFullChargeRet
+
+	bigBangCharge_full:
+		push 03E8h
+		mov ecx, esi
+		jmp bigBangForceFullChargeRet
+	}
+}
 DWORD canSendPkgTimeCaveRtn = 0x00485C32;
 __declspec(naked) void canSendPkgTimeCave()
 {
