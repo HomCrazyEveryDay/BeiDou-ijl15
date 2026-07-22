@@ -6,6 +6,7 @@
 #include "ReplacementFuncs.h"
 #include <comutil.h>
 #include "BossHP.h"
+#include "AranComboUi.h"
 #include "HpMpAlert.h"
 #include "SelectCharMacFix.h"
 #include "MovementKeyHook.h"
@@ -397,6 +398,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Client::NoPassword();
 		NpcShopCurrency::Install();
 		Client::MoreHook();
+		AranComboUi::Install();
 		BossHP::Hook();
 		Client::WorldMap();
 		Client::RefreshRate();

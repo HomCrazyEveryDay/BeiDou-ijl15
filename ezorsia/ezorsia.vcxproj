@@ -173,6 +173,7 @@
     <ClInclude Include="AddyLocations.h">
       <FileType>CppHeader</FileType>
     </ClInclude>
+    <ClInclude Include="AranComboUi.h" />
     <ClInclude Include="BossHP.h" />
     <ClInclude Include="CrashReporter.h" />
     <ClInclude Include="HpMpAlert.h" />
@@ -216,6 +217,7 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="AranComboUi.cpp" />
     <ClCompile Include="BossHP.cpp" />
     <ClCompile Include="CrashReporter.cpp" />
     <ClCompile Include="HpMpAlert.cpp" />
