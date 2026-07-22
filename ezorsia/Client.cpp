@@ -8,7 +8,8 @@
 /*
 Client patch release defaults:
 - config.ini may override IME, resolution, movement-key rebind, and crash dump settings.
-- Server endpoint and sensitive gameplay/login/chat policies are fixed in code.
+- Server endpoint is fixed in code, with a config-gated local/LAN override for testing only.
+- Sensitive gameplay/login/chat policies are fixed in code.
 */
 int Client::m_nGameHeight = 720;
 int Client::m_nGameWidth = 1280;

@@ -257,6 +257,67 @@ static ExeVerifyResult VerifyCurrentExe(ExeVerifyInfo& info)
 	return diff == 0 ? ExeVerifyResult::Ok : ExeVerifyResult::HashMismatch;
 }
 
+static bool ParseIpv4Address(const std::string& value, unsigned int parts[4])
+{
+	char tail = '\0';
+	const int matched = sscanf_s(value.c_str(), "%u.%u.%u.%u%c", &parts[0], &parts[1], &parts[2], &parts[3], &tail, 1);
+	if (matched != 4) {
+		return false;
+	}
+
+	for (int i = 0; i < 4; i++) {
+		if (parts[i] > 255) {
+			return false;
+		}
+	}
+	return true;
+}
+
+static bool IsAllowedLocalEndpointAddress(const std::string& value, std::string& normalized)
+{
+	if (_stricmp(value.c_str(), "localhost") == 0) {
+		normalized = "127.0.0.1";
+		return true;
+	}
+
+	unsigned int parts[4]{};
+	if (!ParseIpv4Address(value, parts)) {
+		return false;
+	}
+
+	const bool loopback = parts[0] == 127;
+	const bool private10 = parts[0] == 10;
+	const bool private172 = parts[0] == 172 && parts[1] >= 16 && parts[1] <= 31;
+	const bool private192 = parts[0] == 192 && parts[1] == 168;
+	if (!loopback && !private10 && !private172 && !private192) {
+		return false;
+	}
+
+	normalized = value;
+	return true;
+}
+
+static void ApplyLocalEndpointOverride(const INIReader& reader)
+{
+	if (!reader.GetBoolean("dev", "enableLocalEndpointOverride", false)) {
+		return;
+	}
+
+	std::string endpoint = reader.Get("dev", "ServerIP_Address", "127.0.0.1");
+	std::string normalizedEndpoint;
+	if (!IsAllowedLocalEndpointAddress(endpoint, normalizedEndpoint)) {
+		return;
+	}
+
+	const long port = reader.GetInteger("dev", "serverIP_Port", Client::serverIP_Port);
+	if (port <= 0 || port > 65535) {
+		return;
+	}
+
+	Client::ServerIP_Address = normalizedEndpoint;
+	Client::serverIP_Port = static_cast<int>(port);
+}
+
 void CreateConsole() {
 	AllocConsole();
 	FILE* stream;
@@ -277,7 +338,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 
 		//CreateConsole();	//console for devs, use this to log stuff if you want
 
-		// config.ini only exposes local compatibility/debug settings; server endpoint is locked in Client.cpp.
+		// config.ini exposes compatibility/debug settings plus an opt-in local/LAN endpoint override for testing.
 		// Other patch behavior stays in code defaults.
 		INIReader reader("config.ini");
 		bool enableCrashDump = true;
@@ -290,6 +351,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 			Client::enableMovementKeyRebind = reader.GetBoolean("general", "enableMovementKeyRebind", false);
 			enableCrashDump = reader.GetBoolean("debug", "enableCrashDump", true);
 			crashDumpType = reader.Get("debug", "crashDumpType", "mini");
+			ApplyLocalEndpointOverride(reader);
 		}
 
 		Hook_CreateMutexA(true); //multiclient //ty darter, angel, and alias!
