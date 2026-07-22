@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 class Client
 {
 public:
@@ -17,6 +17,8 @@ public:
 	static void NoPassword();
 	static void MoreHook();
 	static void WorldMap();
+	static void RefreshRate();
+	static void DeleteChar();
 	static const int m_nIGCipherHash = 0XC65053F2;
 	static int m_nGameHeight;
 	static int m_nGameWidth;

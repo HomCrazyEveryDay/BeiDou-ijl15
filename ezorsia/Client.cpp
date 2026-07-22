@@ -1,8 +1,9 @@
-#include "stdafx.h"
+ï»¿#include "stdafx.h"
 #include "AddyLocations.h"
 #include "codecaves.h"
 #include "FixIme.h"
 #include "FixBuddy.h"
+#include "MapleClientCollectionTypes/ZXString.h"
 
 /*
 Client patch release defaults:
@@ -105,9 +106,9 @@ void Client::UpdateGameStartup() {
 	//Memory::CodeCave(cc0x009F6F36, dw0x009F6F36, dw0x009F6F36Nops); //run from packed client //skip	//sub_9F6F27
 	//Memory::CodeCave(cc0x009F6F5C, dw0x009F6F5C, dw0x009F6F5CNops); //run from packed client //skip	//near closesocket down
 
-	//Memory::CodeCave(cc0x009F7CFA, dw0x009F7CFA, dw0x009F7CFANops); //run from packed client //skip //sub_9F7CE1 
+	//Memory::CodeCave(cc0x009F7CFA, dw0x009F7CFA, dw0x009F7CFANops); //run from packed client //skip //sub_9F7CE1
 	//Memory::CodeCave(cc0x009F7D83, dw0x009F7D83, dw0x009F7D83Nops); //run from packed client //long jump //??CWvsApp::InitializeInput
-	//Memory::CodeCave(cc0x009F81FB, dw0x009F81FB, dw0x009F81FBNops); //run from packed client //skip //sub_9F7CE1 
+	//Memory::CodeCave(cc0x009F81FB, dw0x009F81FB, dw0x009F81FBNops); //run from packed client //skip //sub_9F7CE1
 
 	//Memory::CodeCave(cc0x009F84E9, dw0x009F84E9, dw0x009F84E9Nops); //run from packed client //skip //sub_9F84D0
 	//Memory::CodeCave(cc0x009F8AD4, dw0x009F8AD4, dw0x009F8AD4Nops); //run from packed client //skip
@@ -163,19 +164,19 @@ void Client::UpdateGameStartup() {
 	//optional non-resolution related stuff
 	if (useTubi) { Memory::FillBytes(0x00485C32, 0x90, 2); }
 
-	Memory::WriteInt(0x0077E055 + 1, 2147483646); // Îï¹¥PAD Ïà¹Ø¾ßÌå²»Ã÷£¬Ä¬ÈÏÖµ1999£¬int 4×Ö½Ú
-	Memory::WriteInt(0x0077E12F + 1, 2147483646); // ¼¼ÄÜ Ïà¹Ø¾ßÌå²»Ã÷£¬Ä¬ÈÏÖµ1999£¬int 4×Ö½Ú
-	Memory::WriteInt(0x008C3304 + 1, setDamageCap); // Îï¹¥Ãæ°å£¬Ä¬ÈÏÖµ199999£¬int 4×Ö½Ú
-	Memory::WriteInt(0x0077E215 + 1, setMAtkCap); // Ä§¹¥Ãæ°å£¬int 4×Ö½Ú
-	Memory::WriteInt(0x00780620 + 1, setMAtkCap); // Ä§¹¥Ãæ°å£¬int 4×Ö½Ú
-	Memory::WriteInt(0x007806D0 + 1, setAccCap); // ÃüÖĞ£¬Ä¬ÈÏ999
-	Memory::WriteInt(0x00780702 + 1, setAvdCap); // »Ø±Ü£¬Ä¬ÈÏ999
-	Memory::WriteInt(0x0078FF5F + 1, 2147483646); // ¼ÆËãÎïÀíÉËº¦Ïà¹Ø£¬ÒâÒå²»Ã÷£¬Ä¬ÈÏ1999£¬int 4×Ö½Ú
-	Memory::WriteInt(0x0079166C + 1, 2147483646); // ¼ÆËãÄ§¹¥MDamageµÄ£¬Ä¬ÈÏÖµ1999£¬int 4×Ö½Ú£¬×¢Òâ£ºÕâÀï²»¸ÄµÄ»°£¬´ò¹ÖÊä³ö¼ÆËãµÄÄ§·¨ÉËº¦¾ÍÊÇ°´1999¼ÆËãµÄ
-	Memory::WriteInt(0x00791CD5 + 1, 2147483646); // ¼ÆËãÄ§¹¥MDamageµÄ£¬Ä¬ÈÏÖµ1999£¬int 4×Ö½Ú£¬×¢Òâ£ºÕâÀï²»¸ÄËÆºõÒ²²»Ó°ÏìÊä³ö¼ÆËã
-	Memory::WriteInt(0x0078E061 + 1, 2147483646); //CalcDamage::PDamage 999£¬ÒâÒå²»Ã÷£¬int 4×Ö½Ú
-	Memory::WriteInt(0x0078E67D + 1, 2147483646); //CalcDamage::PDamage 999£¬ÒâÒå²»Ã÷£¬int 4×Ö½Ú
-	Memory::WriteInt(0x007918FC + 1, 2147483646); //CalcDamage::MDamage 999£¬ÒâÒå²»Ã÷£¬int 4×Ö½Ú
+	Memory::WriteInt(0x0077E055 + 1, 2147483646); // ç‰©æ”»PAD ç›¸å…³å…·ä½“ä¸æ˜ï¼Œé»˜è®¤å€¼1999ï¼Œint 4å­—èŠ‚
+	Memory::WriteInt(0x0077E12F + 1, 2147483646); // æŠ€èƒ½ ç›¸å…³å…·ä½“ä¸æ˜ï¼Œé»˜è®¤å€¼1999ï¼Œint 4å­—èŠ‚
+	Memory::WriteInt(0x008C3304 + 1, setDamageCap); // ç‰©æ”»é¢æ¿ï¼Œé»˜è®¤å€¼199999ï¼Œint 4å­—èŠ‚
+	Memory::WriteInt(0x0077E215 + 1, setMAtkCap); // é­”æ”»é¢æ¿ï¼Œint 4å­—èŠ‚
+	Memory::WriteInt(0x00780620 + 1, setMAtkCap); // é­”æ”»é¢æ¿ï¼Œint 4å­—èŠ‚
+	Memory::WriteInt(0x007806D0 + 1, setAccCap); // å‘½ä¸­ï¼Œé»˜è®¤999
+	Memory::WriteInt(0x00780702 + 1, setAvdCap); // å›é¿ï¼Œé»˜è®¤999
+	Memory::WriteInt(0x0078FF5F + 1, 2147483646); // è®¡ç®—ç‰©ç†ä¼¤å®³ç›¸å…³ï¼Œæ„ä¹‰ä¸æ˜ï¼Œé»˜è®¤1999ï¼Œint 4å­—èŠ‚
+	Memory::WriteInt(0x0079166C + 1, 2147483646); // è®¡ç®—é­”æ”»MDamageçš„ï¼Œé»˜è®¤å€¼1999ï¼Œint 4å­—èŠ‚ï¼Œæ³¨æ„ï¼šè¿™é‡Œä¸æ”¹çš„è¯ï¼Œæ‰“æ€ªè¾“å‡ºè®¡ç®—çš„é­”æ³•ä¼¤å®³å°±æ˜¯æŒ‰1999è®¡ç®—çš„
+	Memory::WriteInt(0x00791CD5 + 1, 2147483646); // è®¡ç®—é­”æ”»MDamageçš„ï¼Œé»˜è®¤å€¼1999ï¼Œint 4å­—èŠ‚ï¼Œæ³¨æ„ï¼šè¿™é‡Œä¸æ”¹ä¼¼ä¹ä¹Ÿä¸å½±å“è¾“å‡ºè®¡ç®—
+	Memory::WriteInt(0x0078E061 + 1, 2147483646); //CalcDamage::PDamage 999ï¼Œæ„ä¹‰ä¸æ˜ï¼Œint 4å­—èŠ‚
+	Memory::WriteInt(0x0078E67D + 1, 2147483646); //CalcDamage::PDamage 999ï¼Œæ„ä¹‰ä¸æ˜ï¼Œint 4å­—èŠ‚
+	Memory::WriteInt(0x007918FC + 1, 2147483646); //CalcDamage::MDamage 999ï¼Œæ„ä¹‰ä¸æ˜ï¼Œint 4å­—èŠ‚
 
 	Memory::WriteDouble(0x00AFE8A0, setAtkOutCap);	// Êä³öÏÔÊ¾ÉÏÏŞ£¬Ä¬ÈÏ199999£¬double 8×Ö½Ú
 	Memory::WriteInt(0x0078E543 + 2, (DWORD)&setSnipeAtkOutCap); // Snipe uses this display cap instead of the raised global cap.
@@ -183,11 +184,13 @@ void Client::UpdateGameStartup() {
 	Memory::WriteInt(0x008C4286 + 1, speedMovementCap); //set speed cap //ty ronan
 	Memory::WriteInt(0x0094D91E + 1, speedMovementCap); //set speed cap //ty ronan
 
-	//ÒÔÏÂÓÅ»¯×Ö·û´®ÏÔÊ¾
-	Memory::PatchNop(0x008E4252, 2);	//ĞŞ¸´µÀ¾ß½éÉÜÖĞ£¬ÖĞÎÄ»»ĞĞµÄÎÊÌâ
-	Memory::CodeCave(skillToolTipNew, 0x008F383E, 6);	//ĞŞ¸´¼¼ÄÜÃèÊöÖĞÎÄ»»ĞĞÂÒÂëµÄÎÊÌâ
+	//ä»¥ä¸‹ä¼˜åŒ–å­—ç¬¦ä¸²æ˜¾ç¤º
+	Memory::PatchNop(0x008E4252, 2);	//ä¿®å¤é“å…·ä»‹ç»ä¸­ï¼Œä¸­æ–‡æ¢è¡Œçš„é—®é¢˜
+	//ç¾¤å†…ä¸€è‡´å»ºè®®ç§»é™¤å½“å‰åŠŸèƒ½
+	//Memory::PatchNop(0x008AD21F, 5);	//ç§»é™¤ä¸€è½¬æŠ€èƒ½ç‚¹ä¸è¶³æ£€æµ‹
+	Memory::CodeCave(skillToolTipNew, 0x008F383E, 6);	//ä¿®å¤æŠ€èƒ½æè¿°ä¸­æ–‡æ¢è¡Œä¹±ç çš„é—®é¢˜
 
-	// ±¨´íĞÅÏ¢ÖĞÎÄ
+	// æŠ¥é”™ä¿¡æ¯ä¸­æ–‡
 	Memory::WriteByte(0x0068DE1F + 1, 0x86);
 	Memory::WriteByte(0x0068DFBD + 1, 0x86);
 	Memory::WriteByte(0x0068E0E7 + 1, 0x86);
@@ -272,9 +275,9 @@ void Client::UpdateResolution() {
 	Memory::WriteInt(0x009F6E99 + 1, m_nGameHeight);//push 600
 	Memory::WriteInt(0x009F6EA0 + 1, m_nGameWidth);	//push 800 ; StringPool#1162 (MapleStoryClass)
 
-	Memory::WriteInt(0x007CF48F + 1, m_nGameHeight);//mov eax,600 ; 
+	Memory::WriteInt(0x007CF48F + 1, m_nGameHeight);//mov eax,600 ;
 	Memory::WriteInt(0x007CF49D + 1, m_nGameWidth);	//mov eax,800 ; IWzVector2D::RelMove
-	Memory::WriteInt(0x008A12F4 + 1, m_nGameHeight);//mov eax,600 ; 
+	Memory::WriteInt(0x008A12F4 + 1, m_nGameHeight);//mov eax,600 ;
 	Memory::WriteInt(0x008A1302 + 1, m_nGameWidth);	//mov eax,800 ; IWzVector2D::RelMove
 	Memory::WriteInt(0x007F257E + 1, m_nGameHeight);//push 600
 	Memory::WriteInt(0x007F258F + 1, m_nGameWidth);	//push 800 ; CWnd::CreateWnd
@@ -385,11 +388,11 @@ void Client::UpdateResolution() {
 	Memory::WriteInt(0x008DEB93 + 1, m_nGameHeight - 20);	//push 580
 	Memory::WriteInt(0x008DEE2F + 1, m_nGameHeight - 20);	//push 580
 	Memory::WriteInt(0x008D2765 + 1, m_nGameHeight - 19);	//push 581
-	Memory::WriteInt(0x008DA11C + 1, m_nGameHeight - 19);	//push 581 ÁÙÊ±¾­ÑéÌõ
+	Memory::WriteInt(0x008DA11C + 1, m_nGameHeight - 19);	//push 581 ä¸´æ—¶ç»éªŒæ¡
 	Memory::WriteInt(0x008D29B4 + 1, m_nGameHeight - 19);	//push 581
 	Memory::WriteInt(0x008D8BFE + 1, m_nGameHeight - 19);	//push 581
 	Memory::WriteInt(0x008D937E + 1, m_nGameHeight - 19);	//push 581 //008D9373  move mana bar outline? //ty rynyan
-	Memory::WriteInt(0x008D9AC9 + 1, m_nGameHeight - 19);	//push  
+	Memory::WriteInt(0x008D9AC9 + 1, m_nGameHeight - 19);	//push
 	Memory::WriteInt(0x008D1D50 + 1, m_nGameHeight - 22);	//push 578
 	Memory::WriteInt(0x008D1D55 + 1, m_nGameWidth);	//push 800
 	Memory::WriteInt(0x008D1FF4 + 1, m_nGameHeight - 22);	//push 578
@@ -563,7 +566,7 @@ void Client::UpdateResolution() {
 
 	Memory::WriteInt(0x0052418C + 1, m_nGameHeight - 102 - 10);//party quest available pop-up y axis		my first address find own my own
 
-	Memory::WriteInt(0x00523092 + 1, 423);// ½»Ò×ÉêÇëÆøÅİx×ø±ê
+	Memory::WriteInt(0x00523092 + 1, 423);// äº¤æ˜“ç”³è¯·æ°”æ³¡xåæ ‡
 	Memory::WriteInt(0x0052336D + 1, m_nGameWidth - 942 + 26 + 37 + 62);//various requests like party, guild, friend, family, invites that pop up //Party Invite
 	Memory::WriteInt(0x00522E79 + 1, m_nGameWidth - 942 + 26 + 37 + 62);//various requests like party, guild, friend, family, invites that pop up //friend request
 	Memory::WriteInt(0x00522C87 + 1, m_nGameWidth - 942 + 26 + 37 + 62);//various requests like party, guild, friend, family, invites that pop up	// Guild Invite
@@ -588,7 +591,7 @@ void Client::UpdateResolution() {
 	//Memory::WriteInt(0x008D40CE + 1, m_nGameHeight - 81);//smol buttoms right of chat box (all - 85 ones)
 
 	//Memory::CodeCave(PositionBossBarY2, 0x007E169B, 6);//boss bar, check for server msg, looking in wrong address...
-	//if (serverMessageExists != 0) 
+	//if (serverMessageExists != 0)
 	//{
 	//	Memory::CodeCave(PositionBossBarY, dwBossBar, 7);//boss bar normal position without server msg
 	//}
@@ -607,8 +610,8 @@ void Client::UpdateResolution() {
 
 	myHeight = (Client::m_nGameHeight - 600) / 2;//cash shop fix for frame area	//recalc offsets
 	myWidth = (Client::m_nGameWidth - 800) / 2;//cash shop fix for frame area		//recalc offsets
-	
-	// ÏÖ½ğÉÌ³Ç¾ÓÖĞ
+
+	// ç°é‡‘å•†åŸå±…ä¸­
 	nHeightOfsetted1 = 316; nWidthOfsetted1 = 256; nTopOfsetted1 = 0 + myHeight; nLeftOfsetted1 = 0 + myWidth; //parameters for fix1
 	Memory::CodeCave(CashShopFix1, dwCashFix1, dwCashFix1NOPs);
 	nHeightOfsetted2 = 104; nWidthOfsetted2 = 256; nTopOfsetted2 = 318 + myHeight; nLeftOfsetted2 = -1 + myWidth; //parameters for fix2
@@ -631,7 +634,7 @@ void Client::UpdateResolution() {
 	nHeightOfsettedPrev = 165 + myHeight; nWidthOfsettedPrev = 212 + myWidth; nTopOfsettedPrev = 40 + myHeight; nLeftOfsettedPrev = 24 + myWidth; //parameters for fix cash preview
 	Memory::CodeCave(CashShopFixPrev, dwCashFixPrev, dwCashFixPrevNOPs); //cash shop preview fix
 
-	// ½»Ò×ÖĞĞÄ¾ÓÖĞ
+	// äº¤æ˜“ä¸­å¿ƒå±…ä¸­
 	iHeightOfsetted1 = 200; iWidthOfsetted1 = 256; iTopOfsetted1 = 0 + myHeight; iLeftOfsetted1 = 0 + myWidth;
 	Memory::CodeCave(ITCFix1, 0x0059E9E1, 12);
 	iHeightOfsetted2 = 110; iWidthOfsetted2 = 256; iTopOfsetted2 = 200 + myHeight; iLeftOfsetted2 = -1 + myWidth;
@@ -683,37 +686,37 @@ void Client::UpdateResolution() {
 
 		nHeightOfsettedLoginViewRecFix = 167 + myHeight; nWidthOfsettedLoginViewRecFix = 540 + myWidth;//para for ViewRec fix
 		nTopOfsettedLoginViewRecFix = 51 + myHeight; nLeftOfsettedLoginViewRecFix = 136 + myWidth;
-		Memory::CodeCave(ccLoginViewRecFix, dwLoginViewRecFix, LoginViewRecFixNOPs);	//world ViewRec fix	
+		Memory::CodeCave(ccLoginViewRecFix, dwLoginViewRecFix, LoginViewRecFixNOPs);	//world ViewRec fix
 
 		a1x = 0 + myWidth; a2x = -149 + myWidth; a2y = 0 + myHeight; a3 = 25; a1y = -250; //a4 = 0;	//LoginDescriptor params
-		Memory::WriteInt(0x0060D849 + 1, 300 + a1y); //speed 1	//temporary fix by increasing the speed of display until i get good enough at procedural programming 
+		Memory::WriteInt(0x0060D849 + 1, 300 + a1y); //speed 1	//temporary fix by increasing the speed of display until i get good enough at procedural programming
 		//and memory management and reverse engineering to use nexon's own functions to put a black layer with greater z value to cover the tabs being shown off screen at origin
-		Memory::CodeCave(ccLoginDescriptorFix, dwLoginDescriptorFix, LoginDescriptorFixNOPs);	//world LoginDescriptor fix	
+		Memory::CodeCave(ccLoginDescriptorFix, dwLoginDescriptorFix, LoginDescriptorFixNOPs);	//world LoginDescriptor fix
 	}
 
 	int customEngY = -62, customEngX = -22, dojangYoffset = 0;	//myHeight //-55-35 (myHeight*250/100)	-(myWidth*53/100) 140 -130
 	yOffsetOfMuruengraidPlayer = 50 + dojangYoffset; xOffsetOfMuruengraidPlayer = 169 + myWidth; //params
-	Memory::CodeCave(ccMuruengraidPlayer, dwMuruengraidPlayer, MuruengraidPlayerNOPs);	//muruengraid scaling	
+	Memory::CodeCave(ccMuruengraidPlayer, dwMuruengraidPlayer, MuruengraidPlayerNOPs);	//muruengraid scaling
 	yOffsetOfMuruengraidClock = 26 + dojangYoffset; xOffsetOfMuruengraidClock = 400 + myWidth; //params
 	Memory::CodeCave(ccMuruengraidClock, dwMuruengraidClock, MuruengraidClockNOPs);	//muruengraid scaling
 	yOffsetOfMuruengraidMonster = 50 + dojangYoffset; xOffsetOfMuruengraidMonster = 631 + myWidth; //params
 	Memory::CodeCave(ccMuruengraidMonster, dwMuruengraidMonster, MuruengraidMonsterNOPs);	//muruengraid scaling
 	yOffsetOfMuruengraidMonster1 = 32 + dojangYoffset; xOffsetOfMuruengraidMonster1 = 317 + myWidth; //params
-	Memory::CodeCave(ccMuruengraidMonster1, dwMuruengraidMonster1, MuruengraidMonster1NOPs);	//muruengraid scaling	
+	Memory::CodeCave(ccMuruengraidMonster1, dwMuruengraidMonster1, MuruengraidMonster1NOPs);	//muruengraid scaling
 	yOffsetOfMuruengraidMonster2 = 32 + dojangYoffset; xOffsetOfMuruengraidMonster2 = 482 + myWidth; //params
 	Memory::CodeCave(ccMuruengraidMonster2, dwMuruengraidMonster2, MuruengraidMonster2NOPs);	//muruengraid scaling
 	yOffsetOfMuruengraidEngBar = 86 + dojangYoffset + customEngY; xOffsetOfMuruengraidEngBar = 17 + myWidth + customEngX; //params
-	Memory::CodeCave(ccMuruengraidEngBar, dwMuruengraidEngBar, MuruengraidEngBarNOPs);	//muruengraid scaling	
+	Memory::CodeCave(ccMuruengraidEngBar, dwMuruengraidEngBar, MuruengraidEngBarNOPs);	//muruengraid scaling
 	yOffsetOfMuruengraidEngBar1 = 130 + dojangYoffset + customEngY; xOffsetOfMuruengraidEngBar1 = 20 + myWidth + customEngX; //params
-	Memory::CodeCave(ccMuruengraidEngBar1, dwMuruengraidEngBar1, MuruengraidEngBar1NOPs);	//muruengraid scaling	
+	Memory::CodeCave(ccMuruengraidEngBar1, dwMuruengraidEngBar1, MuruengraidEngBar1NOPs);	//muruengraid scaling
 	yOffsetOfMuruengraidEngBar2 = 80 + dojangYoffset + customEngY; xOffsetOfMuruengraidEngBar2 = 9 + myWidth + customEngX; //params
-	Memory::CodeCave(ccMuruengraidEngBar2, dwMuruengraidEngBar2, MuruengraidEngBar2NOPs);	//muruengraid scaling	
+	Memory::CodeCave(ccMuruengraidEngBar2, dwMuruengraidEngBar2, MuruengraidEngBar2NOPs);	//muruengraid scaling
 	yOffsetOfMuruengraidClearRoundUI = 260 + myHeight; xOffsetOfMuruengraidClearRoundUI = 400 + myWidth; //params
 	Memory::CodeCave(ccMuruengraidClearRoundUI, dwMuruengraidClearRoundUI, MuruengraidClearRoundUINOPs);	//muruengraid scaling
 	//yOffsetOfMuruengraidTimerCanvas = 28 + dojangYoffset; xOffsetOfMuruengraidTimerCanvas = 112 + myWidth; //params
-	//Memory::CodeCave(ccMuruengraidTimerCanvas, dwMuruengraidTimerCanvas, MuruengraidTimerCanvasNOPs);	//muruengraid scaling	
+	//Memory::CodeCave(ccMuruengraidTimerCanvas, dwMuruengraidTimerCanvas, MuruengraidTimerCanvasNOPs);	//muruengraid scaling
 	//yOffsetOfMuruengraidTimerMinutes = 0 + dojangYoffset; xOffsetOfMuruengraidTimerMinutes = 0 + myWidth; //params	//not needed, bar moves all, kept for referrence or if change are needed
-	//Memory::CodeCave(ccMuruengraidTimerMinutes, dwMuruengraidTimerMinutes, MuruengraidTimerMinutesNOPs);	//muruengraid scaling	
+	//Memory::CodeCave(ccMuruengraidTimerMinutes, dwMuruengraidTimerMinutes, MuruengraidTimerMinutesNOPs);	//muruengraid scaling
 	//yOffsetOfMuruengraidTimerSeconds = 0 + dojangYoffset; xOffsetOfMuruengraidTimerSeconds = 68 + myWidth; //params
 	//Memory::CodeCave(ccMuruengraidTimerSeconds, dwMuruengraidTimerSeconds, MuruengraidTimerSecondsNOPs);	//muruengraid scaling
 	yOffsetOfMuruengraidTimerBar = 16 + dojangYoffset; xOffsetOfMuruengraidTimerBar = 345 + myWidth; //params
@@ -726,7 +729,7 @@ void Client::UpdateResolution() {
 	//int myStatsWindowOffsetVal = 4, myStatsWindowOffset = 176, myStatsWindowOffset1 = 177;
 	//Memory::WriteInt(0x008C4AB3 + 1, myStatsWindowOffset); //stat window ty resinate
 	//Memory::WriteInt(0x008C510A + 1, myStatsWindowOffset1); //stat window ty resinate
-	
+
 	//const char* testString = "RoSWzFile"; Memory::WriteString(0x00B3F434, testString);//testing
 	//Memory::WriteInt(0x009F74EA + 3, 16); //testing
 	//Memory::WriteInt(0x008C4286 + 1, 400); //testing
@@ -786,10 +789,10 @@ void Client::Chinese() {
 
 	FixBuddy::Hook();
 	if(SwitchChinese) {
-		//´´½¨½ÇÉ«½çÃæÅ®
-		Memory::WriteString(0x00AF6D1C, "  Å®  ");
-		//´´½¨½ÇÉ«½çÃæÄĞ
-		Memory::WriteString(0x00AF6D24, " ÄĞ ");
+		//åˆ›å»ºè§’è‰²ç•Œé¢å¥³
+		Memory::WriteString(0x00AF6D1C, "  å¥³  ");
+		//åˆ›å»ºè§’è‰²ç•Œé¢ç”·
+		Memory::WriteString(0x00AF6D24, " ç”· ");
 
 		// ÁÄÌìÀ¸Ñ¡Ïî
 		Memory::WriteString(0x00AF2B28, "¶ÔÁªÃË     ");
@@ -810,16 +813,16 @@ void Client::Chinese() {
 		Memory::WriteInt(0x008239F0 + 1, (DWORD)kMakerUnknownItemText); // ??? -> unknown item
 		Memory::ReplaceString(0x00B39390, "%d\xB8\xF6", "%d/???");
 
-		// ÓĞĞ§ÆÚ×ÖÌå´óĞ¡
+		// æœ‰æ•ˆæœŸå­—ä½“å¤§å°
 		Memory::WriteByte(0x008E55ED + 1, 0x0B);
 
-		// ÊôĞÔÎ»ÖÃ×ÖÌå´óĞ¡
+		// å±æ€§ä½ç½®å­—ä½“å¤§å°
 		Memory::WriteByte(0x008E557A + 1, 0x0B);
 		Memory::WriteByte(0x008E565E + 1, 0x0B);
 
-		// Íæ¼ÒÃûÆ¬ Ö°Òµ×ÖÌå´óĞ¡ºÍÎ»ÖÃ
-		Memory::WriteByte(0x0090142E + 1, 0x5E); // 60->5E Î»ÖÃÉÏÒÆ
-		Memory::WriteByte(0x00901400 + 1, 1); // ×ÖÌåtype¸ÄÎª1 ¶ÔÓ¦12ºÅ´óĞ¡
+		// ç©å®¶åç‰‡ èŒä¸šå­—ä½“å¤§å°å’Œä½ç½®
+		Memory::WriteByte(0x0090142E + 1, 0x5E); // 60->5E ä½ç½®ä¸Šç§»
+		Memory::WriteByte(0x00901400 + 1, 1); // å­—ä½“typeæ”¹ä¸º1 å¯¹åº”12å·å¤§å°
 	}
 }
 
@@ -898,7 +901,7 @@ void Client::LongQuickSlot() {
 	Memory::WriteByte(0x00836A1E + 1, 0x68); // push 68h (triple)
 	Memory::WriteByte(0x00836A21 + 2, 0x6C); // triple the base value at this hex (old->24h)
 
-	// CODECAVES CLIENT EDITS ---- 
+	// CODECAVES CLIENT EDITS ----
 	Memory::CodeCave(CompareValidateFuncKeyMappedInfo_cave, 0x8DD8B8, 5);
 	Memory::CodeCave(sub_9FA0CB_cave, 0x9FA0DB, 5);
 	Memory::CodeCave(sDefaultQuickslotKeyMap_cave, 0x72B7BC, 5);
@@ -956,10 +959,10 @@ void Client::JumpCap() {
 }
 
 void Client::FixChatPosHook() {
-	// ĞŞ¸´ÁÄÌì´°ÀïµÄÁÄÌìĞÅÏ¢Æ«ÏÂµÄÎÊÌâ
+	// ä¿®å¤èŠå¤©çª—é‡Œçš„èŠå¤©ä¿¡æ¯åä¸‹çš„é—®é¢˜
 	// Memory::WriteByte(0x008DD05A + 2, 0x4);
 	// Memory::WriteByte(0x008DD067 + 2, 0x3);
-	// ÀÏ·½·¨µ¼ÖÂÊÕÆğÁÄÌì¿òÊ±£¬ÏÔÊ¾µÄĞÅÏ¢Ì«Æ«ÏÂÁË
+	// è€æ–¹æ³•å¯¼è‡´æ”¶èµ·èŠå¤©æ¡†æ—¶ï¼Œæ˜¾ç¤ºçš„ä¿¡æ¯å¤ªåä¸‹äº†
 	Memory::CodeCave(chatTextPos, 0x008DD06F, 6);
 }
 
@@ -972,11 +975,11 @@ void Client::NoPassword() {
 
 void Client::MoreHook() {
 	Memory::WriteInt(0x009A3D81, 480);
-	Memory::WriteByte(0x008EC4A7 + 1, 0x23);//×°±¸ÊôĞÔÒ³ÃæµÄÖ°ÒµĞèÇóÆ«ÒÆÕ½Ê¿
-	Memory::WriteByte(0x008EC53C + 1, 0x4D);//Ä§·¨Ê¦
-	Memory::WriteByte(0x008EC5D1 + 1, 0x7A);//¹­¼ıÊÖ
-	Memory::WriteByte(0x008EC660 + 1, 0xA9);//·ÉÏÀ
-	Memory::WriteByte(0x008EC6CF + 1, 0xC8);//º£µÁ
+	Memory::WriteByte(0x008EC4A7 + 1, 0x23);//è£…å¤‡å±æ€§é¡µé¢çš„èŒä¸šéœ€æ±‚åç§»æˆ˜å£«
+	Memory::WriteByte(0x008EC53C + 1, 0x4D);//é­”æ³•å¸ˆ
+	Memory::WriteByte(0x008EC5D1 + 1, 0x7A);//å¼“ç®­æ‰‹
+	Memory::WriteByte(0x008EC660 + 1, 0xA9);//é£ä¾ 
+	Memory::WriteByte(0x008EC6CF + 1, 0xC8);//æµ·ç›—
 	Memory::CodeCave(faceHairCave, 0x005C94F3, 18);
 	Memory::CodeCave(canSendPkgTimeCave, 0x00485C28, 10);
 
@@ -988,36 +991,154 @@ void Client::MoreHook() {
 
 	if (setAtkOutCap > 999999)
 	{
-		Memory::WriteInt(0x008C485A + 1, 192); // Ãæ°å¹Ø±Õ°´Å¥x
-		Memory::WriteInt(0x008C4AB3 + 1, 210); // Ãæ°å¿í¶È
-		Memory::WriteInt(0x008C510A + 1, 218); // ÏêÇéÃæ°å¿í¶È
-		Memory::WriteInt(0x008C4EA2 + 1, 210); // ÏêÇéÃæ°å³õÊ¼x
-		Memory::WriteInt(0x008C5760 + 1, 210); // ÏêÇéÃæ°åÇĞ»»x
-		Memory::WriteInt(0x008C7AD9 + 1, 185); // ¼ÓÊôĞÔ°´Å¥x
-		Memory::WriteInt(0x008C2754 + 1, 195); // ÏêÇéÃæ°å¹Ø±Õ°´Å¥x
-		Memory::WriteInt(0x008C6C72 + 1, 210); // ÒÆ¶¯Ê±ÏêÇéÃæ°åx
-		Memory::CodeCave(apDetailBtn, 0x008C4E1B, 7); // ÏêÇé°´Å¥
+		Memory::WriteInt(0x008C485A + 1, 192); // é¢æ¿å…³é—­æŒ‰é’®x
+		Memory::WriteInt(0x008C4AB3 + 1, 210); // é¢æ¿å®½åº¦
+		Memory::WriteInt(0x008C510A + 1, 218); // è¯¦æƒ…é¢æ¿å®½åº¦
+		Memory::WriteInt(0x008C4EA2 + 1, 210); // è¯¦æƒ…é¢æ¿åˆå§‹x
+		Memory::WriteInt(0x008C5760 + 1, 210); // è¯¦æƒ…é¢æ¿åˆ‡æ¢x
+		Memory::WriteInt(0x008C7AD9 + 1, 185); // åŠ å±æ€§æŒ‰é’®x
+		Memory::WriteInt(0x008C2754 + 1, 195); // è¯¦æƒ…é¢æ¿å…³é—­æŒ‰é’®x
+		Memory::WriteInt(0x008C6C72 + 1, 210); // ç§»åŠ¨æ—¶è¯¦æƒ…é¢æ¿x
+		Memory::CodeCave(apDetailBtn, 0x008C4E1B, 7); // è¯¦æƒ…æŒ‰é’®
 	}
-	// À®°È
+	// å–‡å­
 	Memory::WriteInt(0x0045A5BE + 1, 9999);
 
 
-	// ´°¿Ú±£´æÎ»ÖÃ
-	Memory::WriteInt(0x0049D218 + 1, m_nGameWidth - 16);// ´°¿Ú±£´æÎ»ÖÃ±ß½ç x
-	Memory::WriteInt(0x0049D268 + 1, m_nGameHeight - 16);// ´°¿Ú±£´æÎ»ÖÃ±ß½ç y
+	// çª—å£ä¿å­˜ä½ç½®
+	Memory::WriteInt(0x0049D218 + 1, m_nGameWidth - 16);// çª—å£ä¿å­˜ä½ç½®è¾¹ç•Œ x
+	Memory::WriteInt(0x0049D268 + 1, m_nGameHeight - 16);// çª—å£ä¿å­˜ä½ç½®è¾¹ç•Œ y
 }
 
 void Client::WorldMap()
 {
 
-	//½â³ıÊÀ½ç´óµØÍ¼ÏŞÖÆ
+	//è§£é™¤ä¸–ç•Œå¤§åœ°å›¾é™åˆ¶
 	// WorldMap Cap Increase
 	Memory::WriteByteArray(0x009EA030, world_cap_increase_array, sizeof(world_cap_increase_array));
 	//Memory::WriteByte(0x009EA032, 0xFF);//map
 	Memory::WriteInt(0x009EA030 + 2, 0xB4);
 
-	// ´óµØÍ¼¾ÓÖĞ
+	// å¤§åœ°å›¾å±…ä¸­
 	wordMapX = (m_nGameWidth - 666) / 2;
 	wordMapY = (m_nGameHeight - 524) / 2;
 	Memory::CodeCave(wordMapUIcc, 0x009EB594, 13);
+}
+
+#include "detours.h"
+
+typedef void(_cdecl* pfunPcCreateObject_IWzPackage)(int param1, DWORD param2, DWORD param3);
+pfunPcCreateObject_IWzPackage g_PcCreateObject_IWzPackage = nullptr;
+
+void
+_cdecl
+HookPcCreateObject_IWzPackage(
+	int param1
+	, DWORD param2
+	, DWORD param3)
+{
+	g_PcCreateObject_IWzPackage(param1, param2, param3);
+
+	int screen_refresh_rate = 0;
+	memcpy((void*)&screen_refresh_rate, (void*)0x00BF14EC, sizeof(int));
+	if (screen_refresh_rate != 0)
+	{
+		unsigned char* p = (unsigned char*)screen_refresh_rate;
+		p[0x84] = 0x3C;
+	}
+}
+void Client::RefreshRate()
+{
+	//å±å¹•åˆ·æ–°ç‡å¤§äº60å®¢æˆ·ç«¯æ— æ³•å¯åŠ¨
+
+	g_PcCreateObject_IWzPackage = (pfunPcCreateObject_IWzPackage)0x009FB0E9;
+	DetourTransactionBegin();
+	DetourUpdateThread(GetCurrentThread());
+	DetourAttach((LPVOID*)&g_PcCreateObject_IWzPackage, HookPcCreateObject_IWzPackage);
+	DetourTransactionCommit();
+}
+
+typedef unsigned int (__fastcall *pfunSendDeleteCharPacket)(void* This, int _);
+pfunSendDeleteCharPacket g_SendDeleteCharPacket = (pfunSendDeleteCharPacket)0x005F7C4A;
+unsigned int __fastcall SendDeleteCharPacket(unsigned char* This, int _)
+{
+	unsigned char* teax = (unsigned char*)(((*(DWORD*)(This + 0x190)) * 0x2AC) + *(DWORD*)(This + 0x194));
+	int param2 = *(DWORD*)(teax + 0x3D);
+
+	typedef int(__cdecl* pfunCRole_decode2)(int, int);
+	pfunCRole_decode2 CRole_decode2 = (pfunCRole_decode2)0x004746DD;
+
+	int  msgid = 0;
+
+	int iret = CRole_decode2(((int)teax) + 0x39, param2);
+	if (iret == 1 || iret == 2)
+	{
+		msgid = ((DWORD*)(This + 0x19C)[*(DWORD*)(This + 0x190)] != 0) ? 58 : 55;
+	}
+	else
+	{
+		msgid = ((DWORD*)(This + 0x19C)[*(DWORD*)(This + 0x190)] != 0) ? 57 : 13;
+	}
+
+
+	typedef int(__cdecl* pfunCLoginUtilDlg_YesNO)(int msgid, void* p);
+	pfunCLoginUtilDlg_YesNO CLoginUtilDlg_YesNO = (pfunCLoginUtilDlg_YesNO)0x0060EB58;
+	if (CLoginUtilDlg_YesNO(msgid, This + 500))
+	{
+		typedef int(__fastcall* pfunCOutPacket_def1)(void* pthis, int, ULONG buffer_size);
+		pfunCOutPacket_def1 COutPacket_def1 = (pfunCOutPacket_def1)0x006EC9CE;
+
+		struct  tagCOutPacket
+		{
+			int m_max_size;
+			char* m_buffer;
+			int m_unknow;
+			int m_unknow2;
+		};
+
+		tagCOutPacket op;
+		COutPacket_def1((void*)&op, 0, 23);
+
+		typedef int(__fastcall* pfunCOutPacket_EncodeStr)(void* pthis, int, const char*);
+		pfunCOutPacket_EncodeStr COutPacket_EncodeStr = (pfunCOutPacket_EncodeStr)0x0046F3CF;
+
+		ZXString<char> str;
+		COutPacket_EncodeStr((void*)&op, 0, str);
+
+		typedef int(__fastcall* pfunCOutPacket_Encode4)(void* pthis, int, unsigned int value);
+		pfunCOutPacket_Encode4 COutPacket_Encode4 = (pfunCOutPacket_Encode4)0x004065A6;
+
+		COutPacket_Encode4((void*)&op, 0, *(DWORD*)teax);
+
+		typedef void(__fastcall* pfunCLoginSendRequest)(void* pthis, int, void* value);
+		pfunCLoginSendRequest CLoginSendRequest = (pfunCLoginSendRequest)0x005F6932;
+
+		CLoginSendRequest(This, 0, (void*)&op);
+		if (*(DWORD*)0x00BEDA4C)
+		{
+			*(DWORD*)(This + 0x100) = -1;
+
+			typedef void (__fastcall *pfunCUIAvatarSelectCharacter)(void* This, int, DWORD);
+			pfunCUIAvatarSelectCharacter CUIAvatarSelectCharacter = (pfunCUIAvatarSelectCharacter)0x0060599B;
+
+			//CUIAvatarSelectCharacter((void*)0x00BEDA4C, 0, 0x0FFFFFFFF);
+		}
+
+		typedef int* (__fastcall* pfunsub_428712)(void* This, int _, int p);
+		pfunsub_428712 sub_428712 = (pfunsub_428712)0x00428712;
+
+		sub_428712(This + 0x1CC, 0, 0);
+		sub_428712(This + 0x1D0, 0, 0);
+	}
+
+	return 0;
+}
+
+void Client::DeleteChar()
+{
+	//å®¢æˆ·ç«¯ç»•è¿‡PINåˆ é™¤è§’è‰²
+	DetourTransactionBegin();
+	DetourUpdateThread(GetCurrentThread());
+	DetourAttach((LPVOID*)&g_SendDeleteCharPacket, SendDeleteCharPacket);
+	DetourTransactionCommit();
 }
