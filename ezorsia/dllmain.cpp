@@ -256,49 +256,6 @@ static ExeVerifyResult VerifyCurrentExe(ExeVerifyInfo& info)
 	return diff == 0 ? ExeVerifyResult::Ok : ExeVerifyResult::HashMismatch;
 }
 
-// config.ini can use IP or hostname (ServerIP_Address=...).
-// The patch expects an IPv4 dotted string; resolve hostnames to IPv4.
-// On failure, fall back to the original value.
-static std::string ResolveToIpv4String(const std::string& hostOrIp)
-{
-	if (hostOrIp.empty()) return hostOrIp;
-
-	IN_ADDR parsedAddr{};
-	if (InetPtonA(AF_INET, hostOrIp.c_str(), &parsedAddr) == 1) {
-		return hostOrIp;
-	}
-
-	WSADATA wsaData{};
-	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-		return hostOrIp;
-	}
-
-	addrinfo hints{};
-	hints.ai_family = AF_INET;
-	hints.ai_socktype = SOCK_STREAM;
-	hints.ai_protocol = IPPROTO_TCP;
-
-	addrinfo* result = nullptr;
-	const int gaiRc = getaddrinfo(hostOrIp.c_str(), nullptr, &hints, &result);
-	if (gaiRc != 0 || result == nullptr) {
-		WSACleanup();
-		return hostOrIp;
-	}
-
-	char ipBuf[INET_ADDRSTRLEN]{};
-	const auto* ipv4 = reinterpret_cast<const sockaddr_in*>(result->ai_addr);
-	const PCSTR ipStr = InetNtopA(AF_INET, const_cast<IN_ADDR*>(&ipv4->sin_addr), ipBuf, sizeof(ipBuf));
-
-	freeaddrinfo(result);
-	WSACleanup();
-
-	if (ipStr == nullptr) {
-		return hostOrIp;
-	}
-
-	return std::string(ipStr);
-}
-
 void CreateConsole() {
 	AllocConsole();
 	FILE* stream;
@@ -319,7 +276,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 
 		//CreateConsole();	//console for devs, use this to log stuff if you want
 
-		// Only expose local compatibility and connection settings through config.ini.
+		// config.ini only exposes local compatibility/debug settings; server endpoint is locked in Client.cpp.
 		// Other patch behavior stays in code defaults.
 		INIReader reader("config.ini");
 		bool enableCrashDump = true;
@@ -329,9 +286,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 			Client::m_nGameWidth = reader.GetInteger("general", "width", 1280);
 			Client::m_nGameHeight = reader.GetInteger("general", "height", 720);
 			Client::imeType = reader.GetInteger("general", "imeType", 1);
-			// Server address may be a hostname; resolve it before writing into the client patch.
-			Client::ServerIP_AddressFromINI = ResolveToIpv4String(reader.Get("general", "ServerIP_Address", "127.0.0.1"));
-			Client::serverIP_Port = reader.GetInteger("general", "serverIP_Port", 8484);
 			Client::enableMovementKeyRebind = reader.GetBoolean("general", "enableMovementKeyRebind", false);
 			enableCrashDump = reader.GetBoolean("debug", "enableCrashDump", true);
 			crashDumpType = reader.Get("debug", "crashDumpType", "mini");

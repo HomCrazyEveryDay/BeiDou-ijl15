@@ -5,8 +5,10 @@
 #include "FixBuddy.h"
 
 /*
-客户端补丁层内部默认值：
-- 允许 config.ini 覆盖：输入法、分辨率、服务器地址、服务器端口�?- 固定为发行包策略：消息数量、登录框、窗口模式、跳�?Logo、汉化、Tubi、面板上限、移�?爬绳、聊天限制、debug 和免密�?- 不再�?config.ini 读取敏感项，避免玩家通过公开配置覆盖战斗、登录、聊天等行为�?*/
+Client patch release defaults:
+- config.ini may override IME, resolution, movement-key rebind, and crash dump settings.
+- Server endpoint and sensitive gameplay/login/chat policies are fixed in code.
+*/
 int Client::m_nGameHeight = 720;
 int Client::m_nGameWidth = 1280;
 int Client::MsgAmount = 6;
@@ -28,7 +30,7 @@ bool Client::debug = false;
 bool Client::climbSpeedAuto = false;
 float Client::climbSpeed = 1.0;
 unsigned char Client::imeType = 1;
-std::string Client::ServerIP_AddressFromINI = "127.0.0.1";
+std::string Client::ServerIP_Address = "114.132.97.50";
 int Client::serverIP_Port = 8484;
 bool Client::talkRepeat = false;
 int Client::talkTime = 2000;
@@ -134,10 +136,10 @@ void Client::UpdateGameStartup() {
 	Memory::WriteByte(0x0049D398 + 1, 0x01);//remove elevation requests	//still not working unfortunately
 
 	Memory::FillBytes(0x00AFE084, 0x00, 0x006FE0B2 - 0x006FE084);//remove the existing server IP address in client
-	const char* serverIP_Address = Client::ServerIP_AddressFromINI.c_str();
-	Memory::WriteString(0x00AFE084, serverIP_Address);//write the user-set IP address
-	Memory::WriteString(0x00AFE084 + 16, serverIP_Address);//write the user-set IP address
-	Memory::WriteString(0x00AFE084 + 32, serverIP_Address);//write the user-set IP address
+	const char* serverIP_Address = Client::ServerIP_Address.c_str();
+	Memory::WriteString(0x00AFE084, serverIP_Address);//write the locked server IP address
+	Memory::WriteString(0x00AFE084 + 16, serverIP_Address);//write the locked server IP address
+	Memory::WriteString(0x00AFE084 + 32, serverIP_Address);//write the locked server IP address
 	Memory::WriteInt(0x007519C1 + 1, serverIP_Port);//��¼�˿�
 	Memory::FillBytes(0x005F6BCD, 0x90, 9);
 

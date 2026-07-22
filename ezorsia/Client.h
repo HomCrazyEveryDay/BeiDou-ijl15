@@ -40,7 +40,7 @@ public:
 	static int speedMovementCap;
 	static unsigned char imeType;
 	static DWORD jumpCap;
-	static std::string ServerIP_AddressFromINI;
+	static std::string ServerIP_Address;
 	static int serverIP_Port;
 	static bool talkRepeat;
 	static int talkTime;
