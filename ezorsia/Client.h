@@ -47,6 +47,7 @@ public:
 	static bool talkRepeat;
 	static int talkTime;
 	static bool enableMovementKeyRebind;
+	static bool forceAccountShareTooltipLine;
 };
 
 __declspec(selectany) DWORD g_facePreviewFaceId = 0;

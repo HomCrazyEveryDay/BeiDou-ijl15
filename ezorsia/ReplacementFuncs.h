@@ -2146,10 +2146,12 @@ static bool LocalizeClientMessageString(ZXString<char>* ret)
 		return true;
 	}
 
-	if (strcmp(text, "This item cannot be recovered once dropped. However, It is possible to transfer it to a different character on the same account by using the storage system.\r\n\r\nDo you really want to drop this item?") == 0 ||
-		strcmp(text, "This item cannot be recovered once dropped. However, It is possible to transfer it to a different character on the same account by using the storage system.\n\nDo you really want to drop this item?") == 0)
+	if (strstr(text, "This item cannot be recovered once dropped") != nullptr &&
+		strstr(text, "different character on the same account") != nullptr &&
+		strstr(text, "storage system") != nullptr &&
+		strstr(text, "Do you really want to drop this item?") != nullptr)
 	{
-		*ret = "丢弃后无法找回。\r\n可用仓库转给同账号角色。\r\n\r\n确定要丢弃吗？";
+		*ret = "该道具丢弃后无法找回。\r\n可通过仓库转给同账号角色。\r\n\r\n确定要丢弃吗？";
 		return true;
 	}
 
@@ -2235,6 +2237,12 @@ bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //t
 	_StringPool__GetString_t _StringPool__GetString_Hook = [](void* pThis, void* edx, ZXString<char>* result, unsigned int nIdx, char formal) ->  ZXString<char>*
 	{
 		auto ret = _StringPool__GetString(pThis, edx, result, nIdx, formal);
+		if (nIdx == 695 && Client::forceAccountShareTooltipLine)
+		{
+			Client::forceAccountShareTooltipLine = false;
+			*ret = "不可交换，仅可在同一账号内移动";
+			return ret;
+		}
         if (nIdx == 1163)
         {
             *ret = "BeiDou";

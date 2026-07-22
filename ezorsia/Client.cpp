@@ -36,6 +36,7 @@ int Client::serverIP_Port = 8484;
 bool Client::talkRepeat = false;
 int Client::talkTime = 2000;
 bool Client::enableMovementKeyRebind = false;
+bool Client::forceAccountShareTooltipLine = false;
 static const char kMakerUnknownItemText[] = "\xCE\xB4\xD6\xAA\xCE\xEF\xC6\xB7";
 
 void Client::UpdateGameStartup() {
@@ -825,6 +826,9 @@ void Client::Chinese() {
 		// 玩家名片 职业字体大小和位置
 		Memory::WriteByte(0x0090142E + 1, 0x5E); // 60->5E 位置上移
 		Memory::WriteByte(0x00901400 + 1, 1); // 字体type改为1 对应12号大小
+
+		// Reuse the non-equip trade-block status line slot for account-share text.
+		Memory::CodeCave(accountShareEtcTooltipLine, 0x008EE273, 11);
 	}
 }
 

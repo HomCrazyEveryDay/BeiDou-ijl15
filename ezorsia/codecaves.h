@@ -1517,6 +1517,55 @@ __declspec(naked) void getItemType2() {
 	}
 }
 
+typedef int (__stdcall* IsAccountSharableItem_t)(DWORD itemId);
+
+bool __stdcall HasAccountSharableItemInfo(DWORD itemId)
+{
+	__try
+	{
+		// Client helper for Item.wz info/accountSharable (StringPool 0x13CC).
+		return reinterpret_cast<IsAccountSharableItem_t>(0x005D4F4C)(itemId) != 0;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER)
+	{
+		return false;
+	}
+}
+DWORD accountShareEtcTooltipLineTradeBlockRet = 0x008EE27E;
+DWORD accountShareEtcTooltipLineSkipRet = 0x008EE3D9;
+DWORD accountShareEtcTooltipLineAppendRet = 0x008EE303;
+__declspec(naked) void accountShareEtcTooltipLine()
+{
+	__asm {
+		test eax, eax
+		jne label_trade_block
+
+		push dword ptr [ebp + 10h]
+		call HasAccountSharableItemInfo
+		test al, al
+		je label_skip
+
+		xor esi, esi
+		mov byte ptr [Client::forceAccountShareTooltipLine], 1
+		jmp accountShareEtcTooltipLineAppendRet
+
+	label_trade_block:
+		push dword ptr [ebp + 10h]
+		call HasAccountSharableItemInfo
+		test al, al
+		je label_original_trade_block
+
+		mov byte ptr [Client::forceAccountShareTooltipLine], 1
+
+	label_original_trade_block:
+		mov ecx, [ebp + 34h]
+		jmp accountShareEtcTooltipLineTradeBlockRet
+
+	label_skip:
+		jmp accountShareEtcTooltipLineSkipRet
+	}
+}
+
 const DWORD back1 = 0x007807A1;
 __declspec(naked) void customJumpCapHook1()
 {
