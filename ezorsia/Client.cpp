@@ -794,14 +794,16 @@ void Client::Chinese() {
 		//åˆ›å»ºè§’è‰²ç•Œé¢ç”·
 		Memory::WriteString(0x00AF6D24, " ç”· ");
 
-		// ÁÄÌìÀ¸Ñ¡Ïî
-		Memory::WriteString(0x00AF2B28, "¶ÔÁªÃË     ");
-		Memory::ReplaceString(0x00B3C0D4, "ÒÑ¸ü¸ÄÉèÖÃ£¬\r\n'%s'¿ÉÒÔ½ÓÊÕÇÄÇÄ»°¡£", "Change has been made so\r\n'%s' can receive whisper.");
+		// Chat option strings use client GBK bytes; keep them escaped inside this UTF-8 source file.
+		Memory::WriteString(0x00AF2B28, "\xB6\xD4\xC1\xAA\xC3\xCB     ");
+		Memory::ReplaceString(
+			0x00B3C0D4,
+			"\xD2\xD1\xB8\xFC\xB8\xC4\xC9\xE8\xD6\xC3\xA3\xAC\r\n'%s'\xBF\xC9\xD2\xD4\xBD\xD3\xCA\xD5\xC7\xC4\xC7\xC4\xBB\xB0\xA1\xA3",
+			"Change has been made so\r\n'%s' can receive whisper.");
 
-		// ºÃÓÑÁÐ±íÌáÊ¾
-		Memory::ReplaceString(0x00AF0738, "Ä¬ÈÏ·Ö×é", "Default Group");
-		Memory::ReplaceString(0x00B3C158, "Ë«»÷·¢ËÍ¶ÌÐÅ¡£", "Double-click to send a note.");
-		Memory::ReplaceString(0x00B3C194, "Ë«»÷ÐÞ¸Ä·Ö×é¡£", "Double-click to make changes to the group.");
+		Memory::ReplaceString(0x00AF0738, "\xC4\xAC\xC8\xCF\xB7\xD6\xD7\xE9", "Default Group");
+		Memory::ReplaceString(0x00B3C158, "\xCB\xAB\xBB\xF7\xB7\xA2\xCB\xCD\xB6\xCC\xD0\xC5\xA1\xA3", "Double-click to send a note.");
+		Memory::ReplaceString(0x00B3C194, "\xCB\xAB\xBB\xF7\xD0\xDE\xB8\xC4\xB7\xD6\xD7\xE9\xA1\xA3", "Double-click to make changes to the group.");
 
 		// Maker UI localization
 		Memory::WriteInt(0x0082312F + 1, 1757); // Etc -> StringPool 1757
