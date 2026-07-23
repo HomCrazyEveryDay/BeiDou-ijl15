@@ -48,6 +48,7 @@ public:
 	static int talkTime;
 	static bool enableMovementKeyRebind;
 	static bool forceAccountShareTooltipLine;
+	static bool enableStartupLog;
 };
 
 __declspec(selectany) DWORD g_facePreviewFaceId = 0;

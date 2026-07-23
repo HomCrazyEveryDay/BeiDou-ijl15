@@ -320,6 +320,85 @@ static void ApplyLocalEndpointOverride(const INIReader& reader)
 	Client::serverIP_Port = static_cast<int>(port);
 }
 
+struct ResolutionEnvironment {
+	int desktopWidth = 0;
+	int desktopHeight = 0;
+	int workAreaWidth = 0;
+	int workAreaHeight = 0;
+};
+
+static ResolutionEnvironment ReadResolutionEnvironment()
+{
+	// Resolution is intentionally not normalized: config.ini is the source of truth.
+	ResolutionEnvironment environment{};
+	environment.desktopWidth = GetSystemMetrics(SM_CXSCREEN);
+	environment.desktopHeight = GetSystemMetrics(SM_CYSCREEN);
+	environment.workAreaWidth = environment.desktopWidth;
+	environment.workAreaHeight = environment.desktopHeight;
+	RECT workArea{};
+	if (SystemParametersInfoW(SPI_GETWORKAREA, 0, &workArea, 0)) {
+		environment.workAreaWidth = workArea.right - workArea.left;
+		environment.workAreaHeight = workArea.bottom - workArea.top;
+	}
+
+	return environment;
+}
+
+static void WriteStartupLog(
+	int configParseError,
+	int requestedWidth,
+	int requestedHeight,
+	const ResolutionEnvironment& environment)
+{
+	if (!Client::enableStartupLog) {
+		return;
+	}
+
+	WCHAR logPath[MAX_PATH]{};
+	if (GetModuleFileNameW(nullptr, logPath, MAX_PATH) == 0) {
+		lstrcpynW(logPath, L"ijl15_startup.log", MAX_PATH);
+	}
+
+	int slash = -1;
+	for (int i = lstrlenW(logPath) - 1; i >= 0; i--) {
+		if (logPath[i] == L'\\' || logPath[i] == L'/') {
+			slash = i;
+			break;
+		}
+	}
+
+	if (slash >= 0) {
+		logPath[slash + 1] = L'\0';
+		lstrcpynW(logPath + slash + 1, L"ijl15_startup.log", MAX_PATH - slash - 1);
+	}
+	else {
+		lstrcpynW(logPath, L"ijl15_startup.log", MAX_PATH);
+	}
+
+	HANDLE file = CreateFileW(logPath, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	if (file == INVALID_HANDLE_VALUE) {
+		return;
+	}
+
+	char line[256]{};
+	WriteLogText(file, "ijl15 startup\r\n");
+	wsprintfA(line, "configParseError=%d\r\n", configParseError);
+	WriteLogText(file, line);
+	wsprintfA(line, "requestedResolution=%dx%d\r\n", requestedWidth, requestedHeight);
+	WriteLogText(file, line);
+	wsprintfA(line, "desktopResolution=%dx%d\r\n", environment.desktopWidth, environment.desktopHeight);
+	WriteLogText(file, line);
+	wsprintfA(line, "workArea=%dx%d\r\n", environment.workAreaWidth, environment.workAreaHeight);
+	WriteLogText(file, line);
+	wsprintfA(line, "finalResolution=%dx%d\r\n", Client::m_nGameWidth, Client::m_nGameHeight);
+	WriteLogText(file, line);
+	WriteLogText(file, "resolutionFallback=false\r\n");
+	WriteLogText(file, "resolutionFallbackReason=disabled\r\n");
+	wsprintfA(line, "serverEndpoint=%s:%d\r\n", Client::ServerIP_Address.c_str(), Client::serverIP_Port);
+	WriteLogText(file, line);
+	CloseHandle(file);
+}
+
 void CreateConsole() {
 	AllocConsole();
 	FILE* stream;
@@ -345,7 +424,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		INIReader reader("config.ini");
 		bool enableCrashDump = true;
 		std::string crashDumpType = "mini";
-		if (reader.ParseError() == 0) {
+		const int configParseError = reader.ParseError();
+		if (configParseError == 0) {
 			// Resolution and IME are local client compatibility settings.
 			Client::m_nGameWidth = reader.GetInteger("general", "width", 1280);
 			Client::m_nGameHeight = reader.GetInteger("general", "height", 720);
@@ -353,8 +433,14 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 			Client::enableMovementKeyRebind = reader.GetBoolean("general", "enableMovementKeyRebind", false);
 			enableCrashDump = reader.GetBoolean("debug", "enableCrashDump", true);
 			crashDumpType = reader.Get("debug", "crashDumpType", "mini");
+			Client::enableStartupLog = reader.GetBoolean("debug", "enableStartupLog", false);
 			ApplyLocalEndpointOverride(reader);
 		}
+		const int requestedWidth = Client::m_nGameWidth;
+		const int requestedHeight = Client::m_nGameHeight;
+		const ResolutionEnvironment resolutionEnvironment = ReadResolutionEnvironment();
+		CrashReporter::Install(enableCrashDump, crashDumpType);
+		WriteStartupLog(configParseError, requestedWidth, requestedHeight, resolutionEnvironment);
 
 		Hook_CreateMutexA(true); //multiclient //ty darter, angel, and alias!
 		HookCreateWindowExA(true); //default ezorsia
@@ -408,7 +494,6 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Client::DeleteChar();
 		std::cout << "GetModuleFileName hook created" << std::endl;
 		ijl15::CreateHook(); //NMCO::CreateHook();
-		CrashReporter::Install(enableCrashDump, crashDumpType);
 		std::cout << "NMCO hook initialized" << std::endl;
 		break;
 	}

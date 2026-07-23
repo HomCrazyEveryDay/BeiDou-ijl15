@@ -38,6 +38,7 @@ bool Client::talkRepeat = false;
 int Client::talkTime = 2000;
 bool Client::enableMovementKeyRebind = false;
 bool Client::forceAccountShareTooltipLine = false;
+bool Client::enableStartupLog = false;
 static const char kMakerUnknownItemText[] = "\xCE\xB4\xD6\xAA\xCE\xEF\xC6\xB7";
 
 void Client::UpdateGameStartup() {
