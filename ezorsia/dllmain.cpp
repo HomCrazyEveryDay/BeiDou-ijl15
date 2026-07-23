@@ -4,6 +4,7 @@
 #include "ijl15.h"
 #include "INIReader.h"
 #include "ReplacementFuncs.h"
+#include "D3D8DisplayModeHook.h"
 #include <comutil.h>
 #include "BossHP.h"
 #include "AranComboUi.h"
@@ -357,6 +358,8 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 
 		Hook_CreateMutexA(true); //multiclient //ty darter, angel, and alias!
 		HookCreateWindowExA(true); //default ezorsia
+		// Gr2D_DX8 validates windowed resolutions against D3D8 display modes before CreateDevice.
+		D3D8DisplayModeHook::Install();
 		HookGetModuleFileName(true); //default ezorsia
 		HookPcCreateObject_IWzResMan(true);
 		HookPcCreateObject_IWzNameSpace(true);
