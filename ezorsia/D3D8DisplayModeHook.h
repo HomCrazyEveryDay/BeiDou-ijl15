@@ -107,6 +107,11 @@ static void AppendStartupLogF(const char* format, ...) {
 }
 
 // Avoid changing anything when the configured resolution is already advertised.
+static bool IsConfiguredMode(const DisplayMode& mode) {
+	return mode.Width == static_cast<UINT>(Client::m_nGameWidth) &&
+		mode.Height == static_cast<UINT>(Client::m_nGameHeight);
+}
+
 static bool HasConfiguredMode(void* d3d8, UINT adapter, UINT realCount) {
 	if (!s_enumAdapterModes) {
 		return false;
@@ -114,9 +119,7 @@ static bool HasConfiguredMode(void* d3d8, UINT adapter, UINT realCount) {
 
 	for (UINT i = 0; i < realCount; ++i) {
 		DisplayMode mode{};
-		if (s_enumAdapterModes(d3d8, adapter, i, &mode) >= 0 &&
-			mode.Width == static_cast<UINT>(Client::m_nGameWidth) &&
-			mode.Height == static_cast<UINT>(Client::m_nGameHeight)) {
+		if (s_enumAdapterModes(d3d8, adapter, i, &mode) >= 0 && IsConfiguredMode(mode)) {
 			return true;
 		}
 	}
@@ -182,7 +185,21 @@ static HRESULT WINAPI EnumAdapterModes_Hook(void* self, UINT adapter, UINT modeI
 		return S_OK;
 	}
 
-	return s_enumAdapterModes(self, adapter, modeIndex, mode);
+	const HRESULT hr = s_enumAdapterModes(self, adapter, modeIndex, mode);
+	if (hr >= 0 && mode && IsConfiguredMode(*mode) && mode->RefreshRate != 60) {
+		const UINT originalRefreshRate = mode->RefreshRate;
+		mode->RefreshRate = 60;
+		AppendStartupLogF(
+			"d3d8.EnumAdapterModes normalized adapter=%u index=%u mode=%ux%u rate=%u->%u format=%d\r\n",
+			adapter,
+			modeIndex,
+			mode->Width,
+			mode->Height,
+			originalRefreshRate,
+			mode->RefreshRate,
+			mode->Format);
+	}
+	return hr;
 }
 
 static HRESULT WINAPI GetAdapterDisplayMode_Hook(void* self, UINT adapter, DisplayMode* mode) {
