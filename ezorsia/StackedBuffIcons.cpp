@@ -58,6 +58,8 @@ namespace
 	bool g_callingVirtualAddIcon = false;
 	bool g_syncingNativeIcons = false;
 	bool g_addIconStringDedupDisabled = false;
+	DWORD g_lastNativeDrawView = 0;
+	bool g_countdownFieldActive = false;
 	std::vector<StackedBuffIcon> g_icons;
 	std::unordered_map<DWORD, unsigned long long> g_virtualNativeNodes;
 	BYTE g_addIconStringDedupOriginal[5] = { 0x6A, 0x00, 0x83, 0xC1, 0x0C };
@@ -73,6 +75,15 @@ namespace
 	void DebugLog(const char* format, ...);
 	void SyncNativeVirtualIcons(const std::vector<StackedBuffIcon>& icons);
 	bool RequestedCountsSatisfied(DWORD temporaryStatView, const std::vector<StackedBuffIcon>& icons);
+
+	struct OverlayVertex
+	{
+		float x;
+		float y;
+		float z;
+		float rhw;
+		DWORD color;
+	};
 
 	bool WriteCodeBytes(DWORD address, const BYTE* bytes, int count)
 	{
@@ -186,6 +197,11 @@ namespace
 		}
 
 		g_nativeDraw(pThis, edx);
+		if (pThis && !g_syncingNativeIcons)
+		{
+			g_countdownFieldActive = true;
+			g_lastNativeDrawView = pThis;
+		}
 
 		if (pThis && !g_syncingNativeIcons && g_iconLockInitialized)
 		{
@@ -436,6 +452,237 @@ namespace
 		}
 
 		return NativeEntryKey(GetNativeNodeEntry(node)) == marked->second;
+	}
+
+	int EstimateNativeIconX(int index, int iconCount)
+	{
+		return Client::m_nGameWidth - 3 - (iconCount - index) * 32;
+	}
+
+	int EstimateNativeIconY(int index)
+	{
+		return 23;
+	}
+
+	int CountNativeNodes(DWORD temporaryStatView)
+	{
+		int count = 0;
+		DWORD node = GetNativeListHead(temporaryStatView);
+		for (int guard = 0; node && guard < 64; guard++)
+		{
+			count++;
+			node = GetNativeNodeNext(node);
+		}
+		return count;
+	}
+
+	bool CountdownTextForRemaining(DWORD remainingMs, char* text, int textCapacity, COLORREF* color)
+	{
+		if (!text || textCapacity <= 0 || !color || remainingMs == 0 || remainingMs > 3600000)
+		{
+			return false;
+		}
+
+		int value = 0;
+		if (remainingMs <= 60000)
+		{
+			value = static_cast<int>((remainingMs + 999) / 1000);
+			*color = RGB(255, 222, 0);
+		}
+		else
+		{
+			value = static_cast<int>((remainingMs + 59999) / 60000);
+			*color = RGB(93, 235, 95);
+		}
+
+		if (value < 1)
+		{
+			value = 1;
+		}
+		else if (value > 60)
+		{
+			value = 60;
+		}
+
+		wsprintfA(text, "%d", value);
+		return true;
+	}
+
+	DWORD D3dColor(COLORREF color)
+	{
+		return 0xFF000000
+			| (static_cast<DWORD>(GetRValue(color)) << 16)
+			| (static_cast<DWORD>(GetGValue(color)) << 8)
+			| static_cast<DWORD>(GetBValue(color));
+	}
+
+	void AddQuad(std::vector<OverlayVertex>& vertices, float x, float y, float width, float height, DWORD color)
+	{
+		if (width <= 0.0f || height <= 0.0f)
+		{
+			return;
+		}
+
+		const float left = x - 0.5f;
+		const float top = y - 0.5f;
+		const float right = x + width - 0.5f;
+		const float bottom = y + height - 0.5f;
+		const OverlayVertex v0{ left, top, 0.0f, 1.0f, color };
+		const OverlayVertex v1{ right, top, 0.0f, 1.0f, color };
+		const OverlayVertex v2{ right, bottom, 0.0f, 1.0f, color };
+		const OverlayVertex v3{ left, bottom, 0.0f, 1.0f, color };
+		vertices.push_back(v0);
+		vertices.push_back(v1);
+		vertices.push_back(v2);
+		vertices.push_back(v0);
+		vertices.push_back(v2);
+		vertices.push_back(v3);
+	}
+
+	void AddDigitSegments(std::vector<OverlayVertex>& vertices, int digit, float x, float y, DWORD color)
+	{
+		static const unsigned char rows[10][5] = {
+			{ 0x7, 0x5, 0x5, 0x5, 0x7 },
+			{ 0x2, 0x6, 0x2, 0x2, 0x7 },
+			{ 0x7, 0x1, 0x7, 0x4, 0x7 },
+			{ 0x7, 0x1, 0x7, 0x1, 0x7 },
+			{ 0x5, 0x5, 0x7, 0x1, 0x1 },
+			{ 0x7, 0x4, 0x7, 0x1, 0x7 },
+			{ 0x7, 0x4, 0x7, 0x5, 0x7 },
+			{ 0x7, 0x1, 0x2, 0x2, 0x2 },
+			{ 0x7, 0x5, 0x7, 0x5, 0x7 },
+			{ 0x7, 0x5, 0x7, 0x1, 0x7 }
+		};
+		if (digit < 0 || digit > 9)
+		{
+			return;
+		}
+
+		const float pixel = 2.0f;
+		for (int row = 0; row < 5; row++)
+		{
+			for (int column = 0; column < 3; column++)
+			{
+				if ((rows[digit][row] & (1 << (2 - column))) != 0)
+				{
+					AddQuad(vertices, x + column * pixel, y + row * pixel, pixel, pixel, color);
+				}
+			}
+		}
+	}
+
+	void AddCountdownNumber(std::vector<OverlayVertex>& vertices, int value, int iconX, int iconY, COLORREF color)
+	{
+		char text[4]{};
+		wsprintfA(text, "%d", value);
+		const int length = lstrlenA(text);
+		if (length <= 0)
+		{
+			return;
+		}
+
+		const float digitWidth = 6.0f;
+		const float gap = 1.0f;
+		const float textWidth = length * digitWidth + (length - 1) * gap;
+		const float startX = static_cast<float>(iconX) + 32.0f - textWidth - 3.0f;
+		const float startY = static_cast<float>(iconY) + 32.0f - 12.0f;
+		const DWORD shadowColor = 0xD0000000;
+		const DWORD textColor = D3dColor(color);
+
+		for (int pass = 0; pass < 2; pass++)
+		{
+			const float offset = pass == 0 ? 1.0f : 0.0f;
+			const DWORD passColor = pass == 0 ? shadowColor : textColor;
+			for (int i = 0; i < length; i++)
+			{
+				AddDigitSegments(vertices, text[i] - '0',
+					startX + i * (digitWidth + gap) + offset,
+					startY + offset,
+					passColor);
+			}
+		}
+	}
+
+	bool DrawOverlayVertices(void* d3dDevice, const std::vector<OverlayVertex>& vertices)
+	{
+		if (!d3dDevice || vertices.empty())
+		{
+			return true;
+		}
+
+		void** vtable = *reinterpret_cast<void***>(d3dDevice);
+		if (!vtable)
+		{
+			return false;
+		}
+
+		typedef HRESULT(STDMETHODCALLTYPE* SetRenderStateFunc)(void*, DWORD, DWORD);
+		typedef HRESULT(STDMETHODCALLTYPE* SetTextureFunc)(void*, DWORD, void*);
+		typedef HRESULT(STDMETHODCALLTYPE* SetVertexShaderFunc)(void*, DWORD);
+		typedef HRESULT(STDMETHODCALLTYPE* CreateStateBlockFunc)(void*, int, DWORD*);
+		typedef HRESULT(STDMETHODCALLTYPE* ApplyStateBlockFunc)(void*, DWORD);
+		typedef HRESULT(STDMETHODCALLTYPE* DeleteStateBlockFunc)(void*, DWORD);
+		typedef HRESULT(STDMETHODCALLTYPE* SetTextureStageStateFunc)(void*, DWORD, DWORD, DWORD);
+		typedef HRESULT(STDMETHODCALLTYPE* DrawPrimitiveUpFunc)(void*, int, UINT, const void*, UINT);
+		SetRenderStateFunc setRenderState = reinterpret_cast<SetRenderStateFunc>(vtable[50]);
+		SetTextureFunc setTexture = reinterpret_cast<SetTextureFunc>(vtable[61]);
+		SetVertexShaderFunc setVertexShader = reinterpret_cast<SetVertexShaderFunc>(vtable[76]);
+		CreateStateBlockFunc createStateBlock = reinterpret_cast<CreateStateBlockFunc>(vtable[57]);
+		ApplyStateBlockFunc applyStateBlock = reinterpret_cast<ApplyStateBlockFunc>(vtable[54]);
+		DeleteStateBlockFunc deleteStateBlock = reinterpret_cast<DeleteStateBlockFunc>(vtable[56]);
+		SetTextureStageStateFunc setTextureStageState = reinterpret_cast<SetTextureStageStateFunc>(vtable[63]);
+		DrawPrimitiveUpFunc drawPrimitiveUp = reinterpret_cast<DrawPrimitiveUpFunc>(vtable[72]);
+		if (!setRenderState || !setTexture || !setVertexShader || !createStateBlock || !applyStateBlock || !deleteStateBlock
+			|| !setTextureStageState || !drawPrimitiveUp)
+		{
+			return false;
+		}
+
+		DWORD stateBlock = 0;
+		constexpr int kD3dStateBlockAll = 1;
+		if (createStateBlock(d3dDevice, kD3dStateBlockAll, &stateBlock) < 0 || stateBlock == 0)
+		{
+			return false;
+		}
+
+		constexpr DWORD kD3dRsZEnable = 7;
+		constexpr DWORD kD3dRsZWriteEnable = 14;
+		constexpr DWORD kD3dRsSrcBlend = 19;
+		constexpr DWORD kD3dRsDestBlend = 20;
+		constexpr DWORD kD3dRsCullMode = 22;
+		constexpr DWORD kD3dRsAlphaBlendEnable = 27;
+		constexpr DWORD kD3dRsLighting = 137;
+		constexpr DWORD kD3dBlendSrcAlpha = 5;
+		constexpr DWORD kD3dBlendInvSrcAlpha = 6;
+		constexpr DWORD kD3dCullNone = 1;
+		constexpr DWORD kD3dFvfXyzRhwDiffuse = 0x004 | 0x040;
+		constexpr DWORD kD3dTssColorOp = 1;
+		constexpr DWORD kD3dTssColorArg1 = 2;
+		constexpr DWORD kD3dTssAlphaOp = 4;
+		constexpr DWORD kD3dTssAlphaArg1 = 5;
+		constexpr DWORD kD3dTopSelectArg1 = 2;
+		constexpr DWORD kD3dTaDiffuse = 0;
+		constexpr int kD3dPtTriangleList = 4;
+
+		setTexture(d3dDevice, 0, nullptr);
+		setRenderState(d3dDevice, kD3dRsZEnable, 0);
+		setRenderState(d3dDevice, kD3dRsZWriteEnable, 0);
+		setRenderState(d3dDevice, kD3dRsAlphaBlendEnable, 1);
+		setRenderState(d3dDevice, kD3dRsSrcBlend, kD3dBlendSrcAlpha);
+		setRenderState(d3dDevice, kD3dRsDestBlend, kD3dBlendInvSrcAlpha);
+		setRenderState(d3dDevice, kD3dRsCullMode, kD3dCullNone);
+		setRenderState(d3dDevice, kD3dRsLighting, 0);
+		setTextureStageState(d3dDevice, 0, kD3dTssColorOp, kD3dTopSelectArg1);
+		setTextureStageState(d3dDevice, 0, kD3dTssColorArg1, kD3dTaDiffuse);
+		setTextureStageState(d3dDevice, 0, kD3dTssAlphaOp, kD3dTopSelectArg1);
+		setTextureStageState(d3dDevice, 0, kD3dTssAlphaArg1, kD3dTaDiffuse);
+
+		const bool drawn = setVertexShader(d3dDevice, kD3dFvfXyzRhwDiffuse) >= 0
+			&& drawPrimitiveUp(d3dDevice, kD3dPtTriangleList,
+				static_cast<UINT>(vertices.size() / 3), vertices.data(), sizeof(OverlayVertex)) >= 0;
+		applyStateBlock(d3dDevice, stateBlock);
+		deleteStateBlock(d3dDevice, stateBlock);
+		return drawn;
 	}
 
 	std::unordered_map<unsigned long long, int> CountNativeIconsByKey(DWORD temporaryStatView)
@@ -884,5 +1131,59 @@ namespace StackedBuffIcons
 		ReplaceIcons(icons);
 		DebugLog("packet consumed parsed=%d", parsedCount);
 		return true;
+	}
+
+	void DrawCountdownOverlay(void* d3dDevice)
+	{
+		if (!d3dDevice || !g_countdownFieldActive || !g_lastNativeDrawView)
+		{
+			return;
+		}
+
+		const DWORD temporaryStatView = g_lastNativeDrawView;
+		g_currentTemporaryStatView = temporaryStatView;
+		const int nodeCount = CountNativeNodes(temporaryStatView);
+		if (nodeCount <= 0)
+		{
+			return;
+		}
+
+		if (Client::m_nGameWidth <= 0 || Client::m_nGameHeight <= 0)
+		{
+			return;
+		}
+
+		std::vector<OverlayVertex> vertices;
+		vertices.reserve(nodeCount * 2 * 2 * 7 * 6);
+		DWORD node = GetNativeListHead(temporaryStatView);
+		for (int index = 0; node && index < nodeCount && index < 64; index++)
+		{
+			const DWORD entry = GetNativeNodeEntry(node);
+			char text[4]{};
+			COLORREF color = RGB(255, 255, 255);
+			if (CountdownTextForRemaining(ReadDwordOrZero(entry + 0x38), text, sizeof(text), &color))
+			{
+				const int iconX = EstimateNativeIconX(index, nodeCount);
+				const int iconY = EstimateNativeIconY(index);
+				AddCountdownNumber(vertices, atoi(text), iconX, iconY, color);
+			}
+			node = GetNativeNodeNext(node);
+		}
+
+		DrawOverlayVertices(d3dDevice, vertices);
+	}
+
+	void OnFieldInit()
+	{
+		g_countdownFieldActive = true;
+		g_lastNativeDrawView = 0;
+		g_observedTemporaryStatView = 0;
+	}
+
+	void OnFieldDispose()
+	{
+		g_countdownFieldActive = false;
+		g_lastNativeDrawView = 0;
+		g_observedTemporaryStatView = 0;
 	}
 }

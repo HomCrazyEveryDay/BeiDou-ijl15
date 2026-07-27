@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "BossHP.h"
+#include "StackedBuffIcons.h"
 
 const DWORD dw_TSingleton_CUIMiniMap___ms_pInstance = 0x00BED788;
 const DWORD dwCField__ShowMobHpTag = 0x005336CA;
@@ -61,6 +62,7 @@ void BossHP::HookInitField() {
 		}
 		BossHP::DisposeToolTip((int)&aBossHpUIToolTip);
 		BossHP::CreateToolTip((int)&aBossHpUIToolTip);
+		StackedBuffIcons::OnFieldInit();
 		_Field__Init(pThis, edx);
 	};
 	Memory::SetHook(true, reinterpret_cast<void**>(&_Field__Init), Hook);
@@ -72,6 +74,7 @@ void BossHP::HookDisposeField() {
 
 	Field__Dispose_Type Hook = [](void* pThis, void* edx) -> void
 	{
+		StackedBuffIcons::OnFieldDispose();
 		DisposeBossHpNumber();
 		_Field__Dispose(pThis, edx);
 	};
