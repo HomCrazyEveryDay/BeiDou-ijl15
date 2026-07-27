@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "HpMpAlert.h"
+#include "StackedBuffIcons.h"
 namespace {
 constexpr DWORD kSaveGlobalAddr = 0x0049C8E7;
 constexpr DWORD kUIStatusBarPtr = 0x00BEBF9C;
@@ -175,6 +176,9 @@ static void __fastcall SaveGlobal_Hook(void* pThis, void* edx) {
 using ProcessPacket_t = void(__fastcall*)(void* pThis, void* edx, CInPacket* packet);
 static ProcessPacket_t s_ProcessPacket = reinterpret_cast<ProcessPacket_t>(kProcessPacketAddr);
 static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* packet) {
+    if (StackedBuffIcons::HandlePacket(packet)) {
+        return;
+    }
     if (HandleShowMobDamagePacket(packet)) {
         return;
     }

@@ -9,6 +9,7 @@
 #include "BossHP.h"
 #include "AranComboUi.h"
 #include "HpMpAlert.h"
+#include "StackedBuffIcons.h"
 #include "SelectCharMacFix.h"
 #include "MovementKeyHook.h"
 #include "NpcShopCurrency.h"
@@ -424,6 +425,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		INIReader reader("config.ini");
 		bool enableCrashDump = true;
 		std::string crashDumpType = "mini";
+		bool enableStackedBuffIconLog = false;
 		const int configParseError = reader.ParseError();
 		if (configParseError == 0) {
 			// Resolution and IME are local client compatibility settings.
@@ -434,6 +436,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 			enableCrashDump = reader.GetBoolean("debug", "enableCrashDump", true);
 			crashDumpType = reader.Get("debug", "crashDumpType", "mini");
 			Client::enableStartupLog = reader.GetBoolean("debug", "enableStartupLog", false);
+			enableStackedBuffIconLog = reader.GetBoolean("debug", "enableStackedBuffIconLog", false);
 			ApplyLocalEndpointOverride(reader);
 		}
 		const int requestedWidth = Client::m_nGameWidth;
@@ -461,6 +464,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Hook_lpfn_NextLevel(true);
 		HookSaveGlobal(true);
 		HookHpMpAlertRecv(true);
+		StackedBuffIcons::Install(enableStackedBuffIconLog);
 		HookSelectCharMacFix(true);
 		//Hook_get_unknown(true);
 		//Hook_get_resource_object(true); //helper function hooks  //ty teto for helping me get started
