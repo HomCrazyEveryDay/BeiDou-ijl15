@@ -72,6 +72,7 @@ namespace
 
 	void DebugLog(const char* format, ...);
 	void SyncNativeVirtualIcons(const std::vector<StackedBuffIcon>& icons);
+	bool RequestedCountsSatisfied(DWORD temporaryStatView, const std::vector<StackedBuffIcon>& icons);
 
 	bool WriteCodeBytes(DWORD address, const BYTE* bytes, int count)
 	{
@@ -116,18 +117,6 @@ namespace
 	int NativeTypeForIcon(const StackedBuffIcon& icon)
 	{
 		return icon.skill ? kNativeIconTypeSkill : kNativeIconTypeItem;
-	}
-
-	bool IconsContainNativeKey(const std::vector<StackedBuffIcon>& icons, int nativeType, int iconId)
-	{
-		for (const StackedBuffIcon& icon : icons)
-		{
-			if (NativeTypeForIcon(icon) == nativeType && icon.iconId == iconId)
-			{
-				return true;
-			}
-		}
-		return false;
 	}
 
 	bool IconExpired(const StackedBuffIcon& icon, DWORD now)
@@ -177,8 +166,8 @@ namespace
 		if (shouldObserve && !g_syncingNativeIcons)
 		{
 			std::vector<StackedBuffIcon> icons = SnapshotIcons();
-			// Regular buff packets can rebuild the native list; restore our requested counts only when this view/key matters.
-			if (!icons.empty() && (previousTemporaryStatView != pThis || IconsContainNativeKey(icons, nativeType, iconId)))
+			// Regular buff packets can rebuild the native list; restore our requested counts when any tracked icon went missing.
+			if (!RequestedCountsSatisfied(pThis, icons))
 			{
 				DebugLog("native_add_resync view=%08X type=%d icon=%d stored=%d",
 					pThis, nativeType, iconId, static_cast<int>(icons.size()));
@@ -198,12 +187,13 @@ namespace
 
 		g_nativeDraw(pThis, edx);
 
-		if (pThis && previousTemporaryStatView != pThis && !g_syncingNativeIcons && g_iconLockInitialized)
+		if (pThis && !g_syncingNativeIcons && g_iconLockInitialized)
 		{
 			std::vector<StackedBuffIcon> icons = SnapshotIcons();
-			if (!icons.empty())
+			if (!RequestedCountsSatisfied(pThis, icons))
 			{
-				DebugLog("native_draw_initial_sync view=%08X stored=%d", pThis, static_cast<int>(icons.size()));
+				DebugLog("native_draw_resync view=%08X previous=%08X stored=%d",
+					pThis, previousTemporaryStatView, static_cast<int>(icons.size()));
 				SyncNativeVirtualIcons(icons);
 			}
 		}
@@ -475,6 +465,25 @@ namespace
 			}
 		}
 		return counts;
+	}
+
+	bool RequestedCountsSatisfied(DWORD temporaryStatView, const std::vector<StackedBuffIcon>& icons)
+	{
+		if (!temporaryStatView || icons.empty())
+		{
+			return true;
+		}
+
+		std::unordered_map<unsigned long long, int> nativeCounts = CountNativeIconsByKey(temporaryStatView);
+		for (const auto& desired : DesiredIconCounts(icons))
+		{
+			auto nativeCount = nativeCounts.find(desired.first);
+			if (nativeCount == nativeCounts.end() || nativeCount->second < desired.second)
+			{
+				return false;
+			}
+		}
+		return true;
 	}
 
 	std::unordered_set<DWORD> SnapshotNativeIconNodes(DWORD temporaryStatView, int nativeType, int iconId)
