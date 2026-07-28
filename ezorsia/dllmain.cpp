@@ -35,6 +35,47 @@ struct ExeVerifyInfo {
 
 static DWORD g_TextGlyphCodepointReturn = 0x00842505;
 static DWORD g_QuestTextGlyphCodepointReturn = 0x00881C54;
+static DWORD g_FocusStanceAnimationReturn = 0x00958ADD;
+
+__declspec(naked) void FocusStanceAnimationCave()
+{
+	__asm {
+		// EAX is the current job ID minus 132 at this point in the native Stance handler.
+		cmp eax, 168 // 300 - 132
+		je focus
+		cmp eax, 178 // 310 - 132
+		je focus
+		cmp eax, 179 // 311 - 132
+		je focus
+		cmp eax, 180 // 312 - 132
+		je focus
+		cmp eax, 188 // 320 - 132
+		je focus
+		cmp eax, 189 // 321 - 132
+		je focus
+		cmp eax, 190 // 322 - 132
+		je focus
+		cmp eax, 1980 // 2112 - 132
+		je aran
+
+		xor esi, esi
+		jmp dword ptr[g_FocusStanceAnimationReturn]
+
+	focus:
+		mov esi, 3001003
+		jmp dword ptr[g_FocusStanceAnimationReturn]
+
+	aran:
+		mov esi, 21121003
+		jmp dword ptr[g_FocusStanceAnimationReturn]
+	}
+}
+
+static void InstallFocusStanceAnimation()
+{
+	// Extend the native Stance success animation mapping without changing its client-side roll.
+	Memory::CodeCave(FocusStanceAnimationCave, 0x00958AB8, 5);
+}
 
 __declspec(naked) void TextGlyphCodepointGuardCave()
 {
@@ -480,6 +521,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		Client::LongQuickSlot();
 		InstallTextGlyphCodepointGuard();
 		InstallQuestTextGlyphCodepointGuard();
+		InstallFocusStanceAnimation();
 		if (Client::enableMovementKeyRebind) {
 			MovementKeyHook::Hook(true);
 			Client::MovementKeyRebind();
