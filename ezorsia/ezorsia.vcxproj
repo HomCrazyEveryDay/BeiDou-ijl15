@@ -177,6 +177,7 @@
     <ClInclude Include="BossHP.h" />
     <ClInclude Include="CrashReporter.h" />
     <ClInclude Include="HpMpAlert.h" />
+    <ClInclude Include="SnipeDamageSync.h" />
     <ClInclude Include="StackedBuffIcons.h" />
     <ClInclude Include="MovementKeyHook.h" />
     <ClInclude Include="NpcShopCurrency.h" />
@@ -222,6 +223,7 @@
     <ClCompile Include="BossHP.cpp" />
     <ClCompile Include="CrashReporter.cpp" />
     <ClCompile Include="HpMpAlert.cpp" />
+    <ClCompile Include="SnipeDamageSync.cpp" />
     <ClCompile Include="StackedBuffIcons.cpp" />
     <ClCompile Include="NpcShopCurrency.cpp" />
     <ClCompile Include="Client.cpp" />

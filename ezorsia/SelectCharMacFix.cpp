@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "SelectCharMacFix.h"
+#include "SnipeDamageSync.h"
 
 #include <cctype>
 #include <cstring>
@@ -120,6 +121,9 @@ static bool RewriteSelectCharMacList(COutPacket* packet) {
 
 static void __fastcall SendPacket_Hook(void* pThis, void* edx, COutPacket* packet) {
     RewriteSelectCharMacList(packet);
+    if (packet != nullptr) {
+        SnipeDamageSync::TrackOutgoingAttackPacket(packet->Data, packet->Size);
+    }
     g_SendPacket(pThis, edx, packet);
 }
 }

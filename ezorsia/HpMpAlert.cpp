@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "HpMpAlert.h"
+#include "SnipeDamageSync.h"
 #include "StackedBuffIcons.h"
 namespace {
 constexpr DWORD kSaveGlobalAddr = 0x0049C8E7;
@@ -39,8 +40,9 @@ using SendPacket_t = void(__fastcall*)(void* pThis, void* edx, COutPacket* packe
 static SendPacket_t g_SendPacket = reinterpret_cast<SendPacket_t>(0x0049637B);
 using FindMob_t = void* (__thiscall*)(void* pThis, int objectId);
 static FindMob_t g_FindMob = reinterpret_cast<FindMob_t>(kFindMobAddr);
-using ShowMobDamage_t = void(__thiscall*)(void* pThis, int damage, int lineIndex, int extra, int compact);
+using ShowMobDamage_t = void(__fastcall*)(void* pThis, void* edx, int damage, int lineIndex, int extra, int compact);
 static ShowMobDamage_t g_ShowMobDamage = reinterpret_cast<ShowMobDamage_t>(kShowMobDamageAddr);
+static bool g_renderingServerMobDamage = false;
 static bool TryReadDword(DWORD address, DWORD& out) {
     __try {
         out = *reinterpret_cast<DWORD*>(address);
@@ -161,11 +163,20 @@ static bool HandleShowMobDamagePacket(CInPacket* packet) {
         }
 
         // 006691D3's third argument selects the alternate damage number resource used by critical hits.
-        g_ShowMobDamage(mob, damage, lineIndex, critical ? 1 : 0, 0);
+        g_renderingServerMobDamage = true;
+        g_ShowMobDamage(mob, nullptr, damage, lineIndex, critical ? 1 : 0, 0);
+        g_renderingServerMobDamage = false;
         return true;
     } __except (EXCEPTION_EXECUTE_HANDLER) {
+        g_renderingServerMobDamage = false;
         return true;
     }
+}
+static void __fastcall ShowMobDamage_Hook(void* pThis, void* edx, int damage, int lineIndex, int extra, int compact) {
+    if (!g_renderingServerMobDamage && SnipeDamageSync::ShouldSuppressLocalDamage(pThis, damage)) {
+        return;
+    }
+    g_ShowMobDamage(pThis, edx, damage, lineIndex, extra, compact);
 }
 using SaveGlobal_t = void(__fastcall*)(void* pThis, void* edx);
 static SaveGlobal_t s_SaveGlobal = reinterpret_cast<SaveGlobal_t>(kSaveGlobalAddr);
@@ -190,5 +201,6 @@ void HookSaveGlobal(bool enable) {
     Memory::SetHook(enable, reinterpret_cast<void**>(&s_SaveGlobal), SaveGlobal_Hook);
 }
 void HookHpMpAlertRecv(bool enable) {
+    Memory::SetHook(enable, reinterpret_cast<void**>(&g_ShowMobDamage), ShowMobDamage_Hook);
     Memory::SetHook(enable, reinterpret_cast<void**>(&s_ProcessPacket), ProcessPacket_Hook);
 }
