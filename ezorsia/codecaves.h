@@ -1786,6 +1786,8 @@ __declspec(naked) void bigBangCastOnKeyDown()
 		cmp dword ptr[ebp - 10h], 021E3C9h
 		je bigBangKeyDown_release
 		cmp dword ptr[ebp - 10h], 0236A69h
+		je bigBangKeyDown_release
+		cmp dword ptr[ebp - 10h], 0312609h
 		jne bigBangKeyDown_done
 
 	bigBangKeyDown_release:

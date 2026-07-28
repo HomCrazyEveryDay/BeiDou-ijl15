@@ -4,6 +4,8 @@
 namespace {
 constexpr unsigned short kOpcodeRangedAttack = 0x002D;
 constexpr int kMarksmanSnipe = 3221007;
+constexpr int kMarksmanPiercingArrow = 3221001;
+constexpr int kPiercingArrowFullChargeScale = 10;
 constexpr DWORD kMobPoolPtr = 0x00BEBFA4;
 constexpr DWORD kFindMobAddr = 0x00441AE8;
 constexpr DWORD kPendingMs = 2500;
@@ -29,6 +31,23 @@ static int ReadI32(const unsigned char* ptr) {
         (static_cast<unsigned int>(ptr[1]) << 8) |
         (static_cast<unsigned int>(ptr[2]) << 16) |
         (static_cast<unsigned int>(ptr[3]) << 24));
+}
+
+static void WriteI32(unsigned char* ptr, int value) {
+    const unsigned int raw = static_cast<unsigned int>(value);
+    ptr[0] = static_cast<unsigned char>(raw & 0xFF);
+    ptr[1] = static_cast<unsigned char>((raw >> 8) & 0xFF);
+    ptr[2] = static_cast<unsigned char>((raw >> 16) & 0xFF);
+    ptr[3] = static_cast<unsigned char>((raw >> 24) & 0xFF);
+}
+
+static int ScalePiercingArrowDamage(int damage) {
+    if (damage <= 0) {
+        return damage;
+    }
+
+    const long long scaled = static_cast<long long>(damage) * kPiercingArrowFullChargeScale;
+    return scaled > INT_MAX ? INT_MAX : static_cast<int>(scaled);
 }
 
 static bool TryReadDword(DWORD address, DWORD& out) {
@@ -63,7 +82,7 @@ static void TrackTargetOid(int objectId) {
 }
 
 namespace SnipeDamageSync {
-void TrackOutgoingAttackPacket(const unsigned char* data, unsigned long size) {
+void TrackOutgoingAttackPacket(unsigned char* data, unsigned long size) {
     __try {
         if (data == nullptr || size < 52) {
             return;
@@ -71,7 +90,8 @@ void TrackOutgoingAttackPacket(const unsigned char* data, unsigned long size) {
         if (ReadU16(data) != kOpcodeRangedAttack) {
             return;
         }
-        if (ReadI32(data + 4) != kMarksmanSnipe) {
+        const int skillId = ReadI32(data + 4);
+        if (skillId != kMarksmanSnipe && skillId != kMarksmanPiercingArrow) {
             return;
         }
 
@@ -82,14 +102,25 @@ void TrackOutgoingAttackPacket(const unsigned char* data, unsigned long size) {
             return;
         }
 
-        const unsigned long targetBase = 30;
-        const unsigned long targetStride = 18 + static_cast<unsigned long>(numDamage) * 4;
+        const bool piercingArrow = skillId == kMarksmanPiercingArrow;
+        const unsigned long targetBase = piercingArrow ? 34 : 30;
+        const unsigned long targetStride = (piercingArrow ? 22 : 18) + static_cast<unsigned long>(numDamage) * 4;
         for (int i = 0; i < numAttacked; ++i) {
             const unsigned long targetOffset = targetBase + targetStride * static_cast<unsigned long>(i);
             if (targetOffset + 4 > size) {
                 return;
             }
             TrackTargetOid(ReadI32(data + targetOffset));
+            if (piercingArrow) {
+                const unsigned long damageBase = targetOffset + 18;
+                for (int j = 0; j < numDamage; ++j) {
+                    const unsigned long damageOffset = damageBase + static_cast<unsigned long>(j) * 4;
+                    if (damageOffset + 4 > size) {
+                        return;
+                    }
+                    WriteI32(data + damageOffset, ScalePiercingArrowDamage(ReadI32(data + damageOffset)));
+                }
+            }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         return;
