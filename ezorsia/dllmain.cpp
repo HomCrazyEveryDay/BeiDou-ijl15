@@ -50,6 +50,9 @@ static DWORD g_HurricaneMovementCheck = 0x0095F914;
 static DWORD g_HurricaneMovementCheckReturn = 0x009CBF13;
 static DWORD g_HurricaneSetMovementInput = 0x009B7B4A;
 static DWORD g_HurricaneSetMovementInputReturn = 0x009CC0DF;
+static DWORD g_BerserkActivationDamageReturn = 0x00A293B7;
+static DWORD g_BerserkActiveDamageExit = 0x00A29449;
+static DWORD g_BerserkDeactivate = 0x00A29419;
 
 __declspec(naked) void BoomerangStepIgnoreAirborneCheckCave()
 {
@@ -246,6 +249,77 @@ static void InstallHurricaneMovement()
 	// Keep native movement checks for every other state, and mirror Hurricane's live layers without resetting it.
 	Memory::CodeCave(AllowHurricaneMovementCave, 0x009CBF0C, 7);
 	Memory::CodeCave(ApplyHurricaneMovementInputCave, 0x009CC0D2, 13);
+}
+
+static int __stdcall CalculateBerserkDamage(int skillLevel, int hp, int maxHp)
+{
+	if (skillLevel <= 0 || skillLevel > 30 || maxHp <= 0) {
+		return 0;
+	}
+
+	const long long scaledHp = static_cast<long long>(hp) * 100;
+	const long long scaledMaxHp = maxHp;
+	const int threshold = 45 + skillLevel;
+	const int startDamage = 30 + skillLevel * 2;
+	const int maxDamage = 30 + skillLevel * 4;
+	if (scaledHp > scaledMaxHp * threshold) {
+		return 0;
+	}
+
+	if (threshold > 50 && scaledHp >= scaledMaxHp * 50) {
+		const int midDamage = 30 + skillLevel * 3;
+		return startDamage + static_cast<int>(
+			(scaledMaxHp * threshold - scaledHp) * (midDamage - startDamage)
+			/ (scaledMaxHp * (threshold - 50)));
+	}
+	if (scaledHp >= scaledMaxHp * 30) {
+		const int segmentStartHp = threshold > 50 ? 50 : threshold;
+		const int segmentStartDamage = threshold > 50 ? 30 + skillLevel * 3 : startDamage;
+		return segmentStartDamage + static_cast<int>(
+			(scaledMaxHp * segmentStartHp - scaledHp) * (maxDamage - segmentStartDamage)
+			/ (scaledMaxHp * (segmentStartHp - 30)));
+	}
+	return maxDamage;
+}
+
+__declspec(naked) void SetBerserkActivationDamageCave()
+{
+	__asm {
+		movsx ecx, word ptr[ebp - 14h]
+		push dword ptr[ebp - 10h]
+		push ecx
+		push ebx
+		call CalculateBerserkDamage
+		mov dword ptr[esi + 372Ch], eax
+		jmp dword ptr[g_BerserkActivationDamageReturn]
+	}
+}
+
+__declspec(naked) void UpdateActiveBerserkDamageCave()
+{
+	__asm {
+		movsx ecx, di
+		cmp ecx, eax
+		jg deactivate
+
+		push dword ptr[ebp - 14h]
+		push ecx
+		push ebx
+		call CalculateBerserkDamage
+		mov dword ptr[esi + 372Ch], eax
+
+		jmp dword ptr[g_BerserkActiveDamageExit]
+
+	deactivate:
+		jmp dword ptr[g_BerserkDeactivate]
+	}
+}
+
+static void InstallProgressiveBerserkDamage()
+{
+	// Every level gains a defined HP threshold and scales to its cap at 30% HP.
+	Memory::CodeCave(SetBerserkActivationDamageCave, 0x00A293B1, 6);
+	Memory::CodeCave(UpdateActiveBerserkDamageCave, 0x00A29412, 7);
 }
 
 __declspec(naked) void FocusStanceAnimationCave()
@@ -737,6 +811,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		InstallAssassinateNoCharge();
 		InstallAntidoteDuringDarkSight();
 		InstallHurricaneMovement();
+		InstallProgressiveBerserkDamage();
 		if (Client::enableMovementKeyRebind) {
 			MovementKeyHook::Hook(true);
 			Client::MovementKeyRebind();
