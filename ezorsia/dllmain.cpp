@@ -322,6 +322,12 @@ static void InstallProgressiveBerserkDamage()
 	Memory::CodeCave(UpdateActiveBerserkDamageCave, 0x00A29412, 7);
 }
 
+static void InstallRushWithoutTargetRequirement()
+{
+	// This branch is already limited to the three warrior Rush skill IDs.
+	Memory::FillBytes(0x00952E2F, 0x90, 6);
+}
+
 __declspec(naked) void FocusStanceAnimationCave()
 {
 	__asm {
@@ -812,6 +818,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		InstallAntidoteDuringDarkSight();
 		InstallHurricaneMovement();
 		InstallProgressiveBerserkDamage();
+		InstallRushWithoutTargetRequirement();
 		if (Client::enableMovementKeyRebind) {
 			MovementKeyHook::Hook(true);
 			Client::MovementKeyRebind();
