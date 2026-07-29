@@ -44,8 +44,12 @@ static DWORD g_AssassinateNoChargeReturn = 0x00790312;
 static DWORD g_DarkSightItemUseCheck = 0x0094FA45;
 static DWORD g_AntidoteUseAllowed = 0x00A094BE;
 static DWORD g_AntidoteUseRejected = 0x00A0954B;
-static DWORD g_HurricaneMovementCheckReturn = 0x0095F91F;
-static DWORD g_HurricaneMovementAllowed = 0x0095F92C;
+static DWORD g_AntidoteHotkeyCheckReturn = 0x0094F873;
+static DWORD g_AntidoteHotkeyAllowed = 0x0094F879;
+static DWORD g_HurricaneMovementCheck = 0x0095F914;
+static DWORD g_HurricaneMovementCheckReturn = 0x009CBF13;
+static DWORD g_HurricaneSetMovementInput = 0x009B7B4A;
+static DWORD g_HurricaneSetMovementInputReturn = 0x009CC0DF;
 
 __declspec(naked) void BoomerangStepIgnoreAirborneCheckCave()
 {
@@ -111,6 +115,8 @@ __declspec(naked) void AllowAntidoteDuringDarkSightCave()
 	__asm {
 		cmp dword ptr[ebp + 0Ch], 2050000
 		je allowed
+		cmp dword ptr[ebp + 0Ch], 2050004
+		je allowed
 
 		mov ecx, dword ptr ds:[00BEBF98h]
 		call dword ptr[g_DarkSightItemUseCheck]
@@ -125,31 +131,121 @@ __declspec(naked) void AllowAntidoteDuringDarkSightCave()
 	}
 }
 
+__declspec(naked) void AllowAntidoteHotkeyDuringDarkSightCave()
+{
+	__asm {
+		cmp dword ptr[esi + 1], 2050000
+		je allowed
+		cmp dword ptr[esi + 1], 2050004
+		je allowed
+
+		mov ecx, dword ptr[ebp - 1Ch]
+		call dword ptr[g_DarkSightItemUseCheck]
+		test eax, eax
+		jmp dword ptr[g_AntidoteHotkeyCheckReturn]
+
+	allowed:
+		jmp dword ptr[g_AntidoteHotkeyAllowed]
+	}
+}
+
 static void InstallAntidoteDuringDarkSight()
 {
-	// Only Antidote bypasses Dark Sight's item restriction; every other validation remains native.
+	// Allow status-curing potions through both item-use paths; all other validations remain native.
 	Memory::CodeCave(AllowAntidoteDuringDarkSightCave, 0x00A094AB, 19);
+	Memory::CodeCave(AllowAntidoteHotkeyDuringDarkSightCave, 0x0094F869, 10);
+}
+
+static int ReadClientMovementKey(int virtualKey)
+{
+	using GetKeyState = int(__thiscall*)(void*, int);
+
+	__try {
+		void* input = *reinterpret_cast<void**>(0x00BEC33C);
+		return input && reinterpret_cast<GetKeyState>(0x0059A25A)(input, virtualKey) != 0;
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		return 0;
+	}
+}
+
+static void SetHurricaneAvatarFacing(DWORD user, DWORD facing)
+{
+	using PutFlip = HRESULT(__stdcall*)(void*, int);
+
+	const DWORD avatar = user + 0x88;
+	const DWORD layerOffsets[] = { 0x10C8, 0x10C4, 0x10C0, 0x10D4, 0x10D0 };
+	const int flip = facing == 0 ? 1 : 0;
+	for (const DWORD offset : layerOffsets) {
+		void* layer = *reinterpret_cast<void**>(avatar + offset);
+		if (!layer) {
+			continue;
+		}
+
+		void** vtable = *reinterpret_cast<void***>(layer);
+		reinterpret_cast<PutFlip>(vtable[0xD8 / sizeof(void*)])(layer, flip);
+	}
+}
+
+static void __stdcall ApplyHurricaneMovementInput(DWORD user, int* horizontal, int* vertical)
+{
+	const int clientHorizontal = ReadClientMovementKey(VK_RIGHT) - ReadClientMovementKey(VK_LEFT);
+	if (clientHorizontal != 0) {
+		const DWORD desiredFacing = clientHorizontal < 0 ? 1 : 0;
+		if ((*reinterpret_cast<DWORD*>(user + 0x570) & 1) != desiredFacing) {
+			SetHurricaneAvatarFacing(user, desiredFacing);
+		}
+		*horizontal = clientHorizontal;
+	}
 }
 
 __declspec(naked) void AllowHurricaneMovementCave()
 {
 	__asm {
-		mov eax, [esi + 2AE8h]
-		cmp eax, 02F9F6Ch
+		cmp dword ptr[esi + 2AE8h], 02F9F6Ch
 		je allowed
 
-		test eax, eax
+		mov ecx, esi
+		call dword ptr[g_HurricaneMovementCheck]
 		jmp dword ptr[g_HurricaneMovementCheckReturn]
 
 	allowed:
-		jmp dword ptr[g_HurricaneMovementAllowed]
+		xor eax, eax
+		jmp dword ptr[g_HurricaneMovementCheckReturn]
+	}
+}
+
+__declspec(naked) void ApplyHurricaneMovementInputCave()
+{
+	__asm {
+		cmp dword ptr[esi + 2AE8h], 02F9F6Ch
+		jne setMovementInput
+
+		pushfd
+		pushad
+		lea eax, [ebp - 4]
+		push eax
+		lea eax, [ebp - 8]
+		push eax
+		push esi
+		call ApplyHurricaneMovementInput
+		popad
+		popfd
+
+	setMovementInput:
+		push dword ptr[ebp - 4]
+		mov ecx, edi
+		push dword ptr[ebp - 8]
+		call dword ptr[g_HurricaneSetMovementInput]
+		jmp dword ptr[g_HurricaneSetMovementInputReturn]
 	}
 }
 
 static void InstallHurricaneMovement()
 {
-	// Let Hurricane follow the native continuous-skill path while directional input is processed.
-	Memory::CodeCave(AllowHurricaneMovementCave, 0x0095F917, 8);
+	// Keep native movement checks for every other state, and mirror Hurricane's live layers without resetting it.
+	Memory::CodeCave(AllowHurricaneMovementCave, 0x009CBF0C, 7);
+	Memory::CodeCave(ApplyHurricaneMovementInputCave, 0x009CC0D2, 13);
 }
 
 __declspec(naked) void FocusStanceAnimationCave()
