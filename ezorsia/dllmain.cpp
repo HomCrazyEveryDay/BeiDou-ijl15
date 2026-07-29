@@ -36,6 +36,121 @@ struct ExeVerifyInfo {
 static DWORD g_TextGlyphCodepointReturn = 0x00842505;
 static DWORD g_QuestTextGlyphCodepointReturn = 0x00881C54;
 static DWORD g_FocusStanceAnimationReturn = 0x00958ADD;
+static DWORD g_BoomerangStepAirborneCheckReturn = 0x00950C4D;
+static DWORD g_BoomerangStepAirborneAllowed = 0x00950C53;
+static DWORD g_BoomerangStepPositionReturn = 0x00950DC1;
+static DWORD g_BoomerangStepPositionFail = 0x00950AE8;
+static DWORD g_AssassinateNoChargeReturn = 0x00790312;
+static DWORD g_DarkSightItemUseCheck = 0x0094FA45;
+static DWORD g_AntidoteUseAllowed = 0x00A094BE;
+static DWORD g_AntidoteUseRejected = 0x00A0954B;
+static DWORD g_HurricaneMovementCheckReturn = 0x0095F91F;
+static DWORD g_HurricaneMovementAllowed = 0x0095F92C;
+
+__declspec(naked) void BoomerangStepIgnoreAirborneCheckCave()
+{
+	__asm {
+		cmp eax, 040684Fh
+		je allowAirborne
+		cmp dword ptr[edi + 110h], 0
+		jmp dword ptr[g_BoomerangStepAirborneCheckReturn]
+
+	allowAirborne:
+		jmp dword ptr[g_BoomerangStepAirborneAllowed]
+	}
+}
+
+__declspec(naked) void BoomerangStepIgnoreTerrainAndAirCave()
+{
+	__asm {
+		test eax, eax
+		jne continueAttack
+		cmp dword ptr[ebp - 10h], 040684Fh
+		jne failAttack
+
+		mov eax, [ebx + 4]
+		lea ecx, [ebx + 4]
+		call dword ptr[eax + 10h]
+		test eax, eax
+		je failAttack
+		mov ecx, [eax]
+		mov [ebp - 0B0h], ecx
+		mov ecx, [eax + 4]
+		mov [ebp - 0ACh], ecx
+
+	continueAttack:
+		jmp dword ptr[g_BoomerangStepPositionReturn]
+
+	failAttack:
+		jmp dword ptr[g_BoomerangStepPositionFail]
+	}
+}
+
+static void InstallBoomerangStepIgnoreTerrainAndAir()
+{
+	// Preserve normal movement when a valid endpoint exists; otherwise cast at the current position.
+	Memory::CodeCave(BoomerangStepIgnoreAirborneCheckCave, 0x00950C46, 7);
+	Memory::CodeCave(BoomerangStepIgnoreTerrainAndAirCave, 0x00950DB9, 8);
+}
+
+__declspec(naked) void AssassinateNoChargeCave()
+{
+	__asm {
+		jmp dword ptr[g_AssassinateNoChargeReturn]
+	}
+}
+
+static void InstallAssassinateNoCharge()
+{
+	// Skip the original charge-time multiplier without applying any replacement multiplier.
+	Memory::CodeCave(AssassinateNoChargeCave, 0x0079028F, 9);
+}
+
+__declspec(naked) void AllowAntidoteDuringDarkSightCave()
+{
+	__asm {
+		cmp dword ptr[ebp + 0Ch], 2050000
+		je allowed
+
+		mov ecx, dword ptr ds:[00BEBF98h]
+		call dword ptr[g_DarkSightItemUseCheck]
+		test eax, eax
+		jne rejected
+
+	allowed:
+		jmp dword ptr[g_AntidoteUseAllowed]
+
+	rejected:
+		jmp dword ptr[g_AntidoteUseRejected]
+	}
+}
+
+static void InstallAntidoteDuringDarkSight()
+{
+	// Only Antidote bypasses Dark Sight's item restriction; every other validation remains native.
+	Memory::CodeCave(AllowAntidoteDuringDarkSightCave, 0x00A094AB, 19);
+}
+
+__declspec(naked) void AllowHurricaneMovementCave()
+{
+	__asm {
+		mov eax, [esi + 2AE8h]
+		cmp eax, 02F9F6Ch
+		je allowed
+
+		test eax, eax
+		jmp dword ptr[g_HurricaneMovementCheckReturn]
+
+	allowed:
+		jmp dword ptr[g_HurricaneMovementAllowed]
+	}
+}
+
+static void InstallHurricaneMovement()
+{
+	// Let Hurricane follow the native continuous-skill path while directional input is processed.
+	Memory::CodeCave(AllowHurricaneMovementCave, 0x0095F917, 8);
+}
 
 __declspec(naked) void FocusStanceAnimationCave()
 {
@@ -522,6 +637,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		InstallTextGlyphCodepointGuard();
 		InstallQuestTextGlyphCodepointGuard();
 		InstallFocusStanceAnimation();
+		InstallBoomerangStepIgnoreTerrainAndAir();
+		InstallAssassinateNoCharge();
+		InstallAntidoteDuringDarkSight();
+		InstallHurricaneMovement();
 		if (Client::enableMovementKeyRebind) {
 			MovementKeyHook::Hook(true);
 			Client::MovementKeyRebind();
