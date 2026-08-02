@@ -24,9 +24,10 @@ constexpr DWORD kCriticalDamageResourceOffset = 0x188;
 constexpr DWORD kCriticalDamageResource2Offset = 0x18C;
 constexpr WORD kOpcodeSetHpMpAlert = 0x1000;
 constexpr WORD kOpcodeShowMobDamage = 0x1001;
-constexpr DWORD kQueuedDamageTtlMs = 300;
+constexpr DWORD kQueuedDamageTtlMs = 1000;
 constexpr size_t kMaxQueuedMobDamage = 128;
-constexpr size_t kMaxMobDamagePerFrame = 32;
+// Spread large multi-target bursts across frames so native damage layers remain visually distinct.
+constexpr size_t kMaxMobDamagePerFrame = 4;
 struct COutPacket {
     int Loopback;
     union {
