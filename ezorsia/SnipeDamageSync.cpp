@@ -9,16 +9,18 @@ constexpr int kPiercingArrowFullChargeScale = 10;
 constexpr DWORD kMobPoolPtr = 0x00BEBFA4;
 constexpr DWORD kFindMobAddr = 0x00441AE8;
 constexpr DWORD kPendingMs = 2500;
-constexpr int kPendingCount = 8;
+constexpr int kPendingCount = 64;
 
-struct PendingSnipeTarget {
+struct PendingLocalDamage {
     void* mob;
+    int skillId;
+    int damage;
     DWORD expiresAt;
 };
 
 using FindMob_t = void* (__thiscall*)(void* pThis, int objectId);
 static FindMob_t g_FindMob = reinterpret_cast<FindMob_t>(kFindMobAddr);
-static PendingSnipeTarget g_pending[kPendingCount] = {};
+static PendingLocalDamage g_pending[kPendingCount] = {};
 static int g_nextPending = 0;
 
 static unsigned short ReadU16(const unsigned char* ptr) {
@@ -60,24 +62,23 @@ static bool TryReadDword(DWORD address, DWORD& out) {
     }
 }
 
-static void AddPendingMob(void* mob) {
-    if (mob == nullptr) {
+static void AddPendingDamage(void* mob, int skillId, int damage) {
+    if (mob == nullptr || damage <= 0) {
         return;
     }
 
     const DWORD now = GetTickCount();
-    g_pending[g_nextPending] = { mob, now + kPendingMs };
+    g_pending[g_nextPending] = { mob, skillId, damage, now + kPendingMs };
     g_nextPending = (g_nextPending + 1) % kPendingCount;
 }
 
-static void TrackTargetOid(int objectId) {
+static void* FindTargetMob(int objectId) {
     DWORD mobPool = 0;
     if (!TryReadDword(kMobPoolPtr, mobPool) || mobPool == 0) {
-        return;
+        return nullptr;
     }
 
-    void* mob = g_FindMob(reinterpret_cast<void*>(mobPool), objectId);
-    AddPendingMob(mob);
+    return g_FindMob(reinterpret_cast<void*>(mobPool), objectId);
 }
 }
 
@@ -104,21 +105,24 @@ void TrackOutgoingAttackPacket(unsigned char* data, unsigned long size) {
 
         const bool piercingArrow = skillId == kMarksmanPiercingArrow;
         const unsigned long targetBase = piercingArrow ? 34 : 30;
-        const unsigned long targetStride = (piercingArrow ? 22 : 18) + static_cast<unsigned long>(numDamage) * 4;
+        const unsigned long targetStride = 22 + static_cast<unsigned long>(numDamage) * 4;
         for (int i = 0; i < numAttacked; ++i) {
             const unsigned long targetOffset = targetBase + targetStride * static_cast<unsigned long>(i);
             if (targetOffset + 4 > size) {
                 return;
             }
-            TrackTargetOid(ReadI32(data + targetOffset));
-            if (piercingArrow) {
-                const unsigned long damageBase = targetOffset + 18;
-                for (int j = 0; j < numDamage; ++j) {
-                    const unsigned long damageOffset = damageBase + static_cast<unsigned long>(j) * 4;
-                    if (damageOffset + 4 > size) {
-                        return;
-                    }
-                    WriteI32(data + damageOffset, ScalePiercingArrowDamage(ReadI32(data + damageOffset)));
+            void* mob = FindTargetMob(ReadI32(data + targetOffset));
+            const unsigned long damageBase = targetOffset + 18;
+            for (int j = 0; j < numDamage; ++j) {
+                const unsigned long damageOffset = damageBase + static_cast<unsigned long>(j) * 4;
+                if (damageOffset + 4 > size) {
+                    return;
+                }
+
+                const int localDamage = ReadI32(data + damageOffset);
+                AddPendingDamage(mob, skillId, localDamage);
+                if (piercingArrow) {
+                    WriteI32(data + damageOffset, ScalePiercingArrowDamage(localDamage));
                 }
             }
         }
@@ -134,7 +138,7 @@ bool ShouldSuppressLocalDamage(void* mob, int damage) {
 
     const DWORD now = GetTickCount();
     for (int i = 0; i < kPendingCount; ++i) {
-        PendingSnipeTarget& pending = g_pending[i];
+        PendingLocalDamage& pending = g_pending[i];
         if (pending.mob == nullptr) {
             continue;
         }
@@ -142,7 +146,7 @@ bool ShouldSuppressLocalDamage(void* mob, int damage) {
             pending.mob = nullptr;
             continue;
         }
-        if (pending.mob == mob) {
+        if (pending.mob == mob && pending.damage == damage) {
             pending.mob = nullptr;
             return true;
         }
