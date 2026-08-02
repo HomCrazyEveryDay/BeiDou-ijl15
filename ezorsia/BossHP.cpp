@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "BossHP.h"
+#include "HpMpAlert.h"
 #include "StackedBuffIcons.h"
 
 const DWORD dw_TSingleton_CUIMiniMap___ms_pInstance = 0x00BED788;
@@ -33,6 +34,7 @@ void BossHP::HookUpdate() {
 	UserLocal__Update_type Hook = [](void* pThis, void* edx) -> void
 	{
 		_UserLocal__Update(pThis, edx);
+		UpdateQueuedMobDamageDisplay();
 		DrawBossHpNumberIfNeed();
 	};
 
@@ -62,6 +64,7 @@ void BossHP::HookInitField() {
 		}
 		BossHP::DisposeToolTip((int)&aBossHpUIToolTip);
 		BossHP::CreateToolTip((int)&aBossHpUIToolTip);
+		OnMobDamageFieldInit();
 		StackedBuffIcons::OnFieldInit();
 		_Field__Init(pThis, edx);
 	};
@@ -74,6 +77,7 @@ void BossHP::HookDisposeField() {
 
 	Field__Dispose_Type Hook = [](void* pThis, void* edx) -> void
 	{
+		OnMobDamageFieldDispose();
 		StackedBuffIcons::OnFieldDispose();
 		DisposeBossHpNumber();
 		_Field__Dispose(pThis, edx);

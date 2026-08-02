@@ -27,16 +27,16 @@ namespace
 
 	struct CInPacket
 	{
-		bool Loopback;
+		int Loopback;
 		int State;
 		void* Data;
-		unsigned long Size;
-		unsigned short RawSeq;
 		unsigned short DataLen;
-		unsigned short Unknown;
+		unsigned short RawSeq;
+		unsigned int Unknown;
 		unsigned int Offset;
-		void* Unk;
 	};
+	static_assert(offsetof(CInPacket, DataLen) == 0x0C, "Unexpected CInPacket data length offset");
+	static_assert(offsetof(CInPacket, Offset) == 0x14, "Unexpected CInPacket read offset");
 
 	struct StackedBuffIcon
 	{
@@ -1025,7 +1025,7 @@ namespace
 
 		__try
 		{
-			if (packet->Data == nullptr || packet->Size < 2)
+			if (packet->Data == nullptr || packet->DataLen < 2)
 			{
 				return false;
 			}
@@ -1033,14 +1033,14 @@ namespace
 			const unsigned char* data = reinterpret_cast<const unsigned char*>(packet->Data);
 			int countOffset = 0;
 			int count = 0;
-			if (!TryFindIconPacketLayout(data, packet->Size, &countOffset, &count))
+			if (!TryFindIconPacketLayout(data, packet->DataLen, &countOffset, &count))
 			{
 				return true;
 			}
 
 			*isTargetPacket = true;
 			DebugLog("packet target size=%lu countOffset=%d count=%d offset=%u dataLen=%u rawSeq=%u",
-				packet->Size, countOffset, count, packet->Offset, packet->DataLen, packet->RawSeq);
+				static_cast<unsigned long>(packet->DataLen), countOffset, count, packet->Offset, packet->DataLen, packet->RawSeq);
 
 			const DWORD now = GetTickCount();
 			const unsigned char* cursor = data + countOffset + 2;

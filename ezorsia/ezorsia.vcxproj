@@ -176,6 +176,7 @@
     <ClInclude Include="AranComboUi.h" />
     <ClInclude Include="BossHP.h" />
     <ClInclude Include="CrashReporter.h" />
+    <ClInclude Include="RefreshRateTrace.h" />
     <ClInclude Include="HpMpAlert.h" />
     <ClInclude Include="SnipeDamageSync.h" />
     <ClInclude Include="StackedBuffIcons.h" />
@@ -222,6 +223,7 @@
     <ClCompile Include="AranComboUi.cpp" />
     <ClCompile Include="BossHP.cpp" />
     <ClCompile Include="CrashReporter.cpp" />
+    <ClCompile Include="RefreshRateTrace.cpp" />
     <ClCompile Include="HpMpAlert.cpp" />
     <ClCompile Include="SnipeDamageSync.cpp" />
     <ClCompile Include="StackedBuffIcons.cpp" />

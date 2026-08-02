@@ -14,6 +14,7 @@
 #include "MovementKeyHook.h"
 #include "NpcShopCurrency.h"
 #include "CrashReporter.h"
+#include "RefreshRateTrace.h"
 #include <wincrypt.h>
 
 enum class ExeVerifyResult {
@@ -756,6 +757,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		// Other patch behavior stays in code defaults.
 		INIReader reader("config.ini");
 		bool enableCrashDump = true;
+		bool enableCrashTrace = true;
 		std::string crashDumpType = "mini";
 		bool enableStackedBuffIconLog = false;
 		const int configParseError = reader.ParseError();
@@ -766,6 +768,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 			Client::imeType = reader.GetInteger("general", "imeType", 1);
 			Client::enableMovementKeyRebind = reader.GetBoolean("general", "enableMovementKeyRebind", false);
 			enableCrashDump = reader.GetBoolean("debug", "enableCrashDump", true);
+			enableCrashTrace = reader.GetBoolean("dev", "enableCrashTrace", true);
 			crashDumpType = reader.Get("debug", "crashDumpType", "mini");
 			Client::enableStartupLog = reader.GetBoolean("debug", "enableStartupLog", false);
 			enableStackedBuffIconLog = reader.GetBoolean("debug", "enableStackedBuffIconLog", false);
@@ -774,7 +777,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		const int requestedWidth = Client::m_nGameWidth;
 		const int requestedHeight = Client::m_nGameHeight;
 		const ResolutionEnvironment resolutionEnvironment = ReadResolutionEnvironment();
-		CrashReporter::Install(enableCrashDump, crashDumpType);
+		CrashReporter::Install(enableCrashDump, crashDumpType, enableCrashTrace);
 		WriteStartupLog(configParseError, requestedWidth, requestedHeight, resolutionEnvironment);
 
 		Hook_CreateMutexA(true); //multiclient //ty darter, angel, and alias!
@@ -833,7 +836,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		AranComboUi::Install();
 		BossHP::Hook();
 		Client::WorldMap();
-		Client::RefreshRate();
+		RefreshRateTrace::Install();
 		Client::DeleteChar();
 		std::cout << "GetModuleFileName hook created" << std::endl;
 		ijl15::CreateHook(); //NMCO::CreateHook();
