@@ -164,6 +164,9 @@ void Client::UpdateGameStartup() {
 	// Big Bang stays on the local keydown attack path; the cave finishes it immediately after key press starts the charge state.
 	Memory::CodeCave(bigBangCastOnKeyDown, 0x0096B073, 5);
 	Memory::CodeCave(bigBangForceFullCharge, 0x0095C0FC, 5);
+	// Piercing Arrow uses a dedicated ranged branch: force full charge and extend its target rectangle by 20%.
+	Memory::CodeCave(piercingArrowForceFullCharge, 0x0095C099, 7);
+	Memory::CodeCave(piercingArrowAttackRange, 0x00953D6A, 9);
 	//optional non-resolution related stuff
 	if (useTubi) { Memory::FillBytes(0x00485C32, 0x90, 2); }
 

@@ -1822,6 +1822,35 @@ __declspec(naked) void bigBangForceFullCharge()
 		jmp bigBangForceFullChargeRet
 	}
 }
+DWORD piercingArrowForceFullChargeRet = 0x0095C0A0;
+__declspec(naked) void piercingArrowForceFullCharge()
+{
+	__asm {
+		push ebx
+		push 03E8h
+		mov ecx, esi
+		push ebx
+		jmp piercingArrowForceFullChargeRet
+	}
+}
+DWORD piercingArrowAttackRangeRet = 0x00953D73;
+__declspec(naked) void piercingArrowAttackRange()
+{
+	__asm {
+		cmp dword ptr[ebp - 10h], 0312609h
+		jne piercingArrowRange_store
+
+		imul eax, eax, 6
+		cdq
+		mov ecx, 5
+		idiv ecx
+
+	piercingArrowRange_store:
+		mov [ebp - 0C8h], eax
+		cmp dword ptr[ebp + 14h], edi
+		jmp piercingArrowAttackRangeRet
+	}
+}
 DWORD canSendPkgTimeCaveRtn = 0x00485C32;
 __declspec(naked) void canSendPkgTimeCave()
 {
