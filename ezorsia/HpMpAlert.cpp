@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "HpMpAlert.h"
 #include "CrashReporter.h"
+#include "IntegratedFinalAttack.h"
 #include "SnipeDamageSync.h"
 #include "StackedBuffIcons.h"
 
@@ -474,6 +475,11 @@ static void __fastcall ShowMobDamage_Hook(void* pThis, void* edx, int damage, in
         return;
     }
     g_ShowMobDamage(pThis, edx, damage, lineIndex, extra, compact);
+    int additionalDamage = 0;
+    if (!g_renderingServerMobDamage
+        && IntegratedFinalAttack::TakeAdditionalDisplayedDamage(pThis, damage, lineIndex, additionalDamage)) {
+        g_ShowMobDamage(pThis, edx, additionalDamage, lineIndex + 1, extra, compact);
+    }
 }
 using SaveGlobal_t = void(__fastcall*)(void* pThis, void* edx);
 static SaveGlobal_t s_SaveGlobal = reinterpret_cast<SaveGlobal_t>(kSaveGlobalAddr);
@@ -500,6 +506,9 @@ static void TraceIncomingPacket(CInPacket* packet) {
 }
 static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* packet) {
     TraceIncomingPacket(packet);
+    if (IntegratedFinalAttack::HandlePacket(packet)) {
+        return;
+    }
     if (StackedBuffIcons::HandlePacket(packet)) {
         return;
     }

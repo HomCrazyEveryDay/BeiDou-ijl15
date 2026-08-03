@@ -1,9 +1,11 @@
 #include "stdafx.h"
 #include "SelectCharMacFix.h"
+#include "IntegratedFinalAttack.h"
 #include "SnipeDamageSync.h"
 
 #include <cctype>
 #include <cstring>
+#include <vector>
 
 namespace {
 constexpr WORD kOpcodeSelectChar = 0x0013;
@@ -121,10 +123,20 @@ static bool RewriteSelectCharMacList(COutPacket* packet) {
 
 static void __fastcall SendPacket_Hook(void* pThis, void* edx, COutPacket* packet) {
     RewriteSelectCharMacList(packet);
-    if (packet != nullptr) {
-        SnipeDamageSync::TrackOutgoingAttackPacket(packet->Data, packet->Size);
+    COutPacket integratedPacket{};
+    COutPacket* outgoingPacket = packet;
+    std::vector<unsigned char> integratedData;
+    if (packet != nullptr
+        && IntegratedFinalAttack::BuildOutgoingAttackPacket(packet->Data, packet->Size, integratedData)) {
+        integratedPacket = *packet;
+        integratedPacket.Data = integratedData.data();
+        integratedPacket.Size = static_cast<unsigned long>(integratedData.size());
+        outgoingPacket = &integratedPacket;
     }
-    g_SendPacket(pThis, edx, packet);
+    if (outgoingPacket != nullptr) {
+        SnipeDamageSync::TrackOutgoingAttackPacket(outgoingPacket->Data, outgoingPacket->Size);
+    }
+    g_SendPacket(pThis, edx, outgoingPacket);
 }
 }
 
