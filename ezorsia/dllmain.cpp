@@ -260,6 +260,31 @@ static void InstallHurricaneMovement()
 	Memory::CodeCave(ApplyHurricaneMovementInputCave, 0x009CC0D2, 13);
 }
 
+__declspec(naked) void SuperOctopusAttackCadenceCave()
+{
+	__asm {
+		cmp dword ptr[esp + 4], 04FA6A2h
+		jne defaultCadence
+		mov eax, 01F4h
+		ret
+
+	defaultCadence:
+		mov eax, 0BB8h
+		cmp dword ptr[esp + 4], 04F837Ah
+		jne done
+		mov eax, 05DCh
+
+	done:
+		ret
+	}
+}
+
+static void InstallSuperOctopusAttackCadence()
+{
+	// The client hardcodes Super Octopus to 1500 ms and ignores its WZ animation delays for attack scheduling.
+	Memory::CodeCave(SuperOctopusAttackCadenceCave, 0x00765047, 31);
+}
+
 __declspec(naked) void AddBattleshipStatPanelSpeedCave()
 {
 	__asm {
@@ -877,6 +902,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		InstallAssassinateNoCharge();
 		InstallAntidoteDuringDarkSight();
 		InstallHurricaneMovement();
+		InstallSuperOctopusAttackCadence();
 		InstallBattleshipMovementSpeed();
 		InstallProgressiveBerserkDamage();
 		InstallRushWithoutTargetRequirement();
