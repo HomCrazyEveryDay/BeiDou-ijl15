@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "AbsoluteDefenseSync.h"
 #include "HpMpAlert.h"
 #include "CrashReporter.h"
 #include "IntegratedFinalAttack.h"
@@ -474,11 +475,17 @@ static void __fastcall ShowMobDamage_Hook(void* pThis, void* edx, int damage, in
     if (!g_renderingServerMobDamage && SnipeDamageSync::ShouldSuppressLocalDamage(pThis, damage)) {
         return;
     }
-    g_ShowMobDamage(pThis, edx, damage, lineIndex, extra, compact);
+    int displayedDamage = damage;
+    if (!g_renderingServerMobDamage) {
+        AbsoluteDefenseSync::TryScaleDisplayedDamage(pThis, damage, displayedDamage);
+    }
+    g_ShowMobDamage(pThis, edx, displayedDamage, lineIndex, extra, compact);
     int additionalDamage = 0;
     if (!g_renderingServerMobDamage
         && IntegratedFinalAttack::TakeAdditionalDisplayedDamage(pThis, damage, lineIndex, additionalDamage)) {
-        g_ShowMobDamage(pThis, edx, additionalDamage, lineIndex + 1, extra, compact);
+        int displayedAdditionalDamage = additionalDamage;
+        AbsoluteDefenseSync::TryScaleDisplayedDamage(pThis, additionalDamage, displayedAdditionalDamage);
+        g_ShowMobDamage(pThis, edx, displayedAdditionalDamage, lineIndex + 1, extra, compact);
     }
 }
 using SaveGlobal_t = void(__fastcall*)(void* pThis, void* edx);
@@ -506,6 +513,12 @@ static void TraceIncomingPacket(CInPacket* packet) {
 }
 static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* packet) {
     TraceIncomingPacket(packet);
+    if (packet != nullptr
+        && AbsoluteDefenseSync::HandlePacket(
+            reinterpret_cast<const unsigned char*>(packet->Data),
+            packet->DataLen)) {
+        return;
+    }
     if (IntegratedFinalAttack::HandlePacket(packet)) {
         return;
     }
@@ -535,6 +548,9 @@ void HookHpMpAlertRecv(bool enable) {
         ++g_mobDamageFieldGeneration;
         g_mobDamageQueue.clear();
         LeaveCriticalSection(&g_mobDamageQueueLock);
+    }
+    if (!enable) {
+        AbsoluteDefenseSync::Reset();
     }
 
     Memory::SetHook(enable, reinterpret_cast<void**>(&g_ShowMobDamage), ShowMobDamage_Hook);
@@ -610,6 +626,7 @@ void UpdateQueuedMobDamageDisplay() {
 }
 
 void OnMobDamageFieldInit() {
+    AbsoluteDefenseSync::Reset();
     if (!g_mobDamageQueueLockInitialized) {
         return;
     }
@@ -626,6 +643,7 @@ void OnMobDamageFieldInit() {
 }
 
 void OnMobDamageFieldDispose() {
+    AbsoluteDefenseSync::Reset();
     if (!g_mobDamageQueueLockInitialized) {
         return;
     }

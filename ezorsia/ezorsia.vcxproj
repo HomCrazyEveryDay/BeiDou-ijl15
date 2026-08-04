@@ -170,6 +170,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="AbsoluteDefenseSync.h" />
     <ClInclude Include="AddyLocations.h">
       <FileType>CppHeader</FileType>
     </ClInclude>
@@ -221,6 +222,7 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="AbsoluteDefenseSync.cpp" />
     <ClCompile Include="AranComboUi.cpp" />
     <ClCompile Include="BossHP.cpp" />
     <ClCompile Include="CrashReporter.cpp" />
