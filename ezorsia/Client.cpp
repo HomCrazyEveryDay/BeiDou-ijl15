@@ -150,7 +150,7 @@ void Client::UpdateGameStartup() {
 	// 删除角色时客户端只允许 PIC 状态为 1；服务端关闭 PIC 会下发 2，这里放过本地误判。
 	Memory::WriteByte(0x005F7CA6, 0xEB);
 
-	unsigned char bdClientSignature[] = { 0x68, 0x42, 0x44, 0x18, 0x00 };
+	unsigned char bdClientSignature[] = { 0x68, 0x42, 0x44, 0x19, 0x00 };
 	Memory::WriteByteArray(0x005F6BCD, bdClientSignature, sizeof(bdClientSignature));
 
 	// Ice/Lightning Chain Lightning (2221006) normally bounces only in the facing direction.
