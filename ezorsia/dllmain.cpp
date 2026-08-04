@@ -54,6 +54,9 @@ static DWORD g_HurricaneSetMovementInputReturn = 0x009CC0DF;
 static DWORD g_BerserkActivationDamageReturn = 0x00A293B7;
 static DWORD g_BerserkActiveDamageExit = 0x00A29449;
 static DWORD g_BerserkDeactivate = 0x00A29419;
+static DWORD g_GetTemporaryStatValue = 0x00725194;
+static DWORD g_BattleshipStatPanelSpeedReturn = 0x008C41D6;
+static DWORD g_BattleshipPhysicsSpeedReturn = 0x0094D7E3;
 
 __declspec(naked) void BoomerangStepIgnoreAirborneCheckCave()
 {
@@ -208,6 +211,8 @@ __declspec(naked) void AllowHurricaneMovementCave()
 	__asm {
 		cmp dword ptr[esi + 2AE8h], 02F9F6Ch
 		je allowed
+		cmp dword ptr[esi + 2AE8h], 04FAA8Ch
+		je allowed
 
 		mov ecx, esi
 		call dword ptr[g_HurricaneMovementCheck]
@@ -223,8 +228,11 @@ __declspec(naked) void ApplyHurricaneMovementInputCave()
 {
 	__asm {
 		cmp dword ptr[esi + 2AE8h], 02F9F6Ch
+		je applyMovementInput
+		cmp dword ptr[esi + 2AE8h], 04FAA8Ch
 		jne setMovementInput
 
+	applyMovementInput:
 		pushfd
 		pushad
 		lea eax, [ebp - 4]
@@ -250,6 +258,53 @@ static void InstallHurricaneMovement()
 	// Keep native movement checks for every other state, and mirror Hurricane's live layers without resetting it.
 	Memory::CodeCave(AllowHurricaneMovementCave, 0x009CBF0C, 7);
 	Memory::CodeCave(ApplyHurricaneMovementInputCave, 0x009CC0D2, 13);
+}
+
+__declspec(naked) void AddBattleshipStatPanelSpeedCave()
+{
+	__asm {
+		mov ecx, dword ptr[ebp - 3Ch]
+		mov eax, dword ptr[ecx + 14h]
+		push ecx
+		push eax
+		mov ecx, dword ptr[edi + 0CBCh]
+		call dword ptr[g_GetTemporaryStatValue]
+		cmp dword ptr[eax], 1932000
+		pop eax
+		pop ecx
+		jne done
+		add eax, 30
+
+	done:
+		jmp dword ptr[g_BattleshipStatPanelSpeedReturn]
+	}
+}
+
+__declspec(naked) void AddBattleshipPhysicsSpeedCave()
+{
+	__asm {
+		mov edx, dword ptr[ebp - 18h]
+		mov eax, dword ptr[edx + 14h]
+		push edx
+		push eax
+		mov ecx, dword ptr[edi + 0CBCh]
+		call dword ptr[g_GetTemporaryStatValue]
+		cmp dword ptr[eax], 1932000
+		pop eax
+		pop edx
+		jne done
+		add eax, 30
+
+	done:
+		jmp dword ptr[g_BattleshipPhysicsSpeedReturn]
+	}
+}
+
+static void InstallBattleshipMovementSpeed()
+{
+	// Battleship uses its mount speed directly, bypassing the normal SPEED temporary stat.
+	Memory::CodeCave(AddBattleshipStatPanelSpeedCave, 0x008C41D0, 6);
+	Memory::CodeCave(AddBattleshipPhysicsSpeedCave, 0x0094D7DD, 6);
 }
 
 static int __stdcall CalculateBerserkDamage(int skillLevel, int hp, int maxHp)
@@ -346,6 +401,8 @@ __declspec(naked) void FocusStanceAnimationCave()
 		cmp eax, 189 // 321 - 132
 		je focus
 		cmp eax, 190 // 322 - 132
+		je focus
+		cmp eax, 390 // 522 - 132
 		je focus
 		cmp eax, 1980 // 2112 - 132
 		je aran
@@ -820,6 +877,7 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		InstallAssassinateNoCharge();
 		InstallAntidoteDuringDarkSight();
 		InstallHurricaneMovement();
+		InstallBattleshipMovementSpeed();
 		InstallProgressiveBerserkDamage();
 		InstallRushWithoutTargetRequirement();
 		if (Client::enableMovementKeyRebind) {
