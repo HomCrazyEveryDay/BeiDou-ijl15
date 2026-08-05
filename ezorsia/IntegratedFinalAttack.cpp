@@ -8,7 +8,7 @@
 namespace {
 constexpr unsigned short kOpcodeCloseRangeAttack = 0x002C;
 constexpr unsigned short kOpcodeUpdateIntegratedFinalAttack = 0x1003;
-constexpr unsigned char kSettingsVersion = 2;
+constexpr unsigned char kSettingsVersion = 3;
 constexpr DWORD kMobPoolPtr = 0x00BEBFA4;
 constexpr DWORD kFindMobAddr = 0x00441AE8;
 constexpr DWORD kPendingDamageTtlMs = 2500;
@@ -21,6 +21,10 @@ constexpr int kSpearFury = 1311003;
 constexpr int kPoleArmFury = 1311004;
 constexpr int kChargedBlow = 1211002;
 constexpr int kPaladinBlast = 1221009;
+
+constexpr unsigned char kWeaponSword = 1;
+constexpr unsigned char kWeaponAxe = 2;
+constexpr unsigned char kWeaponBluntWeapon = 5;
 
 struct CInPacket {
     int Loopback;
@@ -52,6 +56,7 @@ struct Settings {
     int poleArmFuryDamage = 0;
     int chargedBlowDamage = 0;
     int paladinBlastDamage = 0;
+    unsigned char weaponType = 0;
     bool ready = false;
 };
 
@@ -177,7 +182,13 @@ bool GetAttackSettings(int skillId, PassiveSettings& passive, int& mainSkillDama
 
     switch (skillId) {
     case kHeroBrandish:
-        passive = g_settings.sword.damage >= g_settings.axe.damage ? g_settings.sword : g_settings.axe;
+        if (g_settings.weaponType == kWeaponSword) {
+            passive = g_settings.sword;
+        } else if (g_settings.weaponType == kWeaponAxe) {
+            passive = g_settings.axe;
+        } else {
+            return false;
+        }
         mainSkillDamage = g_settings.brandishDamage;
         return true;
     case kSpearCrusher:
@@ -197,15 +208,23 @@ bool GetAttackSettings(int skillId, PassiveSettings& passive, int& mainSkillDama
         mainSkillDamage = g_settings.poleArmFuryDamage;
         return true;
     case kChargedBlow:
-        passive = g_settings.pageSword.damage >= g_settings.pageBluntWeapon.damage
-            ? g_settings.pageSword
-            : g_settings.pageBluntWeapon;
+        if (g_settings.weaponType == kWeaponSword) {
+            passive = g_settings.pageSword;
+        } else if (g_settings.weaponType == kWeaponBluntWeapon) {
+            passive = g_settings.pageBluntWeapon;
+        } else {
+            return false;
+        }
         mainSkillDamage = g_settings.chargedBlowDamage;
         return true;
     case kPaladinBlast:
-        passive = g_settings.pageSword.damage >= g_settings.pageBluntWeapon.damage
-            ? g_settings.pageSword
-            : g_settings.pageBluntWeapon;
+        if (g_settings.weaponType == kWeaponSword) {
+            passive = g_settings.pageSword;
+        } else if (g_settings.weaponType == kWeaponBluntWeapon) {
+            passive = g_settings.pageBluntWeapon;
+        } else {
+            return false;
+        }
         mainSkillDamage = g_settings.paladinBlastDamage;
         return true;
     default:
@@ -234,7 +253,7 @@ bool HandlePacket(void* rawPacket) {
         if (ReadU16(data + 4) != kOpcodeUpdateIntegratedFinalAttack) {
             return false;
         }
-        if (packet->DataLen < 39 || data[6] != kSettingsVersion) {
+        if (packet->DataLen < 40 || data[6] != kSettingsVersion) {
             g_settings = Settings{};
             return true;
         }
@@ -253,6 +272,7 @@ bool HandlePacket(void* rawPacket) {
         settings.poleArmFuryDamage = ReadU16(data + 33);
         settings.chargedBlowDamage = ReadU16(data + 35);
         settings.paladinBlastDamage = ReadU16(data + 37);
+        settings.weaponType = data[39];
         settings.ready = true;
         g_settings = settings;
         return true;

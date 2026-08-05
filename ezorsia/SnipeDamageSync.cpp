@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "SnipeDamageSync.h"
 
+#include <climits>
+
 namespace {
 constexpr unsigned short kOpcodeRangedAttack = 0x002D;
 constexpr int kMarksmanSnipe = 3221007;
@@ -32,6 +34,10 @@ static int ReadI32(const unsigned char* ptr) {
         (static_cast<unsigned int>(ptr[1]) << 8) |
         (static_cast<unsigned int>(ptr[2]) << 16) |
         (static_cast<unsigned int>(ptr[3]) << 24));
+}
+
+static int DecodeDamage(int rawDamage) {
+    return rawDamage < 0 ? rawDamage + INT_MAX : rawDamage;
 }
 
 static bool TryReadDword(DWORD address, DWORD& out) {
@@ -101,7 +107,7 @@ void TrackOutgoingAttackPacket(unsigned char* data, unsigned long size) {
                     return;
                 }
 
-                const int localDamage = ReadI32(data + damageOffset);
+                const int localDamage = DecodeDamage(ReadI32(data + damageOffset));
                 AddPendingDamage(mob, skillId, localDamage);
             }
         }
