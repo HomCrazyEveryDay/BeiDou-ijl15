@@ -472,20 +472,16 @@ static bool HandleShowMobDamagePacket(CInPacket* packet) {
     }
 }
 static void __fastcall ShowMobDamage_Hook(void* pThis, void* edx, int damage, int lineIndex, int extra, int compact) {
-    if (!g_renderingServerMobDamage && SnipeDamageSync::ShouldSuppressLocalDamage(pThis, damage)) {
+    if (!g_renderingServerMobDamage
+        && (SnipeDamageSync::ShouldSuppressLocalDamage(pThis, damage)
+            || AbsoluteDefenseSync::ShouldSuppressLocalDamage(pThis))) {
         return;
     }
-    int displayedDamage = damage;
-    if (!g_renderingServerMobDamage) {
-        AbsoluteDefenseSync::TryScaleDisplayedDamage(pThis, damage, displayedDamage);
-    }
-    g_ShowMobDamage(pThis, edx, displayedDamage, lineIndex, extra, compact);
+    g_ShowMobDamage(pThis, edx, damage, lineIndex, extra, compact);
     int additionalDamage = 0;
     if (!g_renderingServerMobDamage
         && IntegratedFinalAttack::TakeAdditionalDisplayedDamage(pThis, damage, lineIndex, additionalDamage)) {
-        int displayedAdditionalDamage = additionalDamage;
-        AbsoluteDefenseSync::TryScaleDisplayedDamage(pThis, additionalDamage, displayedAdditionalDamage);
-        g_ShowMobDamage(pThis, edx, displayedAdditionalDamage, lineIndex + 1, extra, compact);
+        g_ShowMobDamage(pThis, edx, additionalDamage, lineIndex + 1, extra, compact);
     }
 }
 using SaveGlobal_t = void(__fastcall*)(void* pThis, void* edx);
@@ -529,13 +525,22 @@ static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* pac
         return;
     }
     HandleHpMpAlertPacket(packet);
+    if (packet != nullptr) {
+        AbsoluteDefenseSync::BeginIncomingAttackPacket(
+            reinterpret_cast<const unsigned char*>(packet->Data),
+            packet->DataLen);
+    }
     s_ProcessPacket(pThis, edx, packet);
+    AbsoluteDefenseSync::EndIncomingAttackPacket();
 }
 } // namespace
 void HookSaveGlobal(bool enable) {
     Memory::SetHook(enable, reinterpret_cast<void**>(&s_SaveGlobal), SaveGlobal_Hook);
 }
 void HookHpMpAlertRecv(bool enable) {
+    if (enable) {
+        AbsoluteDefenseSync::InstallImmunityBypassHooks();
+    }
     if (enable && !g_mobDamageQueueLockInitialized) {
         InitializeCriticalSection(&g_mobDamageQueueLock);
         g_mobDamageQueue.reserve(kMaxQueuedMobDamage);

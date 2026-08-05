@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "SelectCharMacFix.h"
+#include "AbsoluteDefenseSync.h"
 #include "IntegratedFinalAttack.h"
 #include "SnipeDamageSync.h"
 
@@ -134,6 +135,7 @@ static void __fastcall SendPacket_Hook(void* pThis, void* edx, COutPacket* packe
         outgoingPacket = &integratedPacket;
     }
     if (outgoingPacket != nullptr) {
+        AbsoluteDefenseSync::TrackOutgoingAttackPacket(outgoingPacket->Data, outgoingPacket->Size);
         SnipeDamageSync::TrackOutgoingAttackPacket(outgoingPacket->Data, outgoingPacket->Size);
     }
     g_SendPacket(pThis, edx, outgoingPacket);
