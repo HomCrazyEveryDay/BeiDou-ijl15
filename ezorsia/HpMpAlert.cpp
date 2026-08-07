@@ -26,6 +26,11 @@ constexpr DWORD kCriticalDamageResourceOffset = 0x188;
 constexpr DWORD kCriticalDamageResource2Offset = 0x18C;
 constexpr WORD kOpcodeSetHpMpAlert = 0x1000;
 constexpr WORD kOpcodeShowMobDamage = 0x1001;
+constexpr WORD kOpcodeApplyMonsterStatus = 0x00F2;
+constexpr WORD kOpcodeCancelMonsterStatus = 0x00F3;
+constexpr unsigned int kBossVenomVisualMask = 0x01000000;
+constexpr int kBossVenomVisualDamage = 1;
+constexpr int kBossVenomTargetCount = 64;
 constexpr DWORD kQueuedDamageTtlMs = 1000;
 constexpr size_t kMaxQueuedMobDamage = 128;
 // Spread large multi-target bursts across frames so native damage layers remain visually distinct.
@@ -64,6 +69,10 @@ struct QueuedMobDamage {
     DWORD queuedAt = 0;
     unsigned int retryCount = 0;
 };
+struct BossVenomVisualTarget {
+    int objectId = 0;
+    void* mob = nullptr;
+};
 using SendPacket_t = void(__fastcall*)(void* pThis, void* edx, COutPacket* packet);
 static SendPacket_t g_SendPacket = reinterpret_cast<SendPacket_t>(0x0049637B);
 using FindMob_t = void* (__thiscall*)(void* pThis, int objectId);
@@ -78,6 +87,7 @@ static bool g_mobDamageFieldActive = false;
 static DWORD g_mobDamageFieldGeneration = 0;
 static DWORD g_mobDamageFrame = 0;
 static std::vector<QueuedMobDamage> g_mobDamageQueue;
+static BossVenomVisualTarget g_bossVenomTargets[kBossVenomTargetCount] = {};
 static bool TryReadDword(DWORD address, DWORD& out) {
     __try {
         out = *reinterpret_cast<DWORD*>(address);
@@ -314,6 +324,100 @@ static int ReadInt32LE(const unsigned char* data) {
         (static_cast<unsigned int>(data[2]) << 16) |
         (static_cast<unsigned int>(data[3]) << 24));
 }
+static void* FindMobByObjectId(int objectId) {
+    DWORD mobPool = 0;
+    if (!TryReadDword(kMobPoolPtr, mobPool) || mobPool == 0) {
+        return nullptr;
+    }
+    return g_FindMob(reinterpret_cast<void*>(mobPool), objectId);
+}
+static void UpdateBossVenomVisualTarget(int objectId, bool active) {
+    int emptyIndex = -1;
+    for (int i = 0; i < kBossVenomTargetCount; ++i) {
+        BossVenomVisualTarget& target = g_bossVenomTargets[i];
+        if (target.objectId == objectId) {
+            target = active
+                ? BossVenomVisualTarget{objectId, FindMobByObjectId(objectId)}
+                : BossVenomVisualTarget{};
+            return;
+        }
+        if (emptyIndex < 0 && target.objectId == 0) {
+            emptyIndex = i;
+        }
+    }
+
+    if (!active) {
+        return;
+    }
+    const int targetIndex = emptyIndex >= 0
+        ? emptyIndex
+        : static_cast<unsigned int>(objectId) % kBossVenomTargetCount;
+    g_bossVenomTargets[targetIndex] = {objectId, FindMobByObjectId(objectId)};
+}
+static bool IsBossVenomSkill(int skillId) {
+    return skillId == 4120005 || skillId == 4220005 || skillId == 14110004;
+}
+static void ObserveBossVenomStatusPacket(CInPacket* packet) {
+    __try {
+        if (packet == nullptr || packet->Data == nullptr || packet->DataLen < 26) {
+            return;
+        }
+        const unsigned char* data = reinterpret_cast<const unsigned char*>(packet->Data);
+        const unsigned short opcode = ReadUInt16LE(data + 4);
+        if (opcode != kOpcodeApplyMonsterStatus && opcode != kOpcodeCancelMonsterStatus) {
+            return;
+        }
+
+        const unsigned int firstMask = static_cast<unsigned int>(ReadInt32LE(data + 18));
+        const unsigned int secondMask = static_cast<unsigned int>(ReadInt32LE(data + 22));
+        if (firstMask != 0 || secondMask != kBossVenomVisualMask) {
+            return;
+        }
+
+        const int objectId = ReadInt32LE(data + 6);
+        if (opcode == kOpcodeCancelMonsterStatus) {
+            UpdateBossVenomVisualTarget(objectId, false);
+            return;
+        }
+        if (packet->DataLen < 32) {
+            return;
+        }
+
+        const int visualDamage = ReadUInt16LE(data + 26);
+        const int skillId = ReadInt32LE(data + 28);
+        if (visualDamage == kBossVenomVisualDamage && IsBossVenomSkill(skillId)) {
+            UpdateBossVenomVisualTarget(objectId, true);
+        }
+    } __except (CrashReporter::CaptureHandledException(
+        "bossVenom.visual.exception",
+        "observePacket",
+        GetExceptionInformation())) {
+        return;
+    }
+}
+static bool ShouldSuppressBossVenomLocalDamage(void* mob, int damage) {
+    if (mob == nullptr || damage != kBossVenomVisualDamage) {
+        return false;
+    }
+    for (int i = 0; i < kBossVenomTargetCount; ++i) {
+        BossVenomVisualTarget& target = g_bossVenomTargets[i];
+        if (target.objectId == 0) {
+            continue;
+        }
+        if (target.mob == nullptr) {
+            target.mob = FindMobByObjectId(target.objectId);
+        }
+        if (target.mob == mob) {
+            return true;
+        }
+    }
+    return false;
+}
+static void ResetBossVenomVisualTargets() {
+    for (int i = 0; i < kBossVenomTargetCount; ++i) {
+        g_bossVenomTargets[i] = {};
+    }
+}
 static void SendHpMpAlertFromStatusBar() {
     DWORD statusBar = 0;
     if (!TryReadDword(kUIStatusBarPtr, statusBar) || statusBar == 0) {
@@ -492,6 +596,9 @@ static void __fastcall ShowMobDamage_Hook(void* pThis, void* edx, int damage, in
                 compact);
             return;
         }
+        if (ShouldSuppressBossVenomLocalDamage(pThis, damage)) {
+            return;
+        }
         if (AbsoluteDefenseSync::ShouldSuppressLocalDamage(pThis)) {
             return;
         }
@@ -528,6 +635,7 @@ static void TraceIncomingPacket(CInPacket* packet) {
 }
 static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* packet) {
     TraceIncomingPacket(packet);
+    ObserveBossVenomStatusPacket(packet);
     if (packet != nullptr
         && AbsoluteDefenseSync::HandlePacket(
             reinterpret_cast<const unsigned char*>(packet->Data),
@@ -575,6 +683,7 @@ void HookHpMpAlertRecv(bool enable) {
     }
     if (!enable) {
         AbsoluteDefenseSync::Reset();
+        ResetBossVenomVisualTargets();
     }
 
     Memory::SetHook(enable, reinterpret_cast<void**>(&g_ShowMobDamage), ShowMobDamage_Hook);
@@ -651,6 +760,7 @@ void UpdateQueuedMobDamageDisplay() {
 
 void OnMobDamageFieldInit() {
     AbsoluteDefenseSync::Reset();
+    ResetBossVenomVisualTargets();
     if (!g_mobDamageQueueLockInitialized) {
         return;
     }
@@ -668,6 +778,7 @@ void OnMobDamageFieldInit() {
 
 void OnMobDamageFieldDispose() {
     AbsoluteDefenseSync::Reset();
+    ResetBossVenomVisualTargets();
     if (!g_mobDamageQueueLockInitialized) {
         return;
     }
