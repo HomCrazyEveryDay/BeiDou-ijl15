@@ -438,6 +438,9 @@ static bool HandleShowMobDamagePacket(CInPacket* packet) {
             CrashReporter::RecordRecentEvent("showMobDamage", "skip seq=%ld reason=negativeDamage", sequence);
             return true;
         }
+        if (SnipeDamageSync::TrackServerDamage(objectId, damage, critical)) {
+            return true;
+        }
 
         stage = "queue";
         QueuedMobDamage queued{};
@@ -472,10 +475,26 @@ static bool HandleShowMobDamagePacket(CInPacket* packet) {
     }
 }
 static void __fastcall ShowMobDamage_Hook(void* pThis, void* edx, int damage, int lineIndex, int extra, int compact) {
-    if (!g_renderingServerMobDamage
-        && (SnipeDamageSync::ShouldSuppressLocalDamage(pThis, damage)
-            || AbsoluteDefenseSync::ShouldSuppressLocalDamage(pThis))) {
-        return;
+    if (!g_renderingServerMobDamage) {
+        int synchronizedDamage = 0;
+        bool synchronizedCritical = false;
+        if (SnipeDamageSync::TryResolveLocalDamage(
+                pThis,
+                damage,
+                synchronizedDamage,
+                synchronizedCritical)) {
+            g_ShowMobDamage(
+                pThis,
+                edx,
+                synchronizedDamage,
+                lineIndex,
+                synchronizedCritical ? 1 : 0,
+                compact);
+            return;
+        }
+        if (AbsoluteDefenseSync::ShouldSuppressLocalDamage(pThis)) {
+            return;
+        }
     }
     g_ShowMobDamage(pThis, edx, damage, lineIndex, extra, compact);
     int additionalDamage = 0;

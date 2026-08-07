@@ -194,13 +194,35 @@ static void SetHurricaneAvatarFacing(DWORD user, DWORD facing)
 	}
 }
 
+static void SetRapidFireAvatarFacing(DWORD user, DWORD facing)
+{
+	using SetOneTimeAction = void(__thiscall*)(void*, int);
+	constexpr DWORD rapidFireChannelAction = 0x63;
+
+	void* avatar = reinterpret_cast<void*>(user + 0x88);
+	DWORD& moveAction = *reinterpret_cast<DWORD*>(user + 0x570);
+	moveAction = (moveAction & ~1u) | facing;
+
+	// Rebuild the native channel pose for the new facing and keep it on its held frame.
+	reinterpret_cast<SetOneTimeAction>(0x004571AB)(avatar, rapidFireChannelAction);
+	*reinterpret_cast<int*>(user + 0xB54) = 0;
+	*reinterpret_cast<int*>(user + 0xB58) = 0x7FFFFFFF;
+}
+
 static void __stdcall ApplyHurricaneMovementInput(DWORD user, int* horizontal, int* vertical)
 {
 	const int clientHorizontal = ReadClientMovementKey(VK_RIGHT) - ReadClientMovementKey(VK_LEFT);
+	const DWORD skillId = *reinterpret_cast<DWORD*>(user + 0x2AE8);
+
 	if (clientHorizontal != 0) {
 		const DWORD desiredFacing = clientHorizontal < 0 ? 1 : 0;
 		if ((*reinterpret_cast<DWORD*>(user + 0x570) & 1) != desiredFacing) {
-			SetHurricaneAvatarFacing(user, desiredFacing);
+			if (skillId == 5221004) {
+				SetRapidFireAvatarFacing(user, desiredFacing);
+			}
+			else {
+				SetHurricaneAvatarFacing(user, desiredFacing);
+			}
 		}
 		*horizontal = clientHorizontal;
 	}

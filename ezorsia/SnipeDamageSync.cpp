@@ -14,9 +14,14 @@ constexpr int kPendingCount = 64;
 
 struct PendingLocalDamage {
     void* mob;
+    int objectId;
     int skillId;
-    int damage;
+    int localDamage;
     DWORD expiresAt;
+    int serverDamage;
+    bool serverCritical;
+    bool serverReady;
+    bool localDisplayed;
 };
 
 using FindMob_t = void* (__thiscall*)(void* pThis, int objectId);
@@ -50,13 +55,19 @@ static bool TryReadDword(DWORD address, DWORD& out) {
     }
 }
 
-static void AddPendingDamage(void* mob, int skillId, int damage) {
+static void AddPendingDamage(int objectId, void* mob, int skillId, int damage) {
     if (mob == nullptr || damage <= 0) {
         return;
     }
 
     const DWORD now = GetTickCount();
-    g_pending[g_nextPending] = { mob, skillId, damage, now + kPendingMs };
+    PendingLocalDamage& pending = g_pending[g_nextPending];
+    pending = {};
+    pending.mob = mob;
+    pending.objectId = objectId;
+    pending.skillId = skillId;
+    pending.localDamage = damage;
+    pending.expiresAt = now + kPendingMs;
     g_nextPending = (g_nextPending + 1) % kPendingCount;
 }
 
@@ -99,7 +110,8 @@ void TrackOutgoingAttackPacket(unsigned char* data, unsigned long size) {
             if (targetOffset + 4 > size) {
                 return;
             }
-            void* mob = FindTargetMob(ReadI32(data + targetOffset));
+            const int objectId = ReadI32(data + targetOffset);
+            void* mob = FindTargetMob(objectId);
             const unsigned long damageBase = targetOffset + 18;
             for (int j = 0; j < numDamage; ++j) {
                 const unsigned long damageOffset = damageBase + static_cast<unsigned long>(j) * 4;
@@ -108,7 +120,7 @@ void TrackOutgoingAttackPacket(unsigned char* data, unsigned long size) {
                 }
 
                 const int localDamage = DecodeDamage(ReadI32(data + damageOffset));
-                AddPendingDamage(mob, skillId, localDamage);
+                AddPendingDamage(objectId, mob, skillId, localDamage);
             }
         }
     } __except (EXCEPTION_EXECUTE_HANDLER) {
@@ -116,25 +128,68 @@ void TrackOutgoingAttackPacket(unsigned char* data, unsigned long size) {
     }
 }
 
-bool ShouldSuppressLocalDamage(void* mob, int damage) {
-    if (mob == nullptr || damage <= 0) {
+bool TrackServerDamage(int objectId, int damage, bool critical) {
+    if (objectId == 0 || damage < 0) {
         return false;
     }
 
     const DWORD now = GetTickCount();
-    for (int i = 0; i < kPendingCount; ++i) {
-        PendingLocalDamage& pending = g_pending[i];
+    for (int offset = 1; offset <= kPendingCount; ++offset) {
+        const int index = (g_nextPending - offset + kPendingCount) % kPendingCount;
+        PendingLocalDamage& pending = g_pending[index];
         if (pending.mob == nullptr) {
             continue;
         }
         if (static_cast<int>(pending.expiresAt - now) <= 0) {
-            pending.mob = nullptr;
+            pending = {};
             continue;
         }
-        if (pending.mob == mob && pending.damage == damage) {
-            pending.mob = nullptr;
+        if (pending.objectId != objectId || pending.serverReady) {
+            continue;
+        }
+
+        if (pending.localDisplayed) {
+            pending = {};
             return true;
         }
+
+        pending.serverDamage = damage;
+        pending.serverCritical = critical;
+        pending.serverReady = true;
+        return true;
+    }
+    return false;
+}
+
+bool TryResolveLocalDamage(void* mob, int localDamage, int& displayedDamage, bool& critical) {
+    if (mob == nullptr || localDamage <= 0) {
+        return false;
+    }
+
+    const DWORD now = GetTickCount();
+    for (int offset = 1; offset <= kPendingCount; ++offset) {
+        const int index = (g_nextPending - offset + kPendingCount) % kPendingCount;
+        PendingLocalDamage& pending = g_pending[index];
+        if (pending.mob == nullptr) {
+            continue;
+        }
+        if (static_cast<int>(pending.expiresAt - now) <= 0) {
+            pending = {};
+            continue;
+        }
+        if (pending.mob != mob || pending.localDamage != localDamage || pending.localDisplayed) {
+            continue;
+        }
+
+        if (!pending.serverReady) {
+            pending.localDisplayed = true;
+            return false;
+        }
+
+        displayedDamage = pending.serverDamage;
+        critical = pending.serverCritical;
+        pending = {};
+        return true;
     }
     return false;
 }
