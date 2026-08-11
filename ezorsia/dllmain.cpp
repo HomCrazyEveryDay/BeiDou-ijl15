@@ -15,6 +15,7 @@
 #include "NpcShopCurrency.h"
 #include "CrashReporter.h"
 #include "RefreshRateTrace.h"
+#include "LauncherGate.h"
 #include <wincrypt.h>
 
 enum class ExeVerifyResult {
@@ -848,6 +849,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 	switch (ul_reason_for_call) {
 	case DLL_PROCESS_ATTACH:
 	{
+		if (!LauncherGate::Authorize()) {
+			return FALSE;
+		}
+
 		ExeVerifyInfo verifyInfo{};
 		const ExeVerifyResult verifyResult = VerifyCurrentExe(verifyInfo);
 		if (verifyResult != ExeVerifyResult::Ok) {

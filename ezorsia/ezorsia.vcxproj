@@ -180,6 +180,7 @@
     <ClInclude Include="RefreshRateTrace.h" />
     <ClInclude Include="HpMpAlert.h" />
     <ClInclude Include="IntegratedFinalAttack.h" />
+    <ClInclude Include="LauncherGate.h" />
     <ClInclude Include="SnipeDamageSync.h" />
     <ClInclude Include="StackedBuffIcons.h" />
     <ClInclude Include="MovementKeyHook.h" />
@@ -229,6 +230,7 @@
     <ClCompile Include="RefreshRateTrace.cpp" />
     <ClCompile Include="HpMpAlert.cpp" />
     <ClCompile Include="IntegratedFinalAttack.cpp" />
+    <ClCompile Include="LauncherGate.cpp" />
     <ClCompile Include="SnipeDamageSync.cpp" />
     <ClCompile Include="StackedBuffIcons.cpp" />
     <ClCompile Include="NpcShopCurrency.cpp" />
