@@ -12,13 +12,19 @@ namespace {
 volatile LONG g_handlingException = 0;
 volatile LONG g_handledExceptionCaptured = 0;
 bool g_dumpEnabled = false;
-bool g_fullDump = false;
+enum class DumpMode {
+	Normal,
+	Triage,
+	Full
+};
+DumpMode g_dumpMode = DumpMode::Triage;
 volatile LONG g_traceEnabled = 0;
 SRWLOCK g_traceLock = SRWLOCK_INIT;
 HANDLE g_traceFile = INVALID_HANDLE_VALUE;
 
 constexpr size_t kRecentEventCapacity = 128;
 constexpr size_t kRecentPacketCapacity = 256;
+constexpr size_t kRecentPacketPayloadCapacity = 48;
 
 struct RecentEvent {
 	char text[384]{};
@@ -30,6 +36,8 @@ struct RecentPacket {
 	unsigned short opcode = 0;
 	unsigned long size = 0;
 	unsigned int offset = 0;
+	unsigned char payload[kRecentPacketPayloadCapacity]{};
+	unsigned int payloadSize = 0;
 };
 
 RecentEvent g_recentEvents[kRecentEventCapacity]{};
@@ -38,6 +46,45 @@ size_t g_recentEventCount = 0;
 RecentPacket g_recentPackets[kRecentPacketCapacity]{};
 size_t g_recentPacketNext = 0;
 size_t g_recentPacketCount = 0;
+
+const char* GetDumpModeName()
+{
+	switch (g_dumpMode) {
+	case DumpMode::Normal:
+		return "normal";
+	case DumpMode::Full:
+		return "full";
+	case DumpMode::Triage:
+	default:
+		return "mini-triage";
+	}
+}
+
+MINIDUMP_TYPE GetMiniDumpType()
+{
+	if (g_dumpMode == DumpMode::Full) {
+		return static_cast<MINIDUMP_TYPE>(
+			MiniDumpWithFullMemory
+			| MiniDumpWithHandleData
+			| MiniDumpWithUnloadedModules
+			| MiniDumpWithFullMemoryInfo
+			| MiniDumpWithThreadInfo);
+	}
+	if (g_dumpMode == DumpMode::Normal) {
+		return MiniDumpNormal;
+	}
+
+	// Keep the default dump compact while retaining stack-referenced heap objects.
+	// Those objects are required to diagnose native animation/resource crashes.
+	return static_cast<MINIDUMP_TYPE>(
+		MiniDumpWithDataSegs
+		| MiniDumpScanMemory
+		| MiniDumpWithIndirectlyReferencedMemory
+		| MiniDumpWithUnloadedModules
+		| MiniDumpWithProcessThreadData
+		| MiniDumpWithFullMemoryInfo
+		| MiniDumpWithThreadInfo);
+}
 
 void WriteText(HANDLE file, const char* text)
 {
@@ -69,6 +116,42 @@ void WriteHexLine(HANDLE file, const char* key, ULONG_PTR value)
 	StringCchPrintfA(line, ARRAYSIZE(line), "0x%08lX", static_cast<unsigned long>(value));
 #endif
 	WriteLine(file, key, line);
+}
+
+void WriteModuleBuildInfo(HANDLE file, const char* keyPrefix, HMODULE module)
+{
+	if (module == nullptr) {
+		return;
+	}
+
+	DWORD timestamp = 0;
+	DWORD imageSize = 0;
+	bool validImage = false;
+	__try {
+		const auto* dosHeader = reinterpret_cast<const IMAGE_DOS_HEADER*>(module);
+		if (dosHeader->e_magic == IMAGE_DOS_SIGNATURE) {
+			const auto* ntHeaders = reinterpret_cast<const IMAGE_NT_HEADERS*>(
+				reinterpret_cast<const unsigned char*>(module) + dosHeader->e_lfanew);
+			if (ntHeaders->Signature == IMAGE_NT_SIGNATURE) {
+				timestamp = ntHeaders->FileHeader.TimeDateStamp;
+				imageSize = ntHeaders->OptionalHeader.SizeOfImage;
+				validImage = true;
+			}
+		}
+	}
+	__except (EXCEPTION_EXECUTE_HANDLER) {
+		validImage = false;
+	}
+
+	char key[96]{};
+	StringCchPrintfA(key, ARRAYSIZE(key), "%sBase", keyPrefix);
+	WriteHexLine(file, key, reinterpret_cast<ULONG_PTR>(module));
+	if (validImage) {
+		StringCchPrintfA(key, ARRAYSIZE(key), "%sTimestamp", keyPrefix);
+		WriteHexLine(file, key, timestamp);
+		StringCchPrintfA(key, ARRAYSIZE(key), "%sImageSize", keyPrefix);
+		WriteHexLine(file, key, imageSize);
+	}
 }
 
 bool TryReadPointer(ULONG_PTR address, ULONG_PTR* value)
@@ -196,11 +279,18 @@ void WriteRecentTrace(HANDLE file)
 	for (size_t i = 0; i < g_recentPacketCount; i++) {
 		const size_t index = (packetStart + i) % kRecentPacketCapacity;
 		const RecentPacket& packet = g_recentPackets[index];
-		char line[192]{};
+		char payloadHex[kRecentPacketPayloadCapacity * 2 + 1]{};
+		constexpr char kHexDigits[] = "0123456789ABCDEF";
+		for (unsigned int payloadIndex = 0; payloadIndex < packet.payloadSize; payloadIndex++) {
+			payloadHex[payloadIndex * 2] = kHexDigits[(packet.payload[payloadIndex] >> 4) & 0x0F];
+			payloadHex[payloadIndex * 2 + 1] = kHexDigits[packet.payload[payloadIndex] & 0x0F];
+		}
+
+		char line[384]{};
 		StringCchPrintfA(
 			line,
 			ARRAYSIZE(line),
-			"packet%03u=%04u-%02u-%02u %02u:%02u:%02u.%03u tid=%lu opcode=0x%04X size=%lu offset=%u\r\n",
+			"packet%03u=%04u-%02u-%02u %02u:%02u:%02u.%03u tid=%lu opcode=0x%04X size=%lu offset=%u payload=%s\r\n",
 			static_cast<unsigned int>(i),
 			packet.time.wYear,
 			packet.time.wMonth,
@@ -212,7 +302,8 @@ void WriteRecentTrace(HANDLE file)
 			packet.threadId,
 			static_cast<unsigned int>(packet.opcode),
 			packet.size,
-			packet.offset);
+			packet.offset,
+			payloadHex);
 		WriteText(file, line);
 	}
 	WriteText(file, "recentIncomingPackets=end\r\n");
@@ -434,6 +525,168 @@ void WriteStackSnapshot(HANDLE file, const CONTEXT* context)
 	WriteText(file, "stackSnapshot=end\r\n");
 }
 
+#if defined(_M_IX86)
+void WriteAnimationObjectSnapshot(HANDLE file, ULONG_PTR objectAddress)
+{
+	if (objectAddress == 0) {
+		return;
+	}
+
+	WriteText(file, "animationObjectSnapshot=begin\r\n");
+	for (int i = 0; i < 48; i++) {
+		const ULONG_PTR address = objectAddress + static_cast<ULONG_PTR>(i * sizeof(ULONG_PTR));
+		ULONG_PTR value = 0;
+		if (!TryReadPointer(address, &value)) {
+			break;
+		}
+
+		char moduleDescription[MAX_PATH * 3]{};
+		DescribeModuleAddress(moduleDescription, ARRAYSIZE(moduleDescription), value);
+		char line[512]{};
+		StringCchPrintfA(
+			line,
+			ARRAYSIZE(line),
+			"animationObject%02d=0x%08lX:0x%08lX %s\r\n",
+			i,
+			static_cast<unsigned long>(address),
+			static_cast<unsigned long>(value),
+			moduleDescription);
+		WriteText(file, line);
+	}
+	WriteText(file, "animationObjectSnapshot=end\r\n");
+}
+
+void WriteAnimationContext(HANDLE file, ULONG_PTR displayerFrame)
+{
+	// BeiDou.exe CAnimationDisplayer::Update keeps the current animation object
+	// in this local slot immediately before its virtual update call.
+	constexpr ULONG_PTR kAnimationObjectLocalOffset = 0x28;
+	constexpr ULONG_PTR kAnimationUpdateVtableOffset = 0x2C;
+	constexpr ULONG_PTR kAnimationDisplayerGlobalOffset = 0x007EBF6C;
+	constexpr ULONG_PTR kNormalDamageResourceOffset = 0x170;
+	constexpr ULONG_PTR kNormalDamageResource2Offset = 0x174;
+	constexpr ULONG_PTR kCriticalDamageResourceOffset = 0x188;
+	constexpr ULONG_PTR kCriticalDamageResource2Offset = 0x18C;
+
+	WriteHexLine(file, "animationDisplayerFrame", displayerFrame);
+	const ULONG_PTR objectSlot = displayerFrame >= kAnimationObjectLocalOffset
+		? displayerFrame - kAnimationObjectLocalOffset
+		: 0;
+	WriteHexLine(file, "animationObjectSlot", objectSlot);
+
+	ULONG_PTR objectAddress = 0;
+	if (TryReadPointer(objectSlot, &objectAddress)) {
+		WriteHexLine(file, "animationObject", objectAddress);
+		ULONG_PTR vtable = 0;
+		if (TryReadPointer(objectAddress, &vtable)) {
+			WriteHexLine(file, "animationVtable", vtable);
+			ULONG_PTR updateMethod = 0;
+			if (TryReadPointer(vtable + kAnimationUpdateVtableOffset, &updateMethod)) {
+				WriteHexLine(file, "animationUpdateMethod", updateMethod);
+				WriteModuleInfo(file, "animationUpdate", reinterpret_cast<void*>(updateMethod));
+			}
+		}
+		WriteAnimationObjectSnapshot(file, objectAddress);
+	}
+
+	const ULONG_PTR exeBase = reinterpret_cast<ULONG_PTR>(GetModuleHandleW(nullptr));
+	const ULONG_PTR displayerGlobalSlot = exeBase + kAnimationDisplayerGlobalOffset;
+	WriteHexLine(file, "animationDisplayerGlobalSlot", displayerGlobalSlot);
+	ULONG_PTR displayer = 0;
+	if (!TryReadPointer(displayerGlobalSlot, &displayer)) {
+		return;
+	}
+	WriteHexLine(file, "animationDisplayer", displayer);
+
+	struct DamageResourceOffset {
+		const char* key;
+		ULONG_PTR offset;
+	};
+	const DamageResourceOffset resources[] = {
+		{"normalDamageResource", kNormalDamageResourceOffset},
+		{"normalDamageResource2", kNormalDamageResource2Offset},
+		{"criticalDamageResource", kCriticalDamageResourceOffset},
+		{"criticalDamageResource2", kCriticalDamageResource2Offset}
+	};
+	for (const DamageResourceOffset& resource : resources) {
+		ULONG_PTR value = 0;
+		if (TryReadPointer(displayer + resource.offset, &value)) {
+			WriteHexLine(file, resource.key, value);
+		}
+	}
+}
+#endif
+
+void WriteFrameWalk(HANDLE file, const CONTEXT* context)
+{
+	if (context == nullptr) {
+		return;
+	}
+
+#if defined(_M_IX86)
+	ULONG_PTR frame = context->Ebp;
+	const ULONG_PTR animationUpdateReturn =
+		reinterpret_cast<ULONG_PTR>(GetModuleHandleW(nullptr)) + 0x005E45F5;
+	bool animationContextWritten = false;
+#elif defined(_M_X64)
+	ULONG_PTR frame = context->Rbp;
+#else
+	ULONG_PTR frame = 0;
+#endif
+	if (frame == 0) {
+		return;
+	}
+
+	WriteText(file, "frameWalk=begin\r\n");
+	for (int i = 0; i < 32; i++) {
+		ULONG_PTR nextFrame = 0;
+		ULONG_PTR returnAddress = 0;
+		if (!TryReadPointer(frame, &nextFrame)
+			|| !TryReadPointer(frame + sizeof(ULONG_PTR), &returnAddress)) {
+			break;
+		}
+
+		char moduleDescription[MAX_PATH * 3]{};
+		DescribeModuleAddress(moduleDescription, ARRAYSIZE(moduleDescription), returnAddress);
+		char line[512]{};
+#ifdef _WIN64
+		StringCchPrintfA(
+			line,
+			ARRAYSIZE(line),
+			"frame%02d=rbp:0x%016llX next:0x%016llX return:0x%016llX %s\r\n",
+			i,
+			static_cast<unsigned long long>(frame),
+			static_cast<unsigned long long>(nextFrame),
+			static_cast<unsigned long long>(returnAddress),
+			moduleDescription);
+#else
+		StringCchPrintfA(
+			line,
+			ARRAYSIZE(line),
+			"frame%02d=ebp:0x%08lX next:0x%08lX return:0x%08lX %s\r\n",
+			i,
+			static_cast<unsigned long>(frame),
+			static_cast<unsigned long>(nextFrame),
+			static_cast<unsigned long>(returnAddress),
+			moduleDescription);
+#endif
+		WriteText(file, line);
+
+#if defined(_M_IX86)
+		if (!animationContextWritten && returnAddress == animationUpdateReturn) {
+			WriteAnimationContext(file, nextFrame);
+			animationContextWritten = true;
+		}
+#endif
+
+		if (nextFrame <= frame || nextFrame - frame > 0x100000) {
+			break;
+		}
+		frame = nextFrame;
+	}
+	WriteText(file, "frameWalk=end\r\n");
+}
+
 void WriteTextReport(
 	const WCHAR* textPath,
 	const WCHAR* dumpPath,
@@ -451,6 +704,7 @@ void WriteTextReport(
 	WriteLine(file, "processId", GetCurrentProcessId());
 	WriteLine(file, "threadId", GetCurrentThreadId());
 	WriteLine(file, "dumpWritten", dumpWritten ? "true" : "false");
+	WriteLine(file, "dumpType", GetDumpModeName());
 
 	char dumpPathUtf8[MAX_PATH * 3]{};
 	WideCharToMultiByte(CP_UTF8, 0, dumpPath, -1, dumpPathUtf8, sizeof(dumpPathUtf8), nullptr, nullptr);
@@ -462,6 +716,7 @@ void WriteTextReport(
 		WideCharToMultiByte(CP_UTF8, 0, exePath, -1, exePathUtf8, sizeof(exePathUtf8), nullptr, nullptr);
 		WriteLine(file, "exePath", exePathUtf8);
 	}
+	WriteModuleBuildInfo(file, "exe", GetModuleHandleW(nullptr));
 
 	WCHAR dllPath[MAX_PATH]{};
 	if (GetModuleFileNameW(reinterpret_cast<HMODULE>(&__ImageBase), dllPath, MAX_PATH) != 0) {
@@ -469,6 +724,7 @@ void WriteTextReport(
 		WideCharToMultiByte(CP_UTF8, 0, dllPath, -1, dllPathUtf8, sizeof(dllPathUtf8), nullptr, nullptr);
 		WriteLine(file, "ijl15Path", dllPathUtf8);
 	}
+	WriteModuleBuildInfo(file, "ijl15", reinterpret_cast<HMODULE>(&__ImageBase));
 
 	if (exceptionInfo != nullptr && exceptionInfo->ExceptionRecord != nullptr) {
 		const auto* record = exceptionInfo->ExceptionRecord;
@@ -482,6 +738,7 @@ void WriteTextReport(
 	WriteContext(file, exceptionInfo != nullptr ? exceptionInfo->ContextRecord : nullptr);
 	WriteRecentTrace(file);
 	WriteStackSnapshot(file, exceptionInfo != nullptr ? exceptionInfo->ContextRecord : nullptr);
+	WriteFrameWalk(file, exceptionInfo != nullptr ? exceptionInfo->ContextRecord : nullptr);
 	CloseHandle(file);
 }
 
@@ -499,9 +756,7 @@ void WriteExceptionArtifacts(EXCEPTION_POINTERS* exceptionInfo, const WCHAR* rep
 		dumpExceptionInfo.ExceptionPointers = exceptionInfo;
 		dumpExceptionInfo.ClientPointers = FALSE;
 
-		const MINIDUMP_TYPE dumpType = g_fullDump
-			? static_cast<MINIDUMP_TYPE>(MiniDumpWithFullMemory | MiniDumpWithHandleData | MiniDumpWithThreadInfo)
-			: MiniDumpNormal;
+		const MINIDUMP_TYPE dumpType = GetMiniDumpType();
 
 		dumpWritten = MiniDumpWriteDump(
 			GetCurrentProcess(),
@@ -532,15 +787,22 @@ LONG WINAPI HandleUnhandledException(EXCEPTION_POINTERS* exceptionInfo)
 void CrashReporter::Install(bool enabled, const std::string& dumpType, bool traceEnabled)
 {
 	g_dumpEnabled = enabled;
-	g_fullDump = dumpType == "full" || dumpType == "Full" || dumpType == "FULL";
+	if (dumpType == "full" || dumpType == "Full" || dumpType == "FULL") {
+		g_dumpMode = DumpMode::Full;
+	} else if (dumpType == "normal" || dumpType == "Normal" || dumpType == "NORMAL") {
+		g_dumpMode = DumpMode::Normal;
+	} else {
+		g_dumpMode = DumpMode::Triage;
+	}
 	InterlockedExchange(&g_traceEnabled, traceEnabled ? 1 : 0);
 	if (traceEnabled) {
 		InitializeTraceFile();
 		RecordEvent(
 			"session",
-			"started crashDump=%s dumpType=%s pid=%lu",
+			"started crashDump=%s requestedDumpType=%s effectiveDumpType=%s pid=%lu",
 			enabled ? "true" : "false",
 			dumpType.c_str(),
+			GetDumpModeName(),
 			GetCurrentProcessId());
 	}
 
@@ -567,7 +829,12 @@ void CrashReporter::RecordRecentEvent(const char* category, const char* format, 
 	va_end(args);
 }
 
-void CrashReporter::RecordIncomingPacket(unsigned short opcode, unsigned long size, unsigned int offset)
+void CrashReporter::RecordIncomingPacket(
+	unsigned short opcode,
+	unsigned long size,
+	unsigned int offset,
+	const unsigned char* payload,
+	size_t payloadSize)
 {
 	if (InterlockedCompareExchange(&g_traceEnabled, 0, 0) == 0) {
 		return;
@@ -579,6 +846,13 @@ void CrashReporter::RecordIncomingPacket(unsigned short opcode, unsigned long si
 	packet.opcode = opcode;
 	packet.size = size;
 	packet.offset = offset;
+	packet.payloadSize = payload != nullptr
+		? static_cast<unsigned int>(
+			payloadSize < kRecentPacketPayloadCapacity ? payloadSize : kRecentPacketPayloadCapacity)
+		: 0;
+	for (unsigned int i = 0; i < packet.payloadSize; i++) {
+		packet.payload[i] = payload != nullptr ? payload[i] : 0;
+	}
 
 	AcquireSRWLockExclusive(&g_traceLock);
 	g_recentPackets[g_recentPacketNext] = packet;

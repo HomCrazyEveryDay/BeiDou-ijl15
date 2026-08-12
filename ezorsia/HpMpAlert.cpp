@@ -26,8 +26,21 @@ constexpr DWORD kCriticalDamageResourceOffset = 0x188;
 constexpr DWORD kCriticalDamageResource2Offset = 0x18C;
 constexpr WORD kOpcodeSetHpMpAlert = 0x1000;
 constexpr WORD kOpcodeShowMobDamage = 0x1001;
+constexpr WORD kOpcodeRemovePlayer = 0x00A1;
+constexpr WORD kOpcodeMovePet = 0x00AA;
+constexpr WORD kOpcodeMovePlayer = 0x00B9;
+constexpr WORD kOpcodeCloseRangeAttack = 0x00BA;
+constexpr WORD kOpcodeRangedAttack = 0x00BB;
+constexpr WORD kOpcodeMagicAttack = 0x00BC;
+constexpr WORD kOpcodeDamagePlayer = 0x00C0;
+constexpr WORD kOpcodeSpawnMonster = 0x00EC;
+constexpr WORD kOpcodeKillMonster = 0x00ED;
+constexpr WORD kOpcodeSpawnMonsterControl = 0x00EE;
+constexpr WORD kOpcodeMoveMonster = 0x00EF;
+constexpr WORD kOpcodeMoveMonsterResponse = 0x00F0;
 constexpr WORD kOpcodeApplyMonsterStatus = 0x00F2;
 constexpr WORD kOpcodeCancelMonsterStatus = 0x00F3;
+constexpr WORD kOpcodeDamageMonster = 0x00F6;
 constexpr unsigned int kBossVenomVisualMask = 0x01000000;
 constexpr int kBossVenomVisualDamage = 1;
 constexpr int kBossVenomTargetCount = 64;
@@ -324,6 +337,29 @@ static int ReadInt32LE(const unsigned char* data) {
         (static_cast<unsigned int>(data[2]) << 16) |
         (static_cast<unsigned int>(data[3]) << 24));
 }
+static bool ShouldCapturePacketPayload(unsigned short opcode) {
+    switch (opcode) {
+    case kOpcodeRemovePlayer:
+    case kOpcodeMovePet:
+    case kOpcodeMovePlayer:
+    case kOpcodeCloseRangeAttack:
+    case kOpcodeRangedAttack:
+    case kOpcodeMagicAttack:
+    case kOpcodeDamagePlayer:
+    case kOpcodeSpawnMonster:
+    case kOpcodeKillMonster:
+    case kOpcodeSpawnMonsterControl:
+    case kOpcodeMoveMonster:
+    case kOpcodeMoveMonsterResponse:
+    case kOpcodeApplyMonsterStatus:
+    case kOpcodeCancelMonsterStatus:
+    case kOpcodeDamageMonster:
+    case kOpcodeShowMobDamage:
+        return true;
+    default:
+        return false;
+    }
+}
 static void* FindMobByObjectId(int objectId) {
     DWORD mobPool = 0;
     if (!TryReadDword(kMobPoolPtr, mobPool) || mobPool == 0) {
@@ -377,6 +413,10 @@ static void ObserveBossVenomStatusPacket(CInPacket* packet) {
         const int objectId = ReadInt32LE(data + 6);
         if (opcode == kOpcodeCancelMonsterStatus) {
             UpdateBossVenomVisualTarget(objectId, false);
+            CrashReporter::RecordRecentEvent(
+                "bossVenom.visual",
+                "cancel objectId=%d",
+                objectId);
             return;
         }
         if (packet->DataLen < 32) {
@@ -387,6 +427,12 @@ static void ObserveBossVenomStatusPacket(CInPacket* packet) {
         const int skillId = ReadInt32LE(data + 28);
         if (visualDamage == kBossVenomVisualDamage && IsBossVenomSkill(skillId)) {
             UpdateBossVenomVisualTarget(objectId, true);
+            CrashReporter::RecordRecentEvent(
+                "bossVenom.visual",
+                "apply objectId=%d visualDamage=%d skillId=%d",
+                objectId,
+                visualDamage,
+                skillId);
         }
     } __except (CrashReporter::CaptureHandledException(
         "bossVenom.visual.exception",
@@ -408,6 +454,12 @@ static bool ShouldSuppressBossVenomLocalDamage(void* mob, int damage) {
             target.mob = FindMobByObjectId(target.objectId);
         }
         if (target.mob == mob) {
+            CrashReporter::RecordRecentEvent(
+                "bossVenom.visual",
+                "suppress objectId=%d mob=%p damage=%d",
+                target.objectId,
+                mob,
+                damage);
             return true;
         }
     }
@@ -624,7 +676,14 @@ static void TraceIncomingPacket(CInPacket* packet) {
             return;
         }
         const unsigned char* data = reinterpret_cast<const unsigned char*>(packet->Data);
-        CrashReporter::RecordIncomingPacket(ReadUInt16LE(data + 4), packet->DataLen, packet->Offset);
+        const unsigned short opcode = ReadUInt16LE(data + 4);
+        const bool capturePayload = ShouldCapturePacketPayload(opcode);
+        CrashReporter::RecordIncomingPacket(
+            opcode,
+            packet->DataLen,
+            packet->Offset,
+            capturePayload ? data + 4 : nullptr,
+            capturePayload ? static_cast<size_t>(packet->DataLen - 4) : 0);
     } __except (EXCEPTION_EXECUTE_HANDLER) {
         CrashReporter::RecordEvent(
             "incomingPacket.exception",

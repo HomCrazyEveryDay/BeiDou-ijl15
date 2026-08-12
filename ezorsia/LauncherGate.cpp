@@ -170,3 +170,23 @@ bool LauncherGate::Authorize()
 	CloseHandle(permit);
 	return authorized;
 }
+
+void LauncherGate::ShowUnauthorizedLaunchMessage()
+{
+	wchar_t launcherPath[32768]{};
+	const wchar_t* launcherFileName = LauncherExecutable;
+	if (TryGetExpectedLauncherPath(launcherPath, _countof(launcherPath)))
+	{
+		const wchar_t* separator = wcsrchr(launcherPath, L'\\');
+		if (separator != nullptr && separator[1] != L'\0')
+		{
+			launcherFileName = separator + 1;
+		}
+	}
+
+	wchar_t message[512]{};
+	wcscpy_s(message, L"\u8BF7\u8FD0\u884C\u201C");
+	wcscat_s(message, launcherFileName);
+	wcscat_s(message, L"\u201D\u542F\u52A8\u6E38\u620F\u3002");
+	FatalAppExitW(0, message);
+}

@@ -3,4 +3,5 @@
 namespace LauncherGate
 {
 	bool Authorize();
+	void ShowUnauthorizedLaunchMessage();
 }
