@@ -844,20 +844,30 @@ void CreateConsole() {
 	freopen_s(&stream, "CONOUT$", "w", stdout); //CONOUT$
 }
 
-BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved)
+namespace
 {
-	switch (ul_reason_for_call) {
-	case DLL_PROCESS_ATTACH:
+	constexpr DWORD ProcessEntryAddress = 0x00A63FF3;
+	constexpr DWORD ProcessEntryContinueAddress = 0x00A63FF8;
+	constexpr BYTE ExpectedProcessEntryBytes[] = { 0x55, 0x8B, 0xEC, 0x6A, 0xFF };
+	DWORD g_processEntryContinueAddress = ProcessEntryContinueAddress;
+
+	void InitializeClientAtProcessEntry()
 	{
 		if (!LauncherGate::Authorize()) {
-			return FALSE;
+			LauncherGate::ShowUnauthorizedLaunchMessage();
+			ExitProcess(ERROR_ACCESS_DENIED);
 		}
 
 		ExeVerifyInfo verifyInfo{};
 		const ExeVerifyResult verifyResult = VerifyCurrentExe(verifyInfo);
 		if (verifyResult != ExeVerifyResult::Ok) {
 			WriteExeVerifyLog(verifyResult, verifyInfo);
-			return FALSE;
+			MessageBoxW(
+				nullptr,
+				L"\u5BA2\u6237\u7AEF\u6587\u4EF6\u6821\u9A8C\u5931\u8D25\uFF0C\u8BF7\u8FD0\u884C\u9010\u68A6\u542F\u52A8\u5668\u4FEE\u590D\u5BA2\u6237\u7AEF\u3002",
+				L"\u65E0\u6CD5\u542F\u52A8\u6E38\u620F",
+				MB_OK | MB_ICONERROR | MB_SETFOREGROUND);
+			ExitProcess(ERROR_BAD_EXE_FORMAT);
 		}
 
 		//CreateConsole();	//console for devs, use this to log stuff if you want
@@ -952,12 +962,66 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReser
 		std::cout << "GetModuleFileName hook created" << std::endl;
 		ijl15::CreateHook(); //NMCO::CreateHook();
 		std::cout << "NMCO hook initialized" << std::endl;
-		break;
 	}
-	default: break;
-	case DLL_PROCESS_DETACH:
-		break;
+
+	__declspec(naked) void ProcessEntryHook()
+	{
+		__asm {
+			pushfd
+			pushad
+			call InitializeClientAtProcessEntry
+			popad
+			popfd
+
+			// Replay the five bytes replaced at BeiDou.exe's process entry point.
+			push ebp
+			mov ebp, esp
+			push -1
+			jmp dword ptr[g_processEntryContinueAddress]
+		}
 	}
+
+	bool InstallProcessEntryHook()
+	{
+		auto* const entryPoint = reinterpret_cast<BYTE*>(ProcessEntryAddress);
+		MEMORY_BASIC_INFORMATION memoryInfo{};
+		if (VirtualQuery(entryPoint, &memoryInfo, sizeof(memoryInfo)) != sizeof(memoryInfo)
+			|| memoryInfo.State != MEM_COMMIT
+			|| (memoryInfo.Protect & (PAGE_GUARD | PAGE_NOACCESS)) != 0) {
+			return false;
+		}
+
+		if (memcmp(entryPoint, ExpectedProcessEntryBytes, sizeof(ExpectedProcessEntryBytes)) != 0) {
+			return false;
+		}
+
+		BYTE patch[sizeof(ExpectedProcessEntryBytes)]{ 0xE9 };
+		const INT_PTR relativeJump = reinterpret_cast<INT_PTR>(&ProcessEntryHook)
+			- (reinterpret_cast<INT_PTR>(entryPoint) + sizeof(patch));
+		*reinterpret_cast<LONG*>(&patch[1]) = static_cast<LONG>(relativeJump);
+
+		DWORD oldProtect = 0;
+		if (!VirtualProtect(entryPoint, sizeof(patch), PAGE_EXECUTE_READWRITE, &oldProtect)) {
+			return false;
+		}
+
+		memcpy(entryPoint, patch, sizeof(patch));
+		FlushInstructionCache(GetCurrentProcess(), entryPoint, sizeof(patch));
+
+		DWORD ignoredProtect = 0;
+		VirtualProtect(entryPoint, sizeof(patch), oldProtect, &ignoredProtect);
+		return true;
+	}
+}
+
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved)
+{
+	if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
+		// Keep loader-lock work to a five-byte process-entry jump. Authorization, UI,
+		// configuration parsing and all existing hooks run after the loader calls the EXE entry point.
+		return InstallProcessEntryHook() ? TRUE : FALSE;
+	}
+
 	return TRUE;
 }
 

@@ -170,3 +170,12 @@ bool LauncherGate::Authorize()
 	CloseHandle(permit);
 	return authorized;
 }
+
+void LauncherGate::ShowUnauthorizedLaunchMessage()
+{
+	MessageBoxW(
+		nullptr,
+		L"\u8BF7\u8FD0\u884C\u201C\u9010\u68A6\u542F\u52A8\u5668\uFF08ZhuMengLauncher.exe\uFF09\u201D\u542F\u52A8\u6E38\u620F\u3002",
+		L"\u65E0\u6CD5\u542F\u52A8\u6E38\u620F",
+		MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
+}
