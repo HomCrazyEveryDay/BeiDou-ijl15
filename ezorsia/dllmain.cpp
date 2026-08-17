@@ -14,6 +14,7 @@
 #include "MovementKeyHook.h"
 #include "NpcShopCurrency.h"
 #include "CrashReporter.h"
+#include "ClientCrashFixes.h"
 #include "RefreshRateTrace.h"
 #include "LauncherGate.h"
 #include <wincrypt.h>
@@ -897,6 +898,7 @@ namespace
 		const int requestedHeight = Client::m_nGameHeight;
 		const ResolutionEnvironment resolutionEnvironment = ReadResolutionEnvironment();
 		CrashReporter::Install(enableCrashDump, crashDumpType, enableCrashTrace);
+		ClientCrashFixes::Install();
 		WriteStartupLog(configParseError, requestedWidth, requestedHeight, resolutionEnvironment);
 
 		Hook_CreateMutexA(true); //multiclient //ty darter, angel, and alias!

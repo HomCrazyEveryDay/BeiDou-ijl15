@@ -8,6 +8,29 @@ namespace {
 
 using PcCreateObjectIWzPackage = void(__cdecl*)(int param1, DWORD param2, DWORD param3);
 PcCreateObjectIWzPackage g_originalPcCreateObjectIWzPackage = nullptr;
+volatile LONG g_pcomPinState = 0;
+
+void PinPcomForProcessLifetime()
+{
+	if (InterlockedCompareExchange(&g_pcomPinState, 1, 0) != 0) {
+		return;
+	}
+
+	HMODULE pcomModule = nullptr;
+	SetLastError(ERROR_SUCCESS);
+	const BOOL pinned = GetModuleHandleExW(
+		GET_MODULE_HANDLE_EX_FLAG_PIN,
+		L"PCOM.dll",
+		&pcomModule);
+	const DWORD lastError = pinned ? ERROR_SUCCESS : GetLastError();
+	InterlockedExchange(&g_pcomPinState, pinned ? 2 : 0);
+	CrashReporter::RecordEvent(
+		"pcom.pin",
+		"result=%d module=%p error=%lu",
+		pinned ? 1 : 0,
+		pcomModule,
+		lastError);
+}
 
 LONG LogException(const char* phase, EXCEPTION_POINTERS* exceptionInfo)
 {
@@ -42,6 +65,10 @@ void __cdecl HookPcCreateObjectIWzPackage(int param1, DWORD param2, DWORD param3
 		return;
 	}
 	CrashReporter::RecordEvent("refreshRate", "original.end");
+	// Some native global destructors release a second PCOM-backed smart pointer
+	// after the first release has already unloaded PCOM.dll. Pinning the module
+	// keeps its vtables/code valid until the OS tears down the process.
+	PinPcomForProcessLifetime();
 
 	__try {
 		const DWORD refreshObject = *reinterpret_cast<DWORD*>(0x00BF14EC);
