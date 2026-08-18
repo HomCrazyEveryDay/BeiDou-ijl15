@@ -60,6 +60,84 @@ static DWORD g_GetTemporaryStatValue = 0x00725194;
 static DWORD g_BattleshipStatPanelSpeedReturn = 0x008C41D6;
 static DWORD g_BattleshipPhysicsSpeedReturn = 0x0094D7E3;
 
+// The native cash-item dispatcher opens the AP/SP reset window locally for
+// these two server-defined items. Route them through the existing scripted
+// item protocol instead, so the server can show a confirmation dialog.
+static DWORD g_ScriptedResetItemNativeContinue = 0x00A0A6CB;
+static DWORD g_ScriptedResetItemCleanupReturn = 0x00A0EAAC;
+
+namespace {
+constexpr int kAllApResetItemId = 5050100;
+constexpr int kAllSpResetItemId = 5051001;
+
+struct ScriptedResetOutPacket {
+	int Loopback;
+	union {
+		unsigned char* Data;
+		void* Unk;
+		unsigned short* Header;
+	};
+	unsigned long Size;
+	unsigned int Offset;
+	int EncryptedByShanda;
+};
+
+using ScriptedResetSendPacket = void(__fastcall*)(void*, void*, ScriptedResetOutPacket*);
+
+static void __stdcall SendScriptedResetItemPacket(int itemPosition, int itemId)
+{
+	if (itemId != kAllApResetItemId && itemId != kAllSpResetItemId) {
+		return;
+	}
+
+	void* socket = *reinterpret_cast<void**>(0x00BE7914);
+	if (socket == nullptr) {
+		return;
+	}
+
+	unsigned char payload[12]{};
+	*reinterpret_cast<unsigned short*>(payload) = 0x4E;
+	*reinterpret_cast<unsigned int*>(payload + 2) = 0;
+	*reinterpret_cast<unsigned short*>(payload + 6) = static_cast<unsigned short>(itemPosition);
+	*reinterpret_cast<unsigned int*>(payload + 8) = static_cast<unsigned int>(itemId);
+
+	ScriptedResetOutPacket packet{};
+	packet.Data = payload;
+	packet.Size = sizeof(payload);
+	auto send = reinterpret_cast<ScriptedResetSendPacket>(0x0049637B);
+
+	send(socket, nullptr, &packet);
+}
+}
+
+__declspec(naked) void RedirectScriptedResetItemCave()
+{
+	__asm {
+		// Replay the original item-id load and packet receiver setup for all
+		// normal items. The overwritten bytes are 7 bytes at 00A0A6C4.
+		mov esi, dword ptr [ebp + 0Ch]
+		cmp esi, 5050100
+		je scriptedReset
+		cmp esi, 5051001
+		je scriptedReset
+
+		push esi
+		lea ecx, [ebp - 38h]
+		jmp dword ptr [g_ScriptedResetItemNativeContinue]
+
+	scriptedReset:
+		push esi
+		push dword ptr [ebp + 8]
+		call SendScriptedResetItemPacket
+		jmp dword ptr [g_ScriptedResetItemCleanupReturn]
+	}
+}
+
+static void InstallScriptedResetItemRedirect()
+{
+	Memory::CodeCave(RedirectScriptedResetItemCave, 0x00A0A6C4, 7);
+}
+
 __declspec(naked) void BoomerangStepIgnoreAirborneCheckCave()
 {
 	__asm {
@@ -945,6 +1023,7 @@ namespace
 		InstallBattleshipMovementSpeed();
 		InstallProgressiveBerserkDamage();
 		InstallRushWithoutTargetRequirement();
+		InstallScriptedResetItemRedirect();
 		if (Client::enableMovementKeyRebind) {
 			MovementKeyHook::Hook(true);
 			Client::MovementKeyRebind();
