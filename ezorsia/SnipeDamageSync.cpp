@@ -6,7 +6,6 @@
 namespace {
 constexpr unsigned short kOpcodeRangedAttack = 0x002D;
 constexpr int kMarksmanSnipe = 3221007;
-constexpr int kMarksmanPiercingArrow = 3221001;
 constexpr DWORD kMobPoolPtr = 0x00BEBFA4;
 constexpr DWORD kFindMobAddr = 0x00441AE8;
 constexpr DWORD kPendingMs = 2500;
@@ -91,7 +90,7 @@ void TrackOutgoingAttackPacket(unsigned char* data, unsigned long size) {
             return;
         }
         const int skillId = ReadI32(data + 4);
-        if (skillId != kMarksmanSnipe && skillId != kMarksmanPiercingArrow) {
+        if (skillId != kMarksmanSnipe) {
             return;
         }
 
@@ -102,8 +101,7 @@ void TrackOutgoingAttackPacket(unsigned char* data, unsigned long size) {
             return;
         }
 
-        const bool piercingArrow = skillId == kMarksmanPiercingArrow;
-        const unsigned long targetBase = piercingArrow ? 34 : 30;
+        const unsigned long targetBase = 30;
         const unsigned long targetStride = 22 + static_cast<unsigned long>(numDamage) * 4;
         for (int i = 0; i < numAttacked; ++i) {
             const unsigned long targetOffset = targetBase + targetStride * static_cast<unsigned long>(i);
