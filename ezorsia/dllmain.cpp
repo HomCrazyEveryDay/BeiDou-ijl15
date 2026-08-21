@@ -933,7 +933,9 @@ namespace
 	void InitializeClientAtProcessEntry()
 	{
 		if (!LauncherGate::Authorize()) {
-			LauncherGate::ShowUnauthorizedLaunchMessage();
+			if (LauncherGate::ShouldShowUnauthorizedLaunchMessage()) {
+				LauncherGate::ShowUnauthorizedLaunchMessage();
+			}
 			ExitProcess(ERROR_ACCESS_DENIED);
 		}
 
