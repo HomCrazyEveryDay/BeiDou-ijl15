@@ -16,8 +16,6 @@ namespace
 	constexpr DWORD kTemporaryStatViewAddIconAddr = 0x007B24D5;
 	constexpr DWORD kNativeAddIconStringDedupAddr = 0x007B259C;
 	constexpr DWORD kTemporaryStatViewRemoveNodeAddr = 0x007B4BD1;
-	constexpr DWORD kUserLocalPtr = 0x00BEBF98;
-	constexpr DWORD kTemporaryStatViewOffset = 0x2EA8;
 	constexpr int kIconRecordSize = 17;
 	constexpr int kMaxIcons = 64;
 	constexpr int kNativeIconTypeSkill = 2;
@@ -199,7 +197,6 @@ namespace
 		g_nativeDraw(pThis, edx);
 		if (pThis && !g_syncingNativeIcons)
 		{
-			g_countdownFieldActive = true;
 			g_lastNativeDrawView = pThis;
 		}
 
@@ -364,18 +361,7 @@ namespace
 
 	DWORD ResolveTemporaryStatView()
 	{
-		if (g_observedTemporaryStatView)
-		{
-			g_currentTemporaryStatView = g_observedTemporaryStatView;
-			return g_currentTemporaryStatView;
-		}
-
-		DWORD userLocal = ReadDwordOrZero(kUserLocalPtr);
-		if (userLocal)
-		{
-			g_currentTemporaryStatView = userLocal + kTemporaryStatViewOffset;
-			return g_currentTemporaryStatView;
-		}
+		g_currentTemporaryStatView = g_observedTemporaryStatView;
 		return g_currentTemporaryStatView;
 	}
 
@@ -943,9 +929,9 @@ namespace
 	void SyncNativeVirtualIcons(const std::vector<StackedBuffIcon>& icons)
 	{
 		const DWORD temporaryStatView = ResolveTemporaryStatView();
-		if (!temporaryStatView)
+		if (!temporaryStatView || temporaryStatView != g_observedTemporaryStatView)
 		{
-			DebugLog("native_sync_skip no_view count=%d", static_cast<int>(icons.size()));
+			DebugLog("native_sync_skip no_observed_view count=%d", static_cast<int>(icons.size()));
 			return;
 		}
 		if (g_syncingNativeIcons)
@@ -1087,8 +1073,8 @@ namespace StackedBuffIcons
 			g_iconLockInitialized = true;
 		}
 
-		DebugLog("install nativeAdd=%08X nativeDraw=%08X dedupPatch=%08X userLocal=%08X log=%d",
-			kTemporaryStatViewAddIconAddr, kTemporaryStatViewDrawAddr, kNativeAddIconStringDedupAddr, kUserLocalPtr, g_logEnabled ? 1 : 0);
+		DebugLog("install nativeAdd=%08X nativeDraw=%08X dedupPatch=%08X observedOnly=1 log=%d",
+			kTemporaryStatViewAddIconAddr, kTemporaryStatViewDrawAddr, kNativeAddIconStringDedupAddr, g_logEnabled ? 1 : 0);
 		if (!g_addIconHookInstalled)
 		{
 			g_addIconHookInstalled = Memory::SetHook(true, reinterpret_cast<void**>(&g_nativeAddIcon), NativeAddIconHook);
@@ -1173,17 +1159,30 @@ namespace StackedBuffIcons
 		DrawOverlayVertices(d3dDevice, vertices);
 	}
 
+	void OnFieldUpdate()
+	{
+		if (!g_countdownFieldActive)
+		{
+			DebugLog("field_update activate countdownView=%08X", g_lastNativeDrawView);
+		}
+		g_countdownFieldActive = true;
+	}
+
 	void OnFieldInit()
 	{
-		g_countdownFieldActive = true;
-		g_lastNativeDrawView = 0;
+		g_countdownFieldActive = false;
+		g_currentTemporaryStatView = 0;
 		g_observedTemporaryStatView = 0;
+		g_virtualNativeNodes.clear();
+		DebugLog("field_init countdownView=%08X", g_lastNativeDrawView);
 	}
 
 	void OnFieldDispose()
 	{
 		g_countdownFieldActive = false;
-		g_lastNativeDrawView = 0;
+		g_currentTemporaryStatView = 0;
 		g_observedTemporaryStatView = 0;
+		g_virtualNativeNodes.clear();
+		DebugLog("field_dispose countdownView=%08X", g_lastNativeDrawView);
 	}
 }

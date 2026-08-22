@@ -34,6 +34,7 @@ void BossHP::HookUpdate() {
 	UserLocal__Update_type Hook = [](void* pThis, void* edx) -> void
 	{
 		_UserLocal__Update(pThis, edx);
+		StackedBuffIcons::OnFieldUpdate();
 		UpdateQueuedMobDamageDisplay();
 		DrawBossHpNumberIfNeed();
 	};
