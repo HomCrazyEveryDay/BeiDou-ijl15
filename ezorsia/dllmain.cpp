@@ -258,19 +258,21 @@ static int ReadClientMovementKey(int virtualKey)
 
 static void SetHurricaneAvatarFacing(DWORD user, DWORD facing)
 {
-	using PutFlip = HRESULT(__stdcall*)(void*, int);
+	using SetOneTimeAction = void(__thiscall*)(void*, int);
 
-	const DWORD avatar = user + 0x88;
-	const DWORD layerOffsets[] = { 0x10C8, 0x10C4, 0x10C0, 0x10D4, 0x10D0 };
-	const int flip = facing == 0 ? 1 : 0;
-	for (const DWORD offset : layerOffsets) {
-		void* layer = *reinterpret_cast<void**>(avatar + offset);
-		if (!layer) {
-			continue;
-		}
+	const DWORD avatarAddress = user + 0x88;
+	void* avatar = reinterpret_cast<void*>(avatarAddress);
+	DWORD& moveAction = *reinterpret_cast<DWORD*>(user + 0x570);
+	const int channelAction = *reinterpret_cast<int*>(avatarAddress + 0x4EC);
 
-		void** vtable = *reinterpret_cast<void***>(layer);
-		reinterpret_cast<PutFlip>(vtable[0xD8 / sizeof(void*)])(layer, flip);
+	moveAction = (moveAction & ~1u) | facing;
+
+	// Rebuild the exact pose already selected by the client; action IDs are not
+	// interchangeable with the Character.wz root indexes used during diagnosis.
+	if (channelAction >= 0) {
+		reinterpret_cast<SetOneTimeAction>(0x004571AB)(avatar, channelAction);
+		*reinterpret_cast<int*>(user + 0xB54) = 0;
+		*reinterpret_cast<int*>(user + 0xB58) = 0x7FFFFFFF;
 	}
 }
 
