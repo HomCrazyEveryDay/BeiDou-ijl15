@@ -44,6 +44,9 @@ static DWORD g_BoomerangStepAirborneCheckReturn = 0x00950C4D;
 static DWORD g_BoomerangStepAirborneAllowed = 0x00950C53;
 static DWORD g_BoomerangStepPositionReturn = 0x00950DC1;
 static DWORD g_BoomerangStepPositionFail = 0x00950AE8;
+static DWORD g_AssassinateCriticalDamageReturn = 0x00790196;
+static DWORD g_AssassinateFourthHitTargetRangeReturn = 0x00951305;
+static DWORD g_AssassinateFourthHitPositionReturn = 0x00952DA3;
 static DWORD g_AssassinateNoChargeReturn = 0x00790312;
 static DWORD g_DarkSightItemUseCheck = 0x0094FA45;
 static DWORD g_AntidoteUseAllowed = 0x00A094BE;
@@ -221,8 +224,85 @@ __declspec(naked) void AssassinateNoChargeCave()
 	}
 }
 
+__declspec(naked) void AssassinateCriticalDamageCave()
+{
+	__asm {
+		cmp dword ptr[ebp - 28h], 0406849h
+		jne useNativeCriticalBase
+		cmp dword ptr[ebp + 30h], 3Ch
+		jne useNativeCriticalBase
+
+		// The native fourth-hit path uses an unrelated 0/115 local as its critical base.
+		// Replace it with the current hit so the native (criticalDamage - 100)% addition
+		// produces the resource-defined total multiplier.
+		fld qword ptr[ebp - 20h]
+		fistp dword ptr[ebp - 8]
+
+	useNativeCriticalBase:
+		mov eax, dword ptr[ebp - 34h]
+		mov ecx, dword ptr[ebp + 44h]
+		jmp dword ptr[g_AssassinateCriticalDamageReturn]
+	}
+}
+
+__declspec(naked) void AssassinateFourthHitTargetRangeCave()
+{
+	__asm {
+		cmp dword ptr[ebp - 10h], 0406849h
+		jne nativeSelection
+		cmp dword ptr[ebp + 14h], 0406849h
+		jne nativeSelection
+
+		// The delayed fourth hit re-runs target acquisition. Allow a small amount
+		// of movement while retaining the native first-target X preference.
+		sub dword ptr[ebp - 6Ch], 40h
+		sub dword ptr[ebp - 68h], 40h
+		add dword ptr[ebp - 64h], 40h
+		add dword ptr[ebp - 60h], 40h
+
+	nativeSelection:
+		xor eax, eax
+		push eax
+		push eax
+		push eax
+		jmp dword ptr[g_AssassinateFourthHitTargetRangeReturn]
+	}
+}
+
+__declspec(naked) void AssassinateFourthHitNoDisplacementCave()
+{
+	__asm {
+		cmp dword ptr[ebp + 14h], 0406849h
+		jne useCalculatedPosition
+
+		// Preserve the fourth-hit action while queuing the character's current
+		// position as its destination, so the native movement update is a no-op.
+		mov eax, dword ptr[ebx + 4]
+		lea ecx, [ebx + 4]
+		call dword ptr[eax + 10h]
+		mov ecx, dword ptr[eax]
+		mov dword ptr[ebp - 0B0h], ecx
+		mov ecx, dword ptr[eax + 4]
+		mov dword ptr[ebp - 0ACh], ecx
+
+	useCalculatedPosition:
+		mov eax, dword ptr[ebp - 0B0h]
+		jmp dword ptr[g_AssassinateFourthHitPositionReturn]
+	}
+}
+
 static void InstallAssassinateNoCharge()
 {
+	const unsigned char expectedPositionBytes[] = { 0x8B, 0x85, 0x50, 0xFF, 0xFF, 0xFF };
+
+	// Use the current fourth-hit damage as the native 90%/250% critical base.
+	Memory::CodeCave(AssassinateCriticalDamageCave, 0x00790190, 6);
+	// Keep the delayed fourth hit on its original target through small position changes.
+	Memory::CodeCave(AssassinateFourthHitTargetRangeCave, 0x00951300, 5);
+	// Keep the fourth-hit action and damage while leaving the character in place.
+	if (memcmp(reinterpret_cast<const void*>(0x00952D9D), expectedPositionBytes, sizeof(expectedPositionBytes)) == 0) {
+		Memory::CodeCave(AssassinateFourthHitNoDisplacementCave, 0x00952D9D, sizeof(expectedPositionBytes));
+	}
 	// Skip the original charge-time multiplier without applying any replacement multiplier.
 	Memory::CodeCave(AssassinateNoChargeCave, 0x0079028F, 9);
 }
