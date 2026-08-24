@@ -13,6 +13,7 @@
 #include "SelectCharMacFix.h"
 #include "MovementKeyHook.h"
 #include "NpcShopCurrency.h"
+#include "PrivateCleanSlateHook.h"
 #include "CrashReporter.h"
 #include "ClientCrashFixes.h"
 #include "RefreshRateTrace.h"
@@ -1068,6 +1069,7 @@ namespace
 		Client::FixChatPosHook();
 		Client::NoPassword();
 		NpcShopCurrency::Install();
+		PrivateCleanSlateHook::Install();
 		Client::MoreHook();
 		AranComboUi::Install();
 		BossHP::Hook();
