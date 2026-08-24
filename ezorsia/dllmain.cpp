@@ -138,6 +138,35 @@ static void InstallScriptedResetItemRedirect()
 	Memory::CodeCave(RedirectScriptedResetItemCave, 0x00A0A6C4, 7);
 }
 
+static void PatchApResetMinimum(DWORD comparisonAddress, unsigned short nativeMinimum)
+{
+	constexpr unsigned short serverMinimum = 4;
+	const auto* instruction = reinterpret_cast<const unsigned char*>(comparisonAddress);
+	const DWORD immediateAddress = comparisonAddress + 2;
+	if (instruction[0] == 0x66 && instruction[1] == 0x3D
+		&& *reinterpret_cast<const unsigned short*>(immediateAddress) == nativeMinimum) {
+		Memory::WriteShort(immediateAddress, serverMinimum);
+	}
+}
+
+static void InstallApResetStatLimits()
+{
+	// Match the server's universal four-point floor instead of the native
+	// first-job stat requirements used to enable the decrement buttons.
+	PatchApResetMinimum(0x008CC10B, 35);
+	PatchApResetMinimum(0x008CC13D, 25);
+	PatchApResetMinimum(0x008CC166, 20);
+	PatchApResetMinimum(0x008CC196, 20);
+
+	constexpr DWORD capInstructionAddress = 0x008CC2C4;
+	constexpr int nativeCap = 999;
+	constexpr int serverCap = 32767;
+	if (*reinterpret_cast<const unsigned char*>(capInstructionAddress) == 0xBB
+		&& *reinterpret_cast<const int*>(capInstructionAddress + 1) == nativeCap) {
+		Memory::WriteInt(capInstructionAddress + 1, serverCap);
+	}
+}
+
 __declspec(naked) void BoomerangStepIgnoreAirborneCheckCave()
 {
 	__asm {
@@ -1028,6 +1057,7 @@ namespace
 		InstallProgressiveBerserkDamage();
 		InstallRushWithoutTargetRequirement();
 		InstallScriptedResetItemRedirect();
+		InstallApResetStatLimits();
 		if (Client::enableMovementKeyRebind) {
 			MovementKeyHook::Hook(true);
 			Client::MovementKeyRebind();
