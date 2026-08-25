@@ -187,6 +187,8 @@
     <ClInclude Include="MovementKeyHook.h" />
     <ClInclude Include="NpcShopCurrency.h" />
     <ClInclude Include="PrivateCleanSlateHook.h" />
+    <ClInclude Include="SecondPendantRules.h" />
+    <ClInclude Include="SecondPendantSlot.h" />
     <ClInclude Include="Client.h" />
     <ClInclude Include="FixBuddy.h" />
     <ClInclude Include="FixIme.h" />
@@ -238,6 +240,7 @@
     <ClCompile Include="StackedBuffIcons.cpp" />
     <ClCompile Include="NpcShopCurrency.cpp" />
     <ClCompile Include="PrivateCleanSlateHook.cpp" />
+    <ClCompile Include="SecondPendantSlot.cpp" />
     <ClCompile Include="Client.cpp" />
     <ClCompile Include="ijl15.cpp" />
     <ClCompile Include="ZAllocEx.cpp" />

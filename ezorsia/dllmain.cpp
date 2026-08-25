@@ -14,6 +14,7 @@
 #include "MovementKeyHook.h"
 #include "NpcShopCurrency.h"
 #include "PrivateCleanSlateHook.h"
+#include "SecondPendantSlot.h"
 #include "CrashReporter.h"
 #include "ClientCrashFixes.h"
 #include "RefreshRateTrace.h"
@@ -1072,6 +1073,7 @@ namespace
 		bool enableCrashTrace = true;
 		std::string crashDumpType = "mini";
 		bool enableStackedBuffIconLog = false;
+		bool enableEquipmentSlotLog = true;
 		const int configParseError = reader.ParseError();
 		if (configParseError == 0) {
 			// Resolution and IME are local client compatibility settings.
@@ -1084,6 +1086,7 @@ namespace
 			crashDumpType = reader.Get("debug", "crashDumpType", "mini");
 			Client::enableStartupLog = reader.GetBoolean("debug", "enableStartupLog", false);
 			enableStackedBuffIconLog = reader.GetBoolean("debug", "enableStackedBuffIconLog", false);
+			enableEquipmentSlotLog = reader.GetBoolean("debug", "enableEquipmentSlotLog", true);
 			ApplyLocalEndpointOverride(reader);
 		}
 		const int requestedWidth = Client::m_nGameWidth;
@@ -1150,6 +1153,7 @@ namespace
 		Client::NoPassword();
 		NpcShopCurrency::Install();
 		PrivateCleanSlateHook::Install();
+		SecondPendantSlot::Install(enableEquipmentSlotLog);
 		Client::MoreHook();
 		AranComboUi::Install();
 		BossHP::Hook();
