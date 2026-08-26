@@ -15,6 +15,11 @@ void Require(bool condition)
 
 int main()
 {
+	using SecondPendantRules::EquipmentSnapshotEntryOffset;
+	using SecondPendantRules::EquipmentSnapshotItemPointerOffset;
+	using SecondPendantRules::ExpansionTimeForAccess;
+	using SecondPendantRules::IsLockedTooltipTemplate;
+	using SecondPendantRules::ShouldMaskDerivedEquipmentSnapshot;
 	using SecondPendantRules::ShouldIgnoreExpansionExpirationForTarget;
 
 	Require(ShouldIgnoreExpansionExpirationForTarget(51));
@@ -22,5 +27,22 @@ int main()
 	Require(!ShouldIgnoreExpansionExpirationForTarget(50));
 	Require(!ShouldIgnoreExpansionExpirationForTarget(52));
 	Require(!ShouldIgnoreExpansionExpirationForTarget(0));
+	Require(ShouldMaskDerivedEquipmentSnapshot(false, 51));
+	Require(!ShouldMaskDerivedEquipmentSnapshot(true, 51));
+	Require(!ShouldMaskDerivedEquipmentSnapshot(false, 17));
+	Require(SecondPendantRules::kEquipmentSnapshotEntryCount == 52);
+	Require(SecondPendantRules::kEquipmentSnapshotSize == 0x1A0);
+	Require(EquipmentSnapshotEntryOffset(51) == 0x198);
+	Require(EquipmentSnapshotItemPointerOffset(51) == 0x19C);
+	Require(ExpansionTimeForAccess(false) == SecondPendantRules::kExpiredExpansionTime);
+	Require(ExpansionTimeForAccess(true) == SecondPendantRules::kPermanentExpansionTime);
+	Require(ExpansionTimeForAccess(false) != ExpansionTimeForAccess(true));
+	Require(IsLockedTooltipTemplate(
+		"The item will be equipped if you purchase a %s slot extender at the Cash Shop."));
+	Require(IsLockedTooltipTemplate(
+		"The item will be equipped if you purchase a Pendant slot extender at the Cash Shop."));
+	Require(!IsLockedTooltipTemplate(nullptr));
+	Require(!IsLockedTooltipTemplate("The item will be equipped normally."));
+	Require(!IsLockedTooltipTemplate("Purchase a slot extender."));
 	return 0;
 }

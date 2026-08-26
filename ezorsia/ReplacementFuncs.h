@@ -1,5 +1,6 @@
 #pragma once
 #include "AutoTypes.h"
+#include "SecondPendantSlot.h"
 
 static bool ownLoginFrame;
 static bool ownCashShopFrame;
@@ -2237,6 +2238,16 @@ bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //t
 	_StringPool__GetString_t _StringPool__GetString_Hook = [](void* pThis, void* edx, ZXString<char>* result, unsigned int nIdx, char formal) ->  ZXString<char>*
 	{
 		auto ret = _StringPool__GetString(pThis, edx, result, nIdx, formal);
+		if (Client::SwitchChinese)
+		{
+			const char* text = ret ? static_cast<const char*>(*ret) : nullptr;
+			const char* localized = SecondPendantSlot::LocalizeStringPoolTooltip(nIdx, text);
+			if (localized != nullptr)
+			{
+				*ret = localized;
+				return ret;
+			}
+		}
 		if (nIdx == 695 && Client::forceAccountShareTooltipLine)
 		{
 			Client::forceAccountShareTooltipLine = false;

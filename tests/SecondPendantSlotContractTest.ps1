@@ -82,6 +82,9 @@ $drawLoopLimit = [byte[]](0x83, 0xC0, 0x32)
 $normalCoordinateSelection = [byte[]](0x8D, 0x04, 0xC5, 0xF0, 0x23, 0xBE, 0x00)
 $petAnchor = [byte[]](0x05, 0xAC, 0x00, 0x00, 0x00)
 $secondPendantExpirationReject = [byte[]](0x0F, 0x8C, 0xA3, 0x0E, 0x00, 0x00)
+$setExtraPendantSlot = [byte[]](0x56, 0x8B, 0xF1, 0x8B, 0x4C, 0x24, 0x08)
+$recalculateStats = [byte[]](0xB8, 0xF7, 0x9A, 0xAE, 0x00)
+$calculateDerivedStats = [byte[]](0xB8, 0x7F, 0x63, 0xAB, 0x00)
 
 Assert-Bytes 0x007FDE7C $constructor 'CUIEquip constructor'
 Assert-Bytes 0x007FDE8B $constructorFlagRead 'constructor expanded-state read'
@@ -100,6 +103,9 @@ Assert-Bytes 0x007FE142 $petAnchor 'pet initial anchor'
 Assert-Bytes 0x007FEC1A $petAnchor 'pet move anchor'
 Assert-Bytes 0x007FFD46 $petAnchor 'pet show anchor'
 Assert-Bytes 0x004F1CCA $secondPendantExpirationReject 'native slot-51 expansion-expiration rejection'
+Assert-Bytes 0x00A13C6C $setExtraPendantSlot 'native extra-pendant toggle handler'
+Assert-Bytes 0x00A0843C $recalculateStats 'native full equipment-stat recalculation'
+Assert-Bytes 0x0077F4C9 $calculateDerivedStats 'native derived equipment-stat calculation'
 
 $normalTable = 0x00BE23F0
 $hitTable = 0x00BE2260
@@ -147,15 +153,41 @@ $sourceText = Get-Content -LiteralPath $sourcePath -Raw
 Assert-SourceContains 'kSecondPendantPosition\s*\{\s*38\s*,\s*101\s*\}' 'pendant coordinate (38,101)'
 Assert-SourceContains 'Memory::FillBytes\(kCuiEquipExtraFlagStoreAddress,\s*0x90,\s*6\)' 'expanded-state assignment suppression'
 Assert-SourceContains 'Memory::WriteByte\(kCuiEquipDrawInitialLimitImmediate,\s*kSecondPendantSlot\)' 'initial draw limit extension'
-Assert-SourceContains 'Memory::WriteByte\(kCuiEquipSlot51BlockedFillImmediate,\s*0\)' 'slot-51 blocked fill suppression'
+Assert-SourceContains 'SetSecondPendantBlocked\(!IsExtraPendantEnabled\(\)\)' 'slot-51 access-state rendering'
+Assert-SourceContains 'if\s*\(IsInsideSecondPendant\(x,\s*y\)\)' 'locked slot-51 hover and unequip hit testing'
 Assert-SourceContains 'Memory::WriteByte\(kCuiEquipDrawLoopLimitImmediate,\s*kSecondPendantSlot\)' 'loop draw limit extension'
 Assert-SourceContains 'Memory::FillBytes\(kSecondPendantExpirationRejectJump,\s*0x90,\s*6\)' 'permanent slot-51 expiration rejection suppression'
+Assert-SourceContains 'g_wvsContextSetExtraPendantSlot\(pThis,\s*packet\);\s*SyncSecondPendantExpiration\(pThis\);' 'toggle-first expiration synchronization'
+Assert-SourceContains 'characterData\s*\+\s*kSecondPendantExpirationOffset' 'slot-51 expansion-expiration field update'
+Assert-SourceContains 'if\s*\(previous\s*==\s*current\)' 'unchanged access-state recalculation suppression'
+Assert-SourceContains 'g_wvsContextRecalculateStats\(context\)' 'expiration state refreshes native equipment stats'
+Assert-SourceContains 'kEquipmentSnapshotEntryCount\s*==\s*52' 'derived equipment snapshot entry count'
+Assert-SourceContains 'kEquipmentSnapshotSize\s*==\s*0x1A0' 'derived equipment snapshot byte size'
+Assert-SourceContains 'EquipmentSnapshotEntryOffset\(51\)\s*==\s*0x198' 'slot-51 derived snapshot entry offset'
+Assert-SourceContains 'EquipmentSnapshotItemPointerOffset\(51\)\s*==\s*0x19C' 'slot-51 derived snapshot item-pointer offset'
+Assert-SourceContains '\*reinterpret_cast<void\*\*>\(context\s*\+\s*kCharacterDataOffset\)\s*!=\s*characterData' 'current-character-only derived snapshot filtering'
+Assert-SourceContains 'memcpy\(normalSnapshot\.data\(\),\s*normalEquipment,\s*sizeof\(normalSnapshot\)\)' 'normal equipment snapshot copy'
+Assert-SourceContains 'memcpy\(cashSnapshot\.data\(\),\s*cashEquipment,\s*sizeof\(cashSnapshot\)\)' 'cash equipment snapshot copy'
+Assert-SourceContains 'normalSnapshot\[kSecondPendantSlot\]\.item\s*=\s*nullptr' 'normal slot-51 snapshot masking'
+Assert-SourceContains 'cashSnapshot\[kSecondPendantSlot\]\.item\s*=\s*nullptr' 'cash slot-151 snapshot masking'
+Assert-SourceContains 'g_calculateDerivedStats\(pThis,\s*characterData,\s*basicStats,\s*temporaryStats,\s*normalSnapshot\.data\(\),\s*cashSnapshot\.data\(\),\s*petEquipment\)' 'derived stats use copied equipment snapshots'
+Assert-SourceContains 'DetourAttach\(reinterpret_cast<void\*\*>\(&g_calculateDerivedStats\),\s*CalculateDerivedStatsHook\)' 'derived-stat-only snapshot filter hook'
+
+if ($sourceText -match 'IsExtraPendantEnabled\(\)\s*&&\s*IsInsideSecondPendant') {
+    throw 'A locked slot 51 must remain available for hover, preview, and unequip.'
+}
+
+if ($sourceText -match 'Memory::WriteByte\(kCuiEquipSlot51BlockedFillImmediate,\s*0\)') {
+    throw 'Slot-51 pink disabled fill must remain available when access item 5550000 is absent.'
+}
 
 foreach ($forbidden in @('kExpandedCoordinateTable', 'PetPanelInitialAnchorCave', 'PetPanelMoveAnchorCave',
-        'PetPanelShowAnchorCave', 'Memory::CodeCave')) {
+        'PetPanelShowAnchorCave', 'Memory::CodeCave', 'kNormalEquippedPointerOffset',
+        'kCashEquippedPointerOffset', 'ScopedSecondPendantStatFilter',
+        'WvsContextRecalculateStatsHook', 'WriteRelativeCall')) {
     if ($sourceText.Contains($forbidden)) {
         throw ('Expanded-layout behavior must not remain in second pendant implementation: {0}' -f $forbidden)
     }
 }
 
-'PASS SecondPendantSlotContractTest: instructionSites=17 nativeSlots=21 activeSlots=22 uniqueHitRects=22 pendant2=(38,101) nativeWindow=true petOffset=172 blockedFill=false permanent=true'
+'PASS SecondPendantSlotContractTest: instructionSites=22 nativeSlots=21 activeSlots=22 uniqueHitRects=22 pendant2=(38,101) nativeWindow=true petOffset=172 accessItem=5550000 pinkDisabled=true lockedHitTest=true derivedSnapshotMask=true'
