@@ -55,6 +55,11 @@ const char kSecondPendantLockedTooltipText[] =
 	"\xBB\xF1\xB5\xC3\xCF\xEE\xC1\xB4\xC0\xA9\xB3\xE4\xB5\xC0\xBE\xDF"
 	"\xBA\xF3\xA3\xAC\xB8\xC3\xD7\xB0\xB1\xB8\xBD\xAB\xBB\xD6\xB8\xB4"
 	"\xC9\xFA\xD0\xA7\xA1\xA3";
+const char kSecondPendantPurchaseConfirmationText[] =
+	"\xB9\xBA\xC2\xF2\x25\x73\xD0\xE8\xD2\xAA\x25\x64\xB5\xE3\xC8\xAF\xA3\xAC"
+	"\xBF\xC9\xCA\xB9\xD3\xC3\xC0\xA9\xB3\xE4\xCF\xEE\xC1\xB4\xC0\xB8\xCE\xBB"
+	"\x25\x64\xCC\xEC\xA1\xA3\x0D\x0A\xB9\xBA\xC2\xF2\xBA\xF3\xCE\xDE\xB7\xA8"
+	"\xCD\xCB\xBF\xEE\xA1\xA3";
 
 constexpr DWORD kNativeHitCoordinateTable = 0x00BE2260;
 constexpr DWORD kNativeNormalCoordinateTable = 0x00BE23F0;
@@ -78,6 +83,22 @@ struct EquipmentSnapshotEntry
 	DWORD reference;
 	void* item;
 };
+
+struct CInPacket
+{
+	int loopback;
+	int state;
+	void* data;
+	unsigned short dataLength;
+	unsigned short rawSequence;
+	unsigned int unknown;
+	unsigned int offset;
+};
+
+static_assert(offsetof(CInPacket, dataLength) == 0x0C,
+	"unexpected CInPacket data length offset");
+static_assert(offsetof(CInPacket, offset) == 0x14,
+	"unexpected CInPacket read offset");
 
 static_assert(sizeof(EquipmentSnapshotEntry) == SecondPendantRules::kEquipmentSnapshotEntrySize,
 	"the native equipment snapshot entry must remain eight bytes");
@@ -177,6 +198,7 @@ volatile LONG g_lastBlockedState = -1;
 volatile LONG g_loggedActiveTooltip = 0;
 volatile LONG g_loggedExpiredTooltip = 0;
 volatile LONG g_loggedLockedTooltip = 0;
+volatile LONG g_loggedPurchaseConfirmation = 0;
 volatile LONG g_loggedUnknownExpansionTooltip = 0;
 
 using CuiEquipConstructor = void* (__fastcall*)(void* pThis, void* edx);
@@ -184,7 +206,7 @@ using CuiEquipHitTest = int(__fastcall*)(void* pThis, void* edx, int x, int y);
 using CuiEquipMouseButton = void(__fastcall*)(void* pThis, void* edx, unsigned int message,
 	unsigned int wParam, int x, int y);
 using CuiEquipDraw = void(__fastcall*)(void* pThis, void* edx, const void* rect);
-using WvsContextSetExtraPendantSlot = void(__thiscall*)(void* pThis, void* packet);
+using WvsContextSetExtraPendantSlot = void(__thiscall*)(void* pThis, CInPacket* packet);
 using WvsContextRecalculateStats = void(__thiscall*)(void* pThis);
 using CalculateDerivedStats = void(__thiscall*)(void* pThis, void* characterData,
 	void* basicStats, void* temporaryStats, void* normalEquipment,
@@ -332,7 +354,24 @@ void __fastcall CalculateDerivedStatsHook(void* pThis, void* edx, void* characte
 	}
 }
 
-void SyncSecondPendantExpiration(void* context)
+bool TryReadServerExpansionExpiration(CInPacket* packet, unsigned long long* expiration)
+{
+	if (packet == nullptr || expiration == nullptr || packet->data == nullptr
+		|| packet->offset > packet->dataLength
+		|| packet->dataLength - packet->offset < sizeof(*expiration))
+	{
+		return false;
+	}
+
+	memcpy(expiration,
+		reinterpret_cast<const unsigned char*>(packet->data) + packet->offset,
+		sizeof(*expiration));
+	packet->offset += sizeof(*expiration);
+	return true;
+}
+
+void SyncSecondPendantExpiration(void* context, bool hasServerExpiration,
+	unsigned long long serverExpiration)
 {
 	if (context == nullptr)
 	{
@@ -354,18 +393,19 @@ void SyncSecondPendantExpiration(void* context)
 		unsigned long long* expiration = reinterpret_cast<unsigned long long*>(
 			characterData + kSecondPendantExpirationOffset);
 		const unsigned long long previous = *expiration;
-		const unsigned long long current = SecondPendantRules::ExpansionTimeForAccess(enabled);
+		const unsigned long long current = SecondPendantRules::ExpansionTimeForAccess(
+			enabled, hasServerExpiration, serverExpiration);
 		if (previous == current)
 		{
-			WriteEquipmentLog("expiration unchanged enabled=%d value=%I64u recalculated=0",
-				enabled ? 1 : 0, current);
+			WriteEquipmentLog("expiration unchanged enabled=%d source=%s value=%I64u recalculated=0",
+				enabled ? 1 : 0, hasServerExpiration ? "server" : "fallback", current);
 			return;
 		}
 		*expiration = current;
 		g_wvsContextRecalculateStats(context);
 
-		WriteEquipmentLog("expiration synced enabled=%d old=%I64u new=%I64u recalculated=1",
-			enabled ? 1 : 0, previous, current);
+		WriteEquipmentLog("expiration synced enabled=%d source=%s old=%I64u new=%I64u recalculated=1",
+			enabled ? 1 : 0, hasServerExpiration ? "server" : "fallback", previous, current);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER)
 	{
@@ -462,10 +502,12 @@ void __fastcall CuiEquipDrawHook(void* pThis, void* edx, const void* rect)
 	g_cuiEquipDraw(pThis, edx, rect);
 }
 
-void __fastcall WvsContextSetExtraPendantSlotHook(void* pThis, void* edx, void* packet)
+void __fastcall WvsContextSetExtraPendantSlotHook(void* pThis, void* edx, CInPacket* packet)
 {
 	g_wvsContextSetExtraPendantSlot(pThis, packet);
-	SyncSecondPendantExpiration(pThis);
+	unsigned long long serverExpiration = 0;
+	const bool hasServerExpiration = TryReadServerExpansionExpiration(packet, &serverExpiration);
+	SyncSecondPendantExpiration(pThis, hasServerExpiration, serverExpiration);
 }
 
 void* __fastcall AssignSecondPendantExpiredTooltip(void* result, void* edx, void* source)
@@ -686,7 +728,8 @@ const char* LocalizeStringPoolTooltip(unsigned int stringId, const char* text)
 	const bool mentionsExpiration = strstr(text, "expiration") != nullptr
 		|| strstr(text, "expired") != nullptr;
 	const bool mentionsSlotExtender = strstr(text, "slot extender") != nullptr;
-	if (!mentionsCslot && !mentionsExpiration && !mentionsSlotExtender)
+	const bool purchaseConfirmation = SecondPendantRules::IsPurchaseConfirmationTemplate(text);
+	if (!mentionsCslot && !mentionsExpiration && !mentionsSlotExtender && !purchaseConfirmation)
 	{
 		return nullptr;
 	}
@@ -698,13 +741,15 @@ const char* LocalizeStringPoolTooltip(unsigned int stringId, const char* text)
 	volatile LONG* logFlag = active ? &g_loggedActiveTooltip
 		: expired ? &g_loggedExpiredTooltip
 		: locked ? &g_loggedLockedTooltip
+		: purchaseConfirmation ? &g_loggedPurchaseConfirmation
 		: &g_loggedUnknownExpansionTooltip;
 	const bool shouldLog = InterlockedCompareExchange(logFlag, 1, 0) == 0;
 	if (shouldLog)
 	{
 		WriteEquipmentLog(
-			"tooltip StringPool candidate id=%u active=%d expired=%d locked=%d text=%s",
-			stringId, active ? 1 : 0, expired ? 1 : 0, locked ? 1 : 0, text);
+			"tooltip StringPool candidate id=%u active=%d expired=%d locked=%d purchase=%d text=%s",
+			stringId, active ? 1 : 0, expired ? 1 : 0, locked ? 1 : 0,
+			purchaseConfirmation ? 1 : 0, text);
 	}
 	if (active)
 	{
@@ -729,6 +774,14 @@ const char* LocalizeStringPoolTooltip(unsigned int stringId, const char* text)
 			WriteEquipmentLog("tooltip StringPool replaced id=%u state=locked", stringId);
 		}
 		return kSecondPendantLockedTooltipText;
+	}
+	if (purchaseConfirmation)
+	{
+		if (shouldLog)
+		{
+			WriteEquipmentLog("tooltip StringPool replaced id=%u state=purchase", stringId);
+		}
+		return kSecondPendantPurchaseConfirmationText;
 	}
 	return nullptr;
 }

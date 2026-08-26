@@ -39,10 +39,23 @@ constexpr unsigned long long ExpansionTimeForAccess(bool enabled)
 	return enabled ? kPermanentExpansionTime : kExpiredExpansionTime;
 }
 
+constexpr unsigned long long ExpansionTimeForAccess(bool enabled,
+	bool hasServerExpiration, unsigned long long serverExpiration)
+{
+	return hasServerExpiration ? serverExpiration : ExpansionTimeForAccess(enabled);
+}
+
 inline bool IsLockedTooltipTemplate(const char* text)
 {
 	return text != nullptr
 		&& std::strstr(text, "will be equipped") != nullptr
 		&& std::strstr(text, "slot extender") != nullptr;
+}
+
+inline bool IsPurchaseConfirmationTemplate(const char* text)
+{
+	return text != nullptr
+		&& std::strstr(text, "additional days") != nullptr
+		&& std::strstr(text, "Refunds are not available") != nullptr;
 }
 }

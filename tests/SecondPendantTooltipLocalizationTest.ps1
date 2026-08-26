@@ -90,12 +90,15 @@ function Assert-Bytes([uint32]$VirtualAddress, [byte[]]$Expected, [string]$Label
 $expiredTooltipBytes = [byte[]](Get-CppNamedBytes 'kSecondPendantExpiredTooltipText')
 $activeTooltipBytes = [byte[]](Get-CppNamedBytes 'kSecondPendantActiveTooltipText')
 $lockedTooltipBytes = [byte[]](Get-CppNamedBytes 'kSecondPendantLockedTooltipText')
+$purchaseConfirmationBytes = [byte[]](Get-CppNamedBytes 'kSecondPendantPurchaseConfirmationText')
 $expiredTooltipHex = [BitConverter]::ToString($expiredTooltipBytes).Replace('-', '')
 $activeTooltipHex = [BitConverter]::ToString($activeTooltipBytes).Replace('-', '')
 $lockedTooltipHex = [BitConverter]::ToString($lockedTooltipBytes).Replace('-', '')
+$purchaseConfirmationHex = [BitConverter]::ToString($purchaseConfirmationBytes).Replace('-', '')
 $expectedExpiredHex = 'C0A9B3E4CFEEC1B4C0B8CEBBD2D1B9FDC6DAA3ACB8C3D7B0B1B8B5C4CAF4D0D4B2BBBBE1C9FAD0A7A1A3'
 $expectedActiveHex = 'C0A9B3E4CFEEC1B4C0B8CEBBD3D0D0A7C6DAD6C12025303464C4EA25303264D4C225303264C8D520253032643A25303264A3ACB5BDC6DABAF3B8C3D7B0B1B8B5C4CAF4D0D4BDABCAA7D0A7A1A3'
 $expectedLockedHex = 'BBF1B5C3CFEEC1B4C0A9B3E4B5C0BEDFBAF3A3ACB8C3D7B0B1B8BDABBBD6B8B4C9FAD0A7A1A3'
+$expectedPurchaseConfirmationHex = 'B9BAC2F22573D0E8D2AA2564B5E3C8AFA3ACBFC9CAB9D3C3C0A9B3E4CFEEC1B4C0B8CEBB2564CCECA1A30D0AB9BAC2F2BAF3CEDEB7A8CDCBBFEEA1A3'
 if ($expiredTooltipHex -ne $expectedExpiredHex) {
     throw ('Unexpected expired tooltip CP936 bytes: {0}' -f $expiredTooltipHex)
 }
@@ -104,6 +107,9 @@ if ($activeTooltipHex -ne $expectedActiveHex) {
 }
 if ($lockedTooltipHex -ne $expectedLockedHex) {
     throw ('Unexpected locked tooltip CP936 bytes: {0}' -f $lockedTooltipHex)
+}
+if ($purchaseConfirmationHex -ne $expectedPurchaseConfirmationHex) {
+    throw ('Unexpected purchase confirmation CP936 bytes: {0}' -f $purchaseConfirmationHex)
 }
 
 Assert-Bytes 0x008F1F65 ([byte[]](0x68, 0x5B, 0x14, 0x00, 0x00)) 'expired source StringPool ID 0x145B'
@@ -128,6 +134,8 @@ if ($sourceText -match 'strstr\(text,\s*"Pendant slot extender"\)') {
 Assert-SourceContains 'tooltip StringPool candidate id=%u' 'actual StringPool ID and source-text log'
 Assert-SourceContains 'tooltip StringPool replaced id=%u state=active' 'active StringPool replacement log'
 Assert-SourceContains 'tooltip StringPool replaced id=%u state=locked' 'locked StringPool replacement log'
+Assert-SourceContains 'IsPurchaseConfirmationTemplate\(text\)' 'purchase confirmation template detection'
+Assert-SourceContains 'tooltip StringPool replaced id=%u state=purchase' 'purchase confirmation replacement log'
 Assert-SourceContains 'InterlockedCompareExchange\(logFlag,\s*1,\s*0\)' 'per-state log throttling'
 
 if ($replacementText -notmatch 'SecondPendantSlot::LocalizeStringPoolTooltip\(nIdx,\s*text\)') {
