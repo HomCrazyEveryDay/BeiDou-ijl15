@@ -56,6 +56,7 @@ inline bool IsPurchaseConfirmationTemplate(const char* text)
 {
 	return text != nullptr
 		&& std::strstr(text, "additional days") != nullptr
-		&& std::strstr(text, "Refunds are not available") != nullptr;
+		&& (std::strstr(text, "Refunds are not available") != nullptr
+			|| std::strstr(text, "Refunds are not availabe") != nullptr);
 }
 }

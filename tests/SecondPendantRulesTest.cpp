@@ -50,6 +50,9 @@ int main()
 	Require(!IsLockedTooltipTemplate("The item will be equipped normally."));
 	Require(!IsLockedTooltipTemplate("Purchase a slot extender."));
 	Require(IsPurchaseConfirmationTemplate(
+		"If you purchase a %s(%dcash), you can equip \r\n the item for %d additional days. "
+		"\r\n Refunds are not availabe after the purchase. \r\n Do you still wish to purchase it?"));
+	Require(IsPurchaseConfirmationTemplate(
 		"If you purchase a %s(%dcash), you can equip this item for %d additional days. "
 		"Refunds are not available after the purchase."));
 	Require(!IsPurchaseConfirmationTemplate(nullptr));

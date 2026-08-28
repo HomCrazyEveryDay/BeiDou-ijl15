@@ -95,15 +95,19 @@ $expiredTooltipHex = [BitConverter]::ToString($expiredTooltipBytes).Replace('-',
 $activeTooltipHex = [BitConverter]::ToString($activeTooltipBytes).Replace('-', '')
 $lockedTooltipHex = [BitConverter]::ToString($lockedTooltipBytes).Replace('-', '')
 $purchaseConfirmationHex = [BitConverter]::ToString($purchaseConfirmationBytes).Replace('-', '')
-$expectedExpiredHex = 'C0A9B3E4CFEEC1B4C0B8CEBBD2D1B9FDC6DAA3ACB8C3D7B0B1B8B5C4CAF4D0D4B2BBBBE1C9FAD0A7A1A3'
-$expectedActiveHex = 'C0A9B3E4CFEEC1B4C0B8CEBBD3D0D0A7C6DAD6C12025303464C4EA25303264D4C225303264C8D520253032643A25303264A3ACB5BDC6DABAF3B8C3D7B0B1B8B5C4CAF4D0D4BDABCAA7D0A7A1A3'
+$expectedCommodityHex = 'B7C5C8EBBDC7C9ABCFD6BDF0B5C0BEDFC0B8BAF3A3ACBFC9BFAAB7C5C0A9B3E4CFEEC1B4C0B8CEBB3330CCECA1A30D0AB3D6D3D0B6E0D5C5CAB1C8A1D7EECDEDB5BDC6DACAB1BCE4A3ACB2BBC0DBBCC6D1D3B3A4A1A3'
+$expectedExpiredHex = $expectedCommodityHex
+$expectedActiveHex = $expectedCommodityHex
 $expectedLockedHex = 'BBF1B5C3CFEEC1B4C0A9B3E4B5C0BEDFBAF3A3ACB8C3D7B0B1B8BDABBBD6B8B4C9FAD0A7A1A3'
-$expectedPurchaseConfirmationHex = 'B9BAC2F22573D0E8D2AA2564B5E3C8AFA3ACBFC9CAB9D3C3C0A9B3E4CFEEC1B4C0B8CEBB2564CCECA1A30D0AB9BAC2F2BAF3CEDEB7A8CDCBBFEEA1A3'
+$expectedPurchaseConfirmationHex = 'B9BAC2F22573D0E8D2AA2564B5E3C8AFA1A30D0ABFC9CAB9D3C3C0A9B3E4CFEEC1B4C0B8CEBB2564CCECA1A30D0AB9BAC2F2BAF3CEDEB7A8CDCBBFEEA1A3'
 if ($expiredTooltipHex -ne $expectedExpiredHex) {
     throw ('Unexpected expired tooltip CP936 bytes: {0}' -f $expiredTooltipHex)
 }
 if ($activeTooltipHex -ne $expectedActiveHex) {
     throw ('Unexpected active tooltip CP936 bytes: {0}' -f $activeTooltipHex)
+}
+if ($activeTooltipBytes -contains [byte][char]'%') {
+    throw 'Cash Shop commodity tooltip must not contain character-expiration format placeholders.'
 }
 if ($lockedTooltipHex -ne $expectedLockedHex) {
     throw ('Unexpected locked tooltip CP936 bytes: {0}' -f $lockedTooltipHex)
@@ -148,4 +152,4 @@ foreach ($obsoleteId in @(5211, 5212)) {
     }
 }
 
-'PASS SecondPendantTooltipLocalizationTest: contentMatch=cslot,pendant-extender states=active,expired,locked logThrottle=per-state'
+'PASS SecondPendantTooltipLocalizationTest: contentMatch=cslot,pendant-extender,purchase states=active,expired,locked,purchase logThrottle=per-state'
