@@ -6,6 +6,10 @@
 #define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers
 #endif
 
+// Include Winsock before windows.h so endpoint hostnames can be resolved safely.
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
 // Windows Header Files
 #include <windows.h>
 

@@ -906,13 +906,8 @@ static bool ParseIpv4Address(const std::string& value, unsigned int parts[4])
 	return true;
 }
 
-static bool IsAllowedLocalEndpointAddress(const std::string& value, std::string& normalized)
+static bool IsAllowedLocalIpv4Address(const std::string& value)
 {
-	if (_stricmp(value.c_str(), "localhost") == 0) {
-		normalized = "127.0.0.1";
-		return true;
-	}
-
 	unsigned int parts[4]{};
 	if (!ParseIpv4Address(value, parts)) {
 		return false;
@@ -926,8 +921,44 @@ static bool IsAllowedLocalEndpointAddress(const std::string& value, std::string&
 		return false;
 	}
 
-	normalized = value;
 	return true;
+}
+
+static bool ResolveAllowedLocalEndpointAddress(const std::string& value, std::string& normalized)
+{
+	if (IsAllowedLocalIpv4Address(value)) {
+		normalized = value;
+		return true;
+	}
+
+	WSADATA wsaData{};
+	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+		return false;
+	}
+
+	addrinfo hints{};
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	hints.ai_protocol = IPPROTO_TCP;
+
+	addrinfo* result = nullptr;
+	if (getaddrinfo(value.c_str(), nullptr, &hints, &result) == 0) {
+		for (const addrinfo* current = result; current != nullptr; current = current->ai_next) {
+			const sockaddr_in* ipv4 = reinterpret_cast<const sockaddr_in*>(current->ai_addr);
+			char address[INET_ADDRSTRLEN]{};
+			if (InetNtopA(AF_INET, const_cast<IN_ADDR*>(&ipv4->sin_addr), address, sizeof(address)) != nullptr
+				&& IsAllowedLocalIpv4Address(address)) {
+				normalized = address;
+				break;
+			}
+		}
+	}
+
+	if (result != nullptr) {
+		freeaddrinfo(result);
+	}
+	WSACleanup();
+	return !normalized.empty();
 }
 
 static void ApplyLocalEndpointOverride(const INIReader& reader)
@@ -938,7 +969,7 @@ static void ApplyLocalEndpointOverride(const INIReader& reader)
 
 	std::string endpoint = reader.Get("dev", "ServerIP_Address", "127.0.0.1");
 	std::string normalizedEndpoint;
-	if (!IsAllowedLocalEndpointAddress(endpoint, normalizedEndpoint)) {
+	if (!ResolveAllowedLocalEndpointAddress(endpoint, normalizedEndpoint)) {
 		return;
 	}
 
