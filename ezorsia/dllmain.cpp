@@ -17,6 +17,7 @@
 #include "SecondPendantSlot.h"
 #include "CrashReporter.h"
 #include "ClientCrashFixes.h"
+#include "ChairCompatibility.h"
 #include "RefreshRateTrace.h"
 #include "LauncherGate.h"
 #include <wincrypt.h>
@@ -1142,6 +1143,7 @@ namespace
 		InstallRushWithoutTargetRequirement();
 		InstallScriptedResetItemRedirect();
 		InstallApResetStatLimits();
+		ChairCompatibility::Install();
 		if (Client::enableMovementKeyRebind) {
 			MovementKeyHook::Hook(true);
 			Client::MovementKeyRebind();

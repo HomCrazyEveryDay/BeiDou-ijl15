@@ -177,6 +177,7 @@
     <ClInclude Include="AranComboUi.h" />
     <ClInclude Include="BossHP.h" />
     <ClInclude Include="ClientCrashFixes.h" />
+    <ClInclude Include="ChairCompatibility.h" />
     <ClInclude Include="CrashReporter.h" />
     <ClInclude Include="RefreshRateTrace.h" />
     <ClInclude Include="HpMpAlert.h" />
@@ -231,6 +232,7 @@
     <ClCompile Include="AranComboUi.cpp" />
     <ClCompile Include="BossHP.cpp" />
     <ClCompile Include="ClientCrashFixes.cpp" />
+    <ClCompile Include="ChairCompatibility.cpp" />
     <ClCompile Include="CrashReporter.cpp" />
     <ClCompile Include="RefreshRateTrace.cpp" />
     <ClCompile Include="HpMpAlert.cpp" />
