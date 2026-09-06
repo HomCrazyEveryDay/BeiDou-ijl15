@@ -1054,8 +1054,9 @@ HookPcCreateObject_IWzPackage(
 	memcpy((void*)&screen_refresh_rate, (void*)0x00BF14EC, sizeof(int));
 	if (screen_refresh_rate != 0)
 	{
-		unsigned char* p = (unsigned char*)screen_refresh_rate;
-		p[0x84] = 0x3C;
+		// The cached D3DDISPLAYMODE refresh rate is a full DWORD, including above 255 Hz.
+		DWORD* refreshRate = reinterpret_cast<DWORD*>(screen_refresh_rate + 0x84);
+		*refreshRate = 60;
 	}
 }
 void Client::RefreshRate()

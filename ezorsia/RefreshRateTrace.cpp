@@ -77,15 +77,17 @@ void __cdecl HookPcCreateObjectIWzPackage(int param1, DWORD param2, DWORD param3
 			return;
 		}
 
-		unsigned char* refreshRate = reinterpret_cast<unsigned char*>(refreshObject + 0x84);
-		const unsigned char previousValue = *refreshRate;
+		// Gr2D stores D3DDISPLAYMODE.RefreshRate as a DWORD at +0x84.
+		// A byte write turns 280 (0x118) into 316 (0x13C), not 60.
+		DWORD* refreshRate = reinterpret_cast<DWORD*>(refreshObject + 0x84);
+		const DWORD previousValue = *refreshRate;
 		CrashReporter::RecordEvent(
 			"refreshRate",
 			"patch.begin object=0x%08lX field=%p old=%u new=60",
 			refreshObject,
 			refreshRate,
 			static_cast<unsigned int>(previousValue));
-		*refreshRate = 0x3C;
+		*refreshRate = 60;
 		CrashReporter::RecordEvent(
 			"refreshRate",
 			"patch.end object=0x%08lX field=%p value=%u",
