@@ -141,6 +141,12 @@
     <ClInclude Include="BossHP.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ClientLog.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ClientDiagnostics.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="ClientCrashFixes.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -222,6 +228,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ClientCrashFixes.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ClientLog.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ClientDiagnostics.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ChairCompatibility.cpp">

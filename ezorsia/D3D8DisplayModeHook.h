@@ -1,5 +1,7 @@
 #pragma once
 #include "StackedBuffIcons.h"
+#include "ClientLog.h"
+#include <strsafe.h>
 
 namespace D3D8DisplayModeHook {
 
@@ -67,35 +69,7 @@ static void AppendStartupLog(const char* line) {
 		return;
 	}
 
-	WCHAR logPath[MAX_PATH]{};
-	if (GetModuleFileNameW(nullptr, logPath, MAX_PATH) == 0) {
-		lstrcpynW(logPath, L"ijl15_startup.log", MAX_PATH);
-	}
-
-	int slash = -1;
-	for (int i = lstrlenW(logPath) - 1; i >= 0; i--) {
-		if (logPath[i] == L'\\' || logPath[i] == L'/') {
-			slash = i;
-			break;
-		}
-	}
-
-	if (slash >= 0) {
-		logPath[slash + 1] = L'\0';
-		lstrcpynW(logPath + slash + 1, L"ijl15_startup.log", MAX_PATH - slash - 1);
-	}
-	else {
-		lstrcpynW(logPath, L"ijl15_startup.log", MAX_PATH);
-	}
-
-	HANDLE file = CreateFileW(logPath, FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (file == INVALID_HANDLE_VALUE) {
-		return;
-	}
-
-	DWORD written = 0;
-	WriteFile(file, line, lstrlenA(line), &written, nullptr);
-	CloseHandle(file);
+	ClientLog::Append(ClientLog::Component::Startup, "%s", line);
 }
 
 static void AppendStartupLogF(const char* format, ...) {
@@ -106,7 +80,7 @@ static void AppendStartupLogF(const char* format, ...) {
 	char line[512]{};
 	va_list args;
 	va_start(args, format);
-	wvsprintfA(line, format, args);
+	StringCchVPrintfA(line, ARRAYSIZE(line), format, args);
 	va_end(args);
 	AppendStartupLog(line);
 }

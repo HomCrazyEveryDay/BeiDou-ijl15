@@ -16,6 +16,7 @@
 #include "PrivateCleanSlateHook.h"
 #include "SecondPendantSlot.h"
 #include "CrashReporter.h"
+#include "ClientLog.h"
 #include "ClientCrashFixes.h"
 #include "ChairCompatibility.h"
 #include "RefreshRateTrace.h"
@@ -732,37 +733,13 @@ static void BytesToHex(const BYTE bytes[32], char hex[65])
 
 static void WriteLogText(HANDLE file, const char* text)
 {
-	DWORD written = 0;
-	WriteFile(file, text, lstrlenA(text), &written, nullptr);
+	ClientLog::Write(file, text);
 }
 
 static void WriteExeVerifyLog(ExeVerifyResult result, const ExeVerifyInfo& info)
 {
-	WCHAR logPath[MAX_PATH]{};
-	if (info.exePath[0] != L'\0') {
-		lstrcpynW(logPath, info.exePath, MAX_PATH);
-	}
-	else if (GetModuleFileNameW(nullptr, logPath, MAX_PATH) == 0) {
-		lstrcpynW(logPath, L"ijl15_verify.log", MAX_PATH);
-	}
-
-	int slash = -1;
-	for (int i = lstrlenW(logPath) - 1; i >= 0; i--) {
-		if (logPath[i] == L'\\' || logPath[i] == L'/') {
-			slash = i;
-			break;
-		}
-	}
-
-	if (slash >= 0) {
-		logPath[slash + 1] = L'\0';
-		lstrcpynW(logPath + slash + 1, L"ijl15_verify.log", MAX_PATH - slash - 1);
-	}
-	else {
-		lstrcpynW(logPath, L"ijl15_verify.log", MAX_PATH);
-	}
-
-	HANDLE file = CreateFileW(logPath, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	ClientLog::Append(ClientLog::Component::Verify, "verification failed reason=%s win32Error=%lu", ExeVerifyResultName(result), info.lastError);
+	HANDLE file = ClientLog::Open(ClientLog::Component::Verify);
 	if (file == INVALID_HANDLE_VALUE) {
 		return;
 	}
@@ -986,28 +963,8 @@ static void WriteStartupLog(
 		return;
 	}
 
-	WCHAR logPath[MAX_PATH]{};
-	if (GetModuleFileNameW(nullptr, logPath, MAX_PATH) == 0) {
-		lstrcpynW(logPath, L"ijl15_startup.log", MAX_PATH);
-	}
-
-	int slash = -1;
-	for (int i = lstrlenW(logPath) - 1; i >= 0; i--) {
-		if (logPath[i] == L'\\' || logPath[i] == L'/') {
-			slash = i;
-			break;
-		}
-	}
-
-	if (slash >= 0) {
-		logPath[slash + 1] = L'\0';
-		lstrcpynW(logPath + slash + 1, L"ijl15_startup.log", MAX_PATH - slash - 1);
-	}
-	else {
-		lstrcpynW(logPath, L"ijl15_startup.log", MAX_PATH);
-	}
-
-	HANDLE file = CreateFileW(logPath, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	ClientLog::Append(ClientLog::Component::Startup, "startup configuration");
+	HANDLE file = ClientLog::Open(ClientLog::Component::Startup);
 	if (file == INVALID_HANDLE_VALUE) {
 		return;
 	}
@@ -1046,7 +1003,10 @@ namespace
 
 	void InitializeClientAtProcessEntry()
 	{
+		ClientLog::Initialize();
+		ClientLog::Append(ClientLog::Component::Lifecycle, "process_entry");
 		if (!LauncherGate::Authorize()) {
+			ClientLog::Append(ClientLog::Component::Lifecycle, "startup_rejected stage=launcher_authorization exitCode=%lu", ERROR_ACCESS_DENIED);
 			if (LauncherGate::ShouldShowUnauthorizedLaunchMessage()) {
 				LauncherGate::ShowUnauthorizedLaunchMessage();
 			}
@@ -1056,6 +1016,7 @@ namespace
 		ExeVerifyInfo verifyInfo{};
 		const ExeVerifyResult verifyResult = VerifyCurrentExe(verifyInfo);
 		if (verifyResult != ExeVerifyResult::Ok) {
+			ClientLog::Append(ClientLog::Component::Lifecycle, "startup_rejected stage=exe_verification reason=%s win32Error=%lu", ExeVerifyResultName(verifyResult), verifyInfo.lastError);
 			WriteExeVerifyLog(verifyResult, verifyInfo);
 			MessageBoxW(
 				nullptr,
@@ -1094,6 +1055,10 @@ namespace
 		const int requestedHeight = Client::m_nGameHeight;
 		const ResolutionEnvironment resolutionEnvironment = ReadResolutionEnvironment();
 		CrashReporter::Install(enableCrashDump, crashDumpType, enableCrashTrace);
+		ClientLog::Append(ClientLog::Component::Lifecycle,
+			"diagnostics_config parseError=%d crashDump=%d crashTrace=%d startupLog=%d equipmentLog=%d buffIconLog=%d",
+			configParseError, enableCrashDump, enableCrashTrace, Client::enableStartupLog,
+			enableEquipmentSlotLog, enableStackedBuffIconLog);
 		ClientCrashFixes::Install();
 		WriteStartupLog(configParseError, requestedWidth, requestedHeight, resolutionEnvironment);
 
@@ -1165,6 +1130,7 @@ namespace
 		std::cout << "GetModuleFileName hook created" << std::endl;
 		ijl15::CreateHook(); //NMCO::CreateHook();
 		std::cout << "NMCO hook initialized" << std::endl;
+		ClientLog::Append(ClientLog::Component::Lifecycle, "initialization_complete resolution=%dx%d", Client::m_nGameWidth, Client::m_nGameHeight);
 	}
 
 	__declspec(naked) void ProcessEntryHook()

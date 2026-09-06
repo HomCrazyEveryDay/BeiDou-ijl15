@@ -1,4 +1,6 @@
 #include "stdafx.h"
+#include "ClientLog.h"
+#include <strsafe.h>
 #include "StackedBuffIcons.h"
 #include "Memory.h"
 
@@ -212,41 +214,6 @@ namespace
 		}
 	}
 
-	void GetLogPath(wchar_t* path, DWORD capacity)
-	{
-		if (!path || capacity == 0)
-		{
-			return;
-		}
-
-		path[0] = L'\0';
-		if (GetModuleFileNameW(nullptr, path, capacity) == 0)
-		{
-			lstrcpynW(path, L"stacked_buff_icons.log", capacity);
-			return;
-		}
-
-		int slash = -1;
-		for (int i = lstrlenW(path) - 1; i >= 0; i--)
-		{
-			if (path[i] == L'\\' || path[i] == L'/')
-			{
-				slash = i;
-				break;
-			}
-		}
-
-		if (slash >= 0)
-		{
-			path[slash + 1] = L'\0';
-			lstrcpynW(path + slash + 1, L"stacked_buff_icons.log", capacity - slash - 1);
-		}
-		else
-		{
-			lstrcpynW(path, L"stacked_buff_icons.log", capacity);
-		}
-	}
-
 	void DebugLog(const char* format, ...)
 	{
 		if (!g_logEnabled || !format)
@@ -257,23 +224,10 @@ namespace
 		char message[512]{};
 		va_list args;
 		va_start(args, format);
-		wvsprintfA(message, format, args);
+		StringCchVPrintfA(message, ARRAYSIZE(message), format, args);
 		va_end(args);
 
-		char line[640]{};
-		wsprintfA(line, "%lu %s\r\n", GetTickCount(), message);
-
-		wchar_t logPath[MAX_PATH]{};
-		GetLogPath(logPath, MAX_PATH);
-		HANDLE file = CreateFileW(logPath, FILE_APPEND_DATA, FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-		if (file == INVALID_HANDLE_VALUE)
-		{
-			return;
-		}
-
-		DWORD written = 0;
-		WriteFile(file, line, lstrlenA(line), &written, nullptr);
-		CloseHandle(file);
+		ClientLog::Append(ClientLog::Component::BuffIcons, "%s", message);
 	}
 
 	unsigned short ReadUInt16LE(const unsigned char* data)

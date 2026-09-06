@@ -2,6 +2,7 @@
 #include "AbsoluteDefenseSync.h"
 #include "HpMpAlert.h"
 #include "CrashReporter.h"
+#include "ClientDiagnostics.h"
 #include "IntegratedFinalAttack.h"
 #include "SnipeDamageSync.h"
 #include "StackedBuffIcons.h"
@@ -693,6 +694,8 @@ static void TraceIncomingPacket(CInPacket* packet) {
     }
 }
 static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* packet) {
+    if (packet && ClientDiagnostics::HandleIncoming(
+        reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     TraceIncomingPacket(packet);
     ObserveBossVenomStatusPacket(packet);
     if (packet != nullptr
@@ -724,6 +727,7 @@ void HookSaveGlobal(bool enable) {
     Memory::SetHook(enable, reinterpret_cast<void**>(&s_SaveGlobal), SaveGlobal_Hook);
 }
 void HookHpMpAlertRecv(bool enable) {
+    if (!enable) ClientDiagnostics::SetAckConsumerReady(false);
     if (enable) {
         AbsoluteDefenseSync::InstallImmunityBypassHooks();
     }
@@ -746,7 +750,8 @@ void HookHpMpAlertRecv(bool enable) {
     }
 
     Memory::SetHook(enable, reinterpret_cast<void**>(&g_ShowMobDamage), ShowMobDamage_Hook);
-    Memory::SetHook(enable, reinterpret_cast<void**>(&s_ProcessPacket), ProcessPacket_Hook);
+    const bool receiveReady = Memory::SetHook(enable, reinterpret_cast<void**>(&s_ProcessPacket), ProcessPacket_Hook);
+    if (enable) ClientDiagnostics::SetAckConsumerReady(receiveReady);
 }
 
 void UpdateQueuedMobDamageDisplay() {

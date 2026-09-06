@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "LauncherGate.h"
+#include "ClientLog.h"
 #include <TlHelp32.h>
 #include <cstdarg>
 #include <cwchar>
@@ -36,11 +37,11 @@ namespace
 		}
 
 		SYSTEMTIME now{};
-		GetLocalTime(&now);
+		GetSystemTime(&now);
 		wchar_t line[2304]{};
 		const int lineLength = swprintf_s(
 			line,
-			L"[%04u-%02u-%02u %02u:%02u:%02u.%03u] %s\r\n",
+			L"[%04u-%02u-%02uT%02u:%02u:%02u.%03uZ] %s\r\n",
 			now.wYear,
 			now.wMonth,
 			now.wDay,
@@ -61,7 +62,7 @@ namespace
 			line,
 			lineLength,
 			utf8,
-			static_cast<int>(sizeof(utf8)),
+			static_cast<int>(sizeof(utf8) - 1),
 			nullptr,
 			nullptr);
 		if (utf8Length <= 0)
@@ -69,65 +70,13 @@ namespace
 			return;
 		}
 
-		DWORD written = 0;
-		WriteFile(file, utf8, static_cast<DWORD>(utf8Length), &written, nullptr);
+		utf8[utf8Length] = '\0';
+		ClientLog::Write(file, utf8);
 	}
 
 	HANDLE CreateAuthorizationLog()
 	{
-		wchar_t executablePath[MAX_PATH]{};
-		const DWORD executableLength = GetModuleFileNameW(
-			nullptr,
-			executablePath,
-			_countof(executablePath));
-		if (executableLength == 0 || executableLength >= _countof(executablePath))
-		{
-			return INVALID_HANDLE_VALUE;
-		}
-
-		wchar_t* separator = wcsrchr(executablePath, L'\\');
-		if (separator == nullptr)
-		{
-			return INVALID_HANDLE_VALUE;
-		}
-		*separator = L'\0';
-
-		wchar_t logDirectory[MAX_PATH]{};
-		if (swprintf_s(logDirectory, L"%s\\logs", executablePath) <= 0)
-		{
-			return INVALID_HANDLE_VALUE;
-		}
-		if (!CreateDirectoryW(logDirectory, nullptr) && GetLastError() != ERROR_ALREADY_EXISTS)
-		{
-			return INVALID_HANDLE_VALUE;
-		}
-
-		SYSTEMTIME now{};
-		GetLocalTime(&now);
-		wchar_t logPath[MAX_PATH]{};
-		if (swprintf_s(
-				logPath,
-				L"%s\\ijl15-launch-auth-%04u%02u%02u-%02u%02u%02u-%lu.log",
-				logDirectory,
-				now.wYear,
-				now.wMonth,
-				now.wDay,
-				now.wHour,
-				now.wMinute,
-				now.wSecond,
-				GetCurrentProcessId()) <= 0)
-		{
-			return INVALID_HANDLE_VALUE;
-		}
-
-		return CreateFileW(
-			logPath,
-			GENERIC_WRITE,
-			FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-			nullptr,
-			CREATE_ALWAYS,
-			FILE_ATTRIBUTE_NORMAL,
-			nullptr);
+		return ClientLog::Open(ClientLog::Component::Authorization);
 	}
 
 	bool FinishAuthorization(
