@@ -1,5 +1,7 @@
 #include "stdafx.h"
 #include "CrashReporter.h"
+#include "ClientLog.h"
+#include "ClientDiagnostics.h"
 
 #include <DbgHelp.h>
 #include <cstdarg>
@@ -20,11 +22,9 @@ enum class DumpMode {
 DumpMode g_dumpMode = DumpMode::Triage;
 volatile LONG g_traceEnabled = 0;
 SRWLOCK g_traceLock = SRWLOCK_INIT;
-HANDLE g_traceFile = INVALID_HANDLE_VALUE;
 
 constexpr size_t kRecentEventCapacity = 128;
 constexpr size_t kRecentPacketCapacity = 256;
-constexpr size_t kRecentPacketPayloadCapacity = 48;
 
 struct RecentEvent {
 	char text[384]{};
@@ -36,8 +36,6 @@ struct RecentPacket {
 	unsigned short opcode = 0;
 	unsigned long size = 0;
 	unsigned int offset = 0;
-	unsigned char payload[kRecentPacketPayloadCapacity]{};
-	unsigned int payloadSize = 0;
 };
 
 RecentEvent g_recentEvents[kRecentEventCapacity]{};
@@ -46,6 +44,8 @@ size_t g_recentEventCount = 0;
 RecentPacket g_recentPackets[kRecentPacketCapacity]{};
 size_t g_recentPacketNext = 0;
 size_t g_recentPacketCount = 0;
+DWORD g_lastActivityTick = 0;
+unsigned long g_receivedPacketCount = 0;
 
 const char* GetDumpModeName()
 {
@@ -169,50 +169,6 @@ bool TryReadPointer(ULONG_PTR address, ULONG_PTR* value)
 	}
 }
 
-bool GetExeDirectory(WCHAR dir[MAX_PATH])
-{
-	if (GetModuleFileNameW(nullptr, dir, MAX_PATH) == 0) {
-		return false;
-	}
-
-	for (int i = lstrlenW(dir) - 1; i >= 0; i--) {
-		if (dir[i] == L'\\' || dir[i] == L'/') {
-			dir[i] = L'\0';
-			return true;
-		}
-	}
-
-	return false;
-}
-
-void InitializeTraceFile()
-{
-	WCHAR exeDir[MAX_PATH]{};
-	if (!GetExeDirectory(exeDir)) {
-		lstrcpynW(exeDir, L".", MAX_PATH);
-	}
-
-	WCHAR crashDir[MAX_PATH]{};
-	StringCchPrintfW(crashDir, ARRAYSIZE(crashDir), L"%s\\crash", exeDir);
-	CreateDirectoryW(crashDir, nullptr);
-
-	WCHAR tracePath[MAX_PATH]{};
-	StringCchPrintfW(
-		tracePath,
-		ARRAYSIZE(tracePath),
-		L"%s\\client_trace_pid%lu.log",
-		crashDir,
-		GetCurrentProcessId());
-	g_traceFile = CreateFileW(
-		tracePath,
-		GENERIC_WRITE,
-		FILE_SHARE_READ | FILE_SHARE_WRITE,
-		nullptr,
-		CREATE_ALWAYS,
-		FILE_ATTRIBUTE_NORMAL,
-		nullptr);
-}
-
 void RecordFormattedEvent(bool persist, const char* category, const char* format, va_list args)
 {
 	if (InterlockedCompareExchange(&g_traceEnabled, 0, 0) == 0) {
@@ -223,12 +179,12 @@ void RecordFormattedEvent(bool persist, const char* category, const char* format
 	StringCchVPrintfA(message, ARRAYSIZE(message), format != nullptr ? format : "", args);
 
 	SYSTEMTIME now{};
-	GetLocalTime(&now);
+	GetSystemTime(&now);
 	char line[384]{};
 	StringCchPrintfA(
 		line,
 		ARRAYSIZE(line),
-		"%04u-%02u-%02u %02u:%02u:%02u.%03u tid=%lu category=%s %s\r\n",
+		"%04u-%02u-%02uT%02u:%02u:%02u.%03uZ tid=%lu category=%s %s\r\n",
 		now.wYear,
 		now.wMonth,
 		now.wDay,
@@ -247,11 +203,10 @@ void RecordFormattedEvent(bool persist, const char* category, const char* format
 		g_recentEventCount++;
 	}
 
-	if (persist && g_traceFile != INVALID_HANDLE_VALUE) {
-		DWORD written = 0;
-		WriteFile(g_traceFile, line, lstrlenA(line), &written, nullptr);
-	}
 	ReleaseSRWLockExclusive(&g_traceLock);
+	if (persist) {
+		ClientLog::Append(ClientLog::Component::Trace, "category=%s %s", category ? category : "unknown", message);
+	}
 }
 
 void WriteRecentTrace(HANDLE file)
@@ -279,18 +234,11 @@ void WriteRecentTrace(HANDLE file)
 	for (size_t i = 0; i < g_recentPacketCount; i++) {
 		const size_t index = (packetStart + i) % kRecentPacketCapacity;
 		const RecentPacket& packet = g_recentPackets[index];
-		char payloadHex[kRecentPacketPayloadCapacity * 2 + 1]{};
-		constexpr char kHexDigits[] = "0123456789ABCDEF";
-		for (unsigned int payloadIndex = 0; payloadIndex < packet.payloadSize; payloadIndex++) {
-			payloadHex[payloadIndex * 2] = kHexDigits[(packet.payload[payloadIndex] >> 4) & 0x0F];
-			payloadHex[payloadIndex * 2 + 1] = kHexDigits[packet.payload[payloadIndex] & 0x0F];
-		}
-
 		char line[384]{};
 		StringCchPrintfA(
 			line,
 			ARRAYSIZE(line),
-			"packet%03u=%04u-%02u-%02u %02u:%02u:%02u.%03u tid=%lu opcode=0x%04X size=%lu offset=%u payload=%s\r\n",
+			"packet%03u=%04u-%02u-%02uT%02u:%02u:%02u.%03uZ tid=%lu opcode=0x%04X size=%lu offset=%u\r\n",
 			static_cast<unsigned int>(i),
 			packet.time.wYear,
 			packet.time.wMonth,
@@ -302,8 +250,7 @@ void WriteRecentTrace(HANDLE file)
 			packet.threadId,
 			static_cast<unsigned int>(packet.opcode),
 			packet.size,
-			packet.offset,
-			payloadHex);
+			packet.offset);
 		WriteText(file, line);
 	}
 	WriteText(file, "recentIncomingPackets=end\r\n");
@@ -316,17 +263,11 @@ void BuildCrashPaths(
 	EXCEPTION_POINTERS* exceptionInfo,
 	const WCHAR* reportTag)
 {
-	WCHAR exeDir[MAX_PATH]{};
-	if (!GetExeDirectory(exeDir)) {
-		lstrcpynW(exeDir, L".", MAX_PATH);
-	}
-
+	const WCHAR* logDir = ClientLog::Directory();
+	if (!logDir[0]) return;
 	WCHAR crashDir[MAX_PATH]{};
-	StringCchPrintfW(crashDir, ARRAYSIZE(crashDir), L"%s\\crash", exeDir);
+	StringCchPrintfW(crashDir, ARRAYSIZE(crashDir), L"%s\\crash", logDir);
 	CreateDirectoryW(crashDir, nullptr);
-
-	SYSTEMTIME now{};
-	GetLocalTime(&now);
 
 	const DWORD exceptionCode = exceptionInfo != nullptr && exceptionInfo->ExceptionRecord != nullptr
 		? exceptionInfo->ExceptionRecord->ExceptionCode
@@ -339,21 +280,15 @@ void BuildCrashPaths(
 	StringCchPrintfW(
 		baseName,
 		ARRAYSIZE(baseName),
-		L"BeiDou%s_%04u%02u%02u_%02u%02u%02u_pid%lu_tid%lu_code%08lX_addr%p",
+		L"ijl15-crash-%s%s-tid%lu-code%08lX-addr%p",
+		ClientLog::SessionId(),
 		reportTag != nullptr ? reportTag : L"",
-		now.wYear,
-		now.wMonth,
-		now.wDay,
-		now.wHour,
-		now.wMinute,
-		now.wSecond,
-		GetCurrentProcessId(),
 		GetCurrentThreadId(),
 		exceptionCode,
 		reinterpret_cast<void*>(exceptionAddress));
 
 	StringCchPrintfW(dumpPath, MAX_PATH, L"%s\\%s.dmp", crashDir, baseName);
-	StringCchPrintfW(textPath, MAX_PATH, L"%s\\%s.txt", crashDir, baseName);
+	StringCchPrintfW(textPath, MAX_PATH, L"%s\\%s.txt", logDir, baseName);
 }
 
 void WriteModuleInfo(HANDLE file, const char* keyPrefix, void* address)
@@ -471,91 +406,7 @@ void WriteContext(HANDLE file, const CONTEXT* context)
 #endif
 }
 
-void WriteStackSnapshot(HANDLE file, const CONTEXT* context)
-{
-	if (context == nullptr) {
-		return;
-	}
-
 #if defined(_M_IX86)
-	ULONG_PTR stack = context->Esp;
-#elif defined(_M_X64)
-	ULONG_PTR stack = context->Rsp;
-#else
-	ULONG_PTR stack = 0;
-#endif
-
-	if (stack == 0) {
-		return;
-	}
-
-	WriteText(file, "stackSnapshot=begin\r\n");
-	for (int i = 0; i < 96; i++) {
-		const ULONG_PTR address = stack + static_cast<ULONG_PTR>(i * sizeof(ULONG_PTR));
-		ULONG_PTR value = 0;
-		if (!TryReadPointer(address, &value)) {
-			break;
-		}
-
-		char moduleDescription[MAX_PATH * 3]{};
-		DescribeModuleAddress(moduleDescription, ARRAYSIZE(moduleDescription), value);
-
-		char line[512]{};
-#ifdef _WIN64
-		StringCchPrintfA(
-			line,
-			ARRAYSIZE(line),
-			"stack%02d=0x%016llX:0x%016llX %s\r\n",
-			i,
-			static_cast<unsigned long long>(address),
-			static_cast<unsigned long long>(value),
-			moduleDescription);
-#else
-		StringCchPrintfA(
-			line,
-			ARRAYSIZE(line),
-			"stack%02d=0x%08lX:0x%08lX %s\r\n",
-			i,
-			static_cast<unsigned long>(address),
-			static_cast<unsigned long>(value),
-			moduleDescription);
-#endif
-		WriteText(file, line);
-	}
-	WriteText(file, "stackSnapshot=end\r\n");
-}
-
-#if defined(_M_IX86)
-void WriteAnimationObjectSnapshot(HANDLE file, ULONG_PTR objectAddress)
-{
-	if (objectAddress == 0) {
-		return;
-	}
-
-	WriteText(file, "animationObjectSnapshot=begin\r\n");
-	for (int i = 0; i < 48; i++) {
-		const ULONG_PTR address = objectAddress + static_cast<ULONG_PTR>(i * sizeof(ULONG_PTR));
-		ULONG_PTR value = 0;
-		if (!TryReadPointer(address, &value)) {
-			break;
-		}
-
-		char moduleDescription[MAX_PATH * 3]{};
-		DescribeModuleAddress(moduleDescription, ARRAYSIZE(moduleDescription), value);
-		char line[512]{};
-		StringCchPrintfA(
-			line,
-			ARRAYSIZE(line),
-			"animationObject%02d=0x%08lX:0x%08lX %s\r\n",
-			i,
-			static_cast<unsigned long>(address),
-			static_cast<unsigned long>(value),
-			moduleDescription);
-		WriteText(file, line);
-	}
-	WriteText(file, "animationObjectSnapshot=end\r\n");
-}
-
 void WriteAnimationContext(HANDLE file, ULONG_PTR displayerFrame)
 {
 	// BeiDou.exe CAnimationDisplayer::Update keeps the current animation object
@@ -586,7 +437,6 @@ void WriteAnimationContext(HANDLE file, ULONG_PTR displayerFrame)
 				WriteModuleInfo(file, "animationUpdate", reinterpret_cast<void*>(updateMethod));
 			}
 		}
-		WriteAnimationObjectSnapshot(file, objectAddress);
 	}
 
 	const ULONG_PTR exeBase = reinterpret_cast<ULONG_PTR>(GetModuleHandleW(nullptr));
@@ -694,15 +544,28 @@ void WriteTextReport(
 	BOOL dumpWritten,
 	const char* reportType)
 {
-	HANDLE file = CreateFileW(textPath, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	HANDLE file = CreateFileW(textPath, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (file == INVALID_HANDLE_VALUE) {
 		return;
 	}
 
 	WriteText(file, "BeiDou crash report\r\n");
+	SYSTEMTIME now{};
+	GetSystemTime(&now);
+	char time[80]{};
+	StringCchPrintfA(time, ARRAYSIZE(time), "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ",
+		now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, now.wMilliseconds);
+	WriteLine(file, "timestamp", time);
 	WriteLine(file, "reportType", reportType);
 	WriteLine(file, "processId", GetCurrentProcessId());
 	WriteLine(file, "threadId", GetCurrentThreadId());
+	ClientDiagnostics::Snapshot diagnostic;
+	const bool snapshotAvailable = ClientDiagnostics::TrySnapshot(diagnostic);
+	WriteLine(file, "clientRunId", diagnostic.clientRunId);
+	WriteLine(file, "connectionId", diagnostic.connectionId);
+	WriteLine(file, "diagnosticAttempt", static_cast<DWORD>(diagnostic.diagnosticAttempt));
+	WriteLine(file, "connectionState", ClientDiagnostics::StateName(diagnostic.connectionState));
+	WriteLine(file, "diagnosticSnapshot", snapshotAvailable ? "available" : "unavailable");
 	WriteLine(file, "dumpWritten", dumpWritten ? "true" : "false");
 	WriteLine(file, "dumpType", GetDumpModeName());
 
@@ -737,7 +600,7 @@ void WriteTextReport(
 
 	WriteContext(file, exceptionInfo != nullptr ? exceptionInfo->ContextRecord : nullptr);
 	WriteRecentTrace(file);
-	WriteStackSnapshot(file, exceptionInfo != nullptr ? exceptionInfo->ContextRecord : nullptr);
+	// Uploadable text keeps module/frame metadata; arbitrary memory remains local in the dump.
 	WriteFrameWalk(file, exceptionInfo != nullptr ? exceptionInfo->ContextRecord : nullptr);
 	CloseHandle(file);
 }
@@ -796,7 +659,6 @@ void CrashReporter::Install(bool enabled, const std::string& dumpType, bool trac
 	}
 	InterlockedExchange(&g_traceEnabled, traceEnabled ? 1 : 0);
 	if (traceEnabled) {
-		InitializeTraceFile();
 		RecordEvent(
 			"session",
 			"started crashDump=%s requestedDumpType=%s effectiveDumpType=%s pid=%lu",
@@ -841,18 +703,14 @@ void CrashReporter::RecordIncomingPacket(
 	}
 
 	RecentPacket packet{};
-	GetLocalTime(&packet.time);
+	GetSystemTime(&packet.time);
 	packet.threadId = GetCurrentThreadId();
 	packet.opcode = opcode;
 	packet.size = size;
 	packet.offset = offset;
-	packet.payloadSize = payload != nullptr
-		? static_cast<unsigned int>(
-			payloadSize < kRecentPacketPayloadCapacity ? payloadSize : kRecentPacketPayloadCapacity)
-		: 0;
-	for (unsigned int i = 0; i < packet.payloadSize; i++) {
-		packet.payload[i] = payload != nullptr ? payload[i] : 0;
-	}
+	// Keep the call signature for existing hooks without retaining packet contents.
+	(void)payload;
+	(void)payloadSize;
 
 	AcquireSRWLockExclusive(&g_traceLock);
 	g_recentPackets[g_recentPacketNext] = packet;
@@ -860,7 +718,15 @@ void CrashReporter::RecordIncomingPacket(
 	if (g_recentPacketCount < kRecentPacketCapacity) {
 		g_recentPacketCount++;
 	}
+	const unsigned long received = ++g_receivedPacketCount;
+	const DWORD tick = GetTickCount();
+	const bool reportActivity = received == 1 || tick - g_lastActivityTick >= 60000;
+	if (reportActivity) g_lastActivityTick = tick;
 	ReleaseSRWLockExclusive(&g_traceLock);
+	if (reportActivity || opcode == 0x11) {
+		RecordEvent("network.receive", "event=%s packets=%lu lastOpcode=0x%04X size=%lu uptimeMs=%llu",
+			opcode == 0x11 ? "server_ping" : "activity", received, opcode, size, GetTickCount64());
+	}
 }
 
 LONG CrashReporter::CaptureHandledException(

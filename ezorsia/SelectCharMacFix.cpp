@@ -1,5 +1,7 @@
 #include "stdafx.h"
 #include "SelectCharMacFix.h"
+#include "ClientDiagnostics.h"
+#include "ClientLog.h"
 #include "AbsoluteDefenseSync.h"
 #include "IntegratedFinalAttack.h"
 #include "SnipeDamageSync.h"
@@ -122,7 +124,29 @@ static bool RewriteSelectCharMacList(COutPacket* packet) {
     return true;
 }
 
+static void SendConnectionDiagnostic(void* pThis, void* edx, COutPacket* packet) {
+    const DWORD savedError = GetLastError();
+    __try {
+        if (packet && packet->Data && packet->Size >= 2) {
+            const unsigned short opcode = ReadU16(packet->Data);
+            if (opcode == 0x0001 || opcode == 0x0014) {
+                unsigned char data[ClientDiagnostics::kIdentifyPacketSize]{};
+                if (ClientDiagnostics::BeginConnection(data, opcode)) {
+                    COutPacket diagnostic{};
+                    diagnostic.Data = data;
+                    diagnostic.Size = sizeof(data);
+                    g_SendPacket(pThis, edx, &diagnostic);
+                }
+            }
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        ClientLog::Append(ClientLog::Component::Lifecycle, "diagnostic_send_failed code=0x%08lX", GetExceptionCode());
+    }
+    SetLastError(savedError);
+}
+
 static void __fastcall SendPacket_Hook(void* pThis, void* edx, COutPacket* packet) {
+    SendConnectionDiagnostic(pThis, edx, packet);
     RewriteSelectCharMacList(packet);
     COutPacket integratedPacket{};
     COutPacket* outgoingPacket = packet;

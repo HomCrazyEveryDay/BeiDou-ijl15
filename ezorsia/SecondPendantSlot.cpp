@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "ClientLog.h"
 #include "SecondPendantSlot.h"
 #include "SecondPendantRules.h"
 #include "detours.h"
@@ -196,8 +197,6 @@ static_assert(kSecondPendantPosition.x == kNormalSlotPositions[2].x
 static_assert(NormalSlotsDoNotOverlap(), "the second pendant must not overlap any native equipment slot");
 
 bool g_enableLog = false;
-WCHAR g_logPath[MAX_PATH]{};
-SRWLOCK g_logLock = SRWLOCK_INIT;
 volatile LONG g_lastHoverSlot = -1;
 volatile LONG g_lastBlockedState = -1;
 volatile LONG g_loggedActiveTooltip = 0;
@@ -233,28 +232,6 @@ ZxStringAssignText g_zxStringAssignText =
 	reinterpret_cast<ZxStringAssignText>(kZxStringAssignTextAddress);
 ZxStringFormat g_zxStringFormat = reinterpret_cast<ZxStringFormat>(kZxStringFormatAddress);
 
-void InitializeLogPath()
-{
-	WCHAR exePath[MAX_PATH]{};
-	if (GetModuleFileNameW(nullptr, exePath, MAX_PATH) == 0)
-	{
-		lstrcpynW(g_logPath, L"equipment_slot.log", MAX_PATH);
-		return;
-	}
-
-	WCHAR* slash = wcsrchr(exePath, L'\\');
-	if (slash == nullptr)
-	{
-		lstrcpynW(g_logPath, L"equipment_slot.log", MAX_PATH);
-		return;
-	}
-
-	*(slash + 1) = L'\0';
-	lstrcpynW(g_logPath, exePath, MAX_PATH);
-	lstrcpynW(g_logPath + lstrlenW(g_logPath), L"equipment_slot.log",
-		MAX_PATH - lstrlenW(g_logPath));
-}
-
 void WriteEquipmentLog(const char* format, ...)
 {
 	if (!g_enableLog)
@@ -268,24 +245,7 @@ void WriteEquipmentLog(const char* format, ...)
 	_vsnprintf_s(message, _countof(message), _TRUNCATE, format, args);
 	va_end(args);
 
-	SYSTEMTIME time{};
-	GetLocalTime(&time);
-	char line[896]{};
-	_snprintf_s(line, _countof(line), _TRUNCATE,
-		"%04u-%02u-%02u %02u:%02u:%02u.%03u [EquipmentSlot] %s\r\n",
-		time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute,
-		time.wSecond, time.wMilliseconds, message);
-
-	AcquireSRWLockExclusive(&g_logLock);
-	HANDLE file = CreateFileW(g_logPath, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE,
-		nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (file != INVALID_HANDLE_VALUE)
-	{
-		DWORD written = 0;
-		WriteFile(file, line, static_cast<DWORD>(strlen(line)), &written, nullptr);
-		CloseHandle(file);
-	}
-	ReleaseSRWLockExclusive(&g_logLock);
+	ClientLog::Append(ClientLog::Component::Equipment, "%s", message);
 }
 
 bool IsExtraPendantEnabled()
@@ -794,7 +754,6 @@ const char* LocalizeStringPoolTooltip(unsigned int stringId, const char* text)
 void Install(bool enableLog)
 {
 	g_enableLog = enableLog;
-	InitializeLogPath();
 
 	if (!ValidateNativeLayout())
 	{
