@@ -5,6 +5,7 @@
 #include "IntegratedFinalAttack.h"
 #include "SnipeDamageSync.h"
 #include "StackedBuffIcons.h"
+#include "FashionLockerWnd.h"
 
 #include <cstddef>
 #include <vector>
@@ -705,6 +706,12 @@ static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* pac
         return;
     }
     if (StackedBuffIcons::HandlePacket(packet)) {
+        return;
+    }
+    if (packet != nullptr
+        && FashionLockerWnd::HandlePacket(
+            reinterpret_cast<const unsigned char*>(packet->Data),
+            packet->DataLen)) {
         return;
     }
     if (HandleShowMobDamagePacket(packet)) {

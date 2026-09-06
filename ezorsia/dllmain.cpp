@@ -20,6 +20,7 @@
 #include "ChairCompatibility.h"
 #include "RefreshRateTrace.h"
 #include "LauncherGate.h"
+#include "FashionLockerWnd.h"
 #include <wincrypt.h>
 
 enum class ExeVerifyResult {
@@ -1075,6 +1076,7 @@ namespace
 		std::string crashDumpType = "mini";
 		bool enableStackedBuffIconLog = false;
 		bool enableEquipmentSlotLog = true;
+		bool enableFashionLockerLog = false;
 		const int configParseError = reader.ParseError();
 		if (configParseError == 0) {
 			// Resolution and IME are local client compatibility settings.
@@ -1088,6 +1090,7 @@ namespace
 			Client::enableStartupLog = reader.GetBoolean("debug", "enableStartupLog", false);
 			enableStackedBuffIconLog = reader.GetBoolean("debug", "enableStackedBuffIconLog", false);
 			enableEquipmentSlotLog = reader.GetBoolean("debug", "enableEquipmentSlotLog", true);
+			enableFashionLockerLog = reader.GetBoolean("debug", "enableFashionLockerLog", false);
 			ApplyLocalEndpointOverride(reader);
 		}
 		const int requestedWidth = Client::m_nGameWidth;
@@ -1116,6 +1119,7 @@ namespace
 		Hook_lpfn_NextLevel(true);
 		HookSaveGlobal(true);
 		HookHpMpAlertRecv(true);
+		FashionLockerWnd::Install(enableFashionLockerLog);
 		StackedBuffIcons::Install(enableStackedBuffIconLog);
 		HookSelectCharMacFix(true);
 		//Hook_get_unknown(true);

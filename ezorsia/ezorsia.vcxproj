@@ -179,6 +179,7 @@
     <ClInclude Include="ClientCrashFixes.h" />
     <ClInclude Include="ChairCompatibility.h" />
     <ClInclude Include="CrashReporter.h" />
+    <ClInclude Include="FashionLockerWnd.h" />
     <ClInclude Include="RefreshRateTrace.h" />
     <ClInclude Include="HpMpAlert.h" />
     <ClInclude Include="IntegratedFinalAttack.h" />
@@ -234,6 +235,7 @@
     <ClCompile Include="ClientCrashFixes.cpp" />
     <ClCompile Include="ChairCompatibility.cpp" />
     <ClCompile Include="CrashReporter.cpp" />
+    <ClCompile Include="FashionLockerWnd.cpp" />
     <ClCompile Include="RefreshRateTrace.cpp" />
     <ClCompile Include="HpMpAlert.cpp" />
     <ClCompile Include="IntegratedFinalAttack.cpp" />
