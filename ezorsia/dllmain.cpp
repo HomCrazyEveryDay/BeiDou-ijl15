@@ -51,6 +51,7 @@ static DWORD g_BoomerangStepPositionFail = 0x00950AE8;
 static DWORD g_AssassinateCriticalDamageReturn = 0x00790196;
 static DWORD g_AssassinateFourthHitTargetRangeReturn = 0x00951305;
 static DWORD g_AssassinateFourthHitPositionReturn = 0x00952DA3;
+static DWORD g_AssassinateFourthHitNoMovementReturn = 0x00952E0A;
 static DWORD g_AssassinateNoChargeReturn = 0x00790312;
 static DWORD g_DarkSightItemUseCheck = 0x0094FA45;
 static DWORD g_AntidoteUseAllowed = 0x00A094BE;
@@ -279,15 +280,9 @@ __declspec(naked) void AssassinateFourthHitNoDisplacementCave()
 		cmp dword ptr[ebp + 14h], 0406849h
 		jne useCalculatedPosition
 
-		// Preserve the fourth-hit action while queuing the character's current
-		// position as its destination, so the native movement update is a no-op.
-		mov eax, dword ptr[ebx + 4]
-		lea ecx, [ebx + 4]
-		call dword ptr[eax + 10h]
-		mov ecx, dword ptr[eax]
-		mov dword ptr[ebp - 0B0h], ecx
-		mov ecx, dword ptr[eax + 4]
-		mov dword ptr[ebp - 0ACh], ecx
+		// Even a same-position move clears the foothold in the delayed update.
+		// Skip movement registration; the native exit restores edi for the attack.
+		jmp dword ptr[g_AssassinateFourthHitNoMovementReturn]
 
 	useCalculatedPosition:
 		mov eax, dword ptr[ebp - 0B0h]
@@ -298,13 +293,15 @@ __declspec(naked) void AssassinateFourthHitNoDisplacementCave()
 static void InstallAssassinateNoCharge()
 {
 	const unsigned char expectedPositionBytes[] = { 0x8B, 0x85, 0x50, 0xFF, 0xFF, 0xFF };
+	const unsigned char expectedNoMovementBytes[] = { 0x8B, 0x7D, 0xA4, 0x81, 0x7D, 0xF0, 0xEE, 0x1A, 0x11, 0x00 };
 
 	// Use the current fourth-hit damage as the native 90%/250% critical base.
 	Memory::CodeCave(AssassinateCriticalDamageCave, 0x00790190, 6);
 	// Keep the delayed fourth hit on its original target through small position changes.
 	Memory::CodeCave(AssassinateFourthHitTargetRangeCave, 0x00951300, 5);
-	// Keep the fourth-hit action and damage while leaving the character in place.
-	if (memcmp(reinterpret_cast<const void*>(0x00952D9D), expectedPositionBytes, sizeof(expectedPositionBytes)) == 0) {
+	// Keep the fourth-hit action and damage without queuing a foothold-resetting move.
+	if (memcmp(reinterpret_cast<const void*>(0x00952D9D), expectedPositionBytes, sizeof(expectedPositionBytes)) == 0
+		&& memcmp(reinterpret_cast<const void*>(g_AssassinateFourthHitNoMovementReturn), expectedNoMovementBytes, sizeof(expectedNoMovementBytes)) == 0) {
 		Memory::CodeCave(AssassinateFourthHitNoDisplacementCave, 0x00952D9D, sizeof(expectedPositionBytes));
 	}
 	// Skip the original charge-time multiplier without applying any replacement multiplier.
