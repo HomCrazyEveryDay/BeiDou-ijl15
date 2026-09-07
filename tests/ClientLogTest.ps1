@@ -24,7 +24,7 @@ if ($runOne -notmatch '^[0-9a-f]{32}$' -or $runTwo -notmatch '^[0-9a-f]{32}$' -o
 & $output (Join-Path $outputDir 'logs')
 if ($LASTEXITCODE -ne 0) { throw 'Primary directory test failed.' }
 
-# A file occupying the logs directory forces the same fallback as an unwritable installation.
+# A file occupying logs simulates an unwritable installation; no fallback may be created.
 $fallbackDir = Join-Path $outputDir 'fallback'
 New-Item -ItemType Directory -Path $fallbackDir | Out-Null
 Copy-Item -LiteralPath $output -Destination (Join-Path $fallbackDir 'ClientLogTest.exe')
@@ -32,8 +32,9 @@ New-Item -ItemType File -Path (Join-Path $fallbackDir 'logs') | Out-Null
 $originalLocalAppData = $env:LOCALAPPDATA
 try {
     $env:LOCALAPPDATA = $outputDir
-    & (Join-Path $fallbackDir 'ClientLogTest.exe') (Join-Path $outputDir 'ZhuMengLauncher\logs') 'pending'
-    if ($LASTEXITCODE -ne 0) { throw 'LocalAppData fallback test failed.' }
+    & (Join-Path $fallbackDir 'ClientLogTest.exe') '--unwritable'
+    if ($LASTEXITCODE -ne 0) { throw 'Unwritable logs test failed.' }
+    if (Test-Path -LiteralPath (Join-Path $outputDir 'ZhuMengLauncher')) { throw 'Unexpected LocalAppData log directory.' }
 } finally {
     $env:LOCALAPPDATA = $originalLocalAppData
 }
