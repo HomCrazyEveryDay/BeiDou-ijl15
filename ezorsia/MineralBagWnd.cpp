@@ -15,11 +15,17 @@ constexpr DWORD kCWndCreateWnd = 0x009DE4D2;
 constexpr DWORD kCWndSetBackgrnd = 0x009E0AB2;
 constexpr DWORD kCWndManPtr = 0x00BEC20C;
 constexpr size_t kCWndManFocusOffset = 0x88;
+// CUIItem's constructor stores its primary CWnd here and its destructor clears it.
+// Use this lifetime signal instead of focus/layer visibility, which can outlive a hidden window.
+constexpr DWORD kInventoryWindowPtr = 0x00BED654;
+// Patch only CUIItem's key handler so Esc can close the attached bag before the inventory.
+constexpr DWORD kInventoryOnKeyVtableEntry = 0x00B390BC;
+constexpr DWORD kInventoryOnKey = 0x0092C6EE;
 constexpr DWORD kItemInfo = 0x00BE78D8;
 constexpr size_t kNativeWindowSize = 0x100;
 constexpr int kBagId = 4330030;
+constexpr int kSmallBagId = 4330007;
 constexpr int kWidth = 148;
-constexpr int kHeight = 196;
 constexpr int kGridLeft = 8;
 constexpr int kGridTop = 25;
 constexpr int kCellPitch = 33;
@@ -43,6 +49,7 @@ struct State
     DWORD sentAt = 0;
     int session = 0, revision = 0, bagSlot = 0, hovered = -1;
     int count = 0;
+    int capacity = 20, windowCapacity = 0;
     int windowX = 0, windowY = 0, dragAnchorX = 0, dragAnchorY = 0;
     HitTarget hoveredTarget = HitTarget::None, pressedTarget = HitTarget::None;
     unsigned char tooltip[1304]{};
@@ -64,6 +71,7 @@ auto g_getItemIconCanvas = reinterpret_cast<DWORD*(__fastcall*)(DWORD, void*, DW
 auto g_clearToolTip = reinterpret_cast<void(__fastcall*)(void*, void*)>(0x008E6E23);
 template<typename T> T ReadField(size_t offset) { return *reinterpret_cast<T*>(g_state.window + offset); }
 bool IsShown() { return g_state.window && g_state.shown; }
+int WindowHeight() { return 31 + g_state.capacity / 4 * kCellPitch; }
 void Invalidate();
 void ClearToolTip();
 void SetShow(bool show);
@@ -119,6 +127,10 @@ void SetKeyboardFocus(bool focus)
         void* windowUi = g_state.window + 4;
         void* current = *reinterpret_cast<void**>(
             static_cast<unsigned char*>(manager) + kCWndManFocusOffset);
+        // manager + 4 is CWndMan's default IUIMsgHandler. Never release to nullptr:
+        // that drops gameplay/menu keys. CUIItem + 4 is not a valid fallback either;
+        // it rejects focus and CWndMan restores focus to this synthetic window.
+        void* fallback = static_cast<unsigned char*>(manager) + 4;
         if (focus)
         {
             if (current != windowUi)
@@ -128,7 +140,7 @@ void SetKeyboardFocus(bool focus)
         }
         else if (current == windowUi)
         {
-            g_setFocus(manager, nullptr, nullptr);
+            g_setFocus(manager, nullptr, fallback);
         }
     }
     __except (EXCEPTION_EXECUTE_HANDLER)
@@ -230,7 +242,7 @@ void MoveWindow(int x, int y)
         return;
     }
     x = (std::max)(0, (std::min)(x, Client::m_nGameWidth - kWidth));
-    y = (std::max)(0, (std::min)(y, Client::m_nGameHeight - kHeight));
+    y = (std::max)(0, (std::min)(y, Client::m_nGameHeight - WindowHeight()));
     __try
     {
         DWORD layer = ReadField<DWORD>(0x18);
@@ -366,6 +378,8 @@ void __fastcall WindowOnButtonClicked(void*, void*, unsigned int)
 
 const void* __fastcall WindowGetRTTI(void*, void*)
 {
+    // Intentionally do not reuse a native window's RTTI. Doing so makes CWndMan
+    // classify this synthetic handler as that native type and skip WM_LBUTTONDOWN.
     return nullptr;
 }
 
@@ -466,11 +480,13 @@ void SetShow(bool show)
         g_state.hoveredTarget = g_state.pressedTarget = HitTarget::None;
     }
     if (!g_state.window) return;
+    // Native UI transitions (for example, opening the world map) may only hide a
+    // window. Hiding must not clear focus or end the server session; Close owns that.
     SetLayerVisible(ReadField<DWORD>(0x18), show);
     SetLayerVisible(ReadField<DWORD>(0x1C), show);
     SetLayerVisible(ReadField<DWORD>(0x20), show);
     if (show) Invalidate();
-    else { SetKeyboardFocus(false); ClearToolTip(); }
+    else ClearToolTip();
 }
 bool SendAction(int action, int slot = 0, int itemId = 0, int quantity = 0, int targetSlot = 0)
 {
@@ -491,6 +507,9 @@ bool SendAction(int action, int slot = 0, int itemId = 0, int quantity = 0, int 
     __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
     g_state.pending = action != 4;
     g_state.sentAt = GetTickCount();
+    // Match CDraggableItem::OnDropped: DragEnd belongs to the accepted input action,
+    // not the later server snapshot. Waiting for the response loses the native timing.
+    if (action == 1 || action == 2 || (action == 6 && slot != targetSlot)) PlayUiSound(0x4D2);
     return true;
 }
 void Close()
@@ -503,8 +522,30 @@ void Close()
     }
     if (g_state.session || g_state.pending) SendAction(4);
     SetShow(false);
+    SetKeyboardFocus(false);
     g_state.session = 0;
     g_state.pending = g_state.haveSnapshot = g_state.reopen = false;
+}
+bool IsInventoryOpen()
+{
+    __try
+    {
+        return *reinterpret_cast<void**>(kInventoryWindowPtr) != nullptr;
+    }
+    __except (EXCEPTION_EXECUTE_HANDLER) { return false; }
+}
+void __fastcall InventoryOnKey(void* ui,void*,unsigned int key,unsigned int flags)
+{
+    // Swallow only the Esc key-down that closes the mineral bag. Forward the key-up
+    // and every later Esc so the inventory and main menu keep their native sequence.
+    if(key==VK_ESCAPE && IsShown() && !(flags&0x80000000U))
+    {
+        PlayUiSound(0x8FF);
+        Close();
+        return;
+    }
+    reinterpret_cast<void(__thiscall*)(void*,unsigned int,unsigned int)>(kInventoryOnKey)(
+        ui,key,flags);
 }
 bool IsMineral(int id)
 {
@@ -516,7 +557,7 @@ int __stdcall HandleEtcDoubleClick(void* nativeItem, int slot)
     int id = 0;
     __try { id = reinterpret_cast<int(__thiscall*)(void*)>(0x0042873D)(static_cast<unsigned char*>(nativeItem)+0x0C); }
     __except (EXCEPTION_EXECUTE_HANDLER) { return 0; }
-    if (id == kBagId)
+    if (id == kBagId || id == kSmallBagId)
     {
         if (IsShown() && g_state.bagSlot == slot) Close();
         else if (!g_state.pending) { g_state.reopen = true; SendAction(0,slot,id); }
@@ -554,7 +595,7 @@ bool Contains(int x,int y,int left,int top,int width,int height)
 { return x>=left && x<left+width && y>=top && y<top+height; }
 int CellAt(int x,int y)
 {
-    if (!Contains(x,y,kGridLeft,kGridTop,kCellPitch*4,kCellPitch*5)) return -1;
+    if (!Contains(x,y,kGridLeft,kGridTop,kCellPitch*4,kCellPitch*(g_state.capacity/4))) return -1;
     return (y-kGridTop)/kCellPitch*4+(x-kGridLeft)/kCellPitch;
 }
 
@@ -571,8 +612,8 @@ unsigned char* InventoryWindow(void* ui)
         }
         __except(EXCEPTION_EXECUTE_HANDLER) { return false; }
     };
-    // CWndMan normally supplies IUIMsgHandler (window + 4). Accept the primary
-    // pointer as well because both forms are used by native inventory helpers.
+    // CWndMan normally supplies IUIMsgHandler (window + 4), while some native drop
+    // paths supply the primary CWnd. Normalize both before reading CUIItem fields.
     auto window = static_cast<unsigned char*>(ui)-4;
     if (!isItemWindow(ui))
     {
@@ -607,6 +648,7 @@ int __fastcall InventoryItemDropped(void* draggable,void*,void* source,void* tar
     __try
     {
         // CWndMan supplies coordinates relative to the target UI, as for CUIItem.
+        // fields[6]/[7] are the native inventory type/slot; type 4 is ETC.
         int cell=CellAt(x,y);
         auto fields=static_cast<DWORD*>(draggable);
         if (!IsShown() || g_state.pending || cell<0 || fields[6]!=4 || !InventoryWindow(source)) return 0;
@@ -624,7 +666,7 @@ int __fastcall BagItemDropped(void* draggable,void*,void* source,void* target,in
         if (!IsShown() || g_state.pending || source!=g_state.window+4
                 || static_cast<int>(fields[8])!=g_state.session || static_cast<int>(fields[9])!=g_state.revision) return 0;
         int cell=static_cast<int>(fields[6]),id=static_cast<int>(fields[7]);
-        if (cell<0 || cell>=20 || g_state.entries[cell].id!=id) return 0;
+        if (cell<0 || cell>=g_state.capacity || g_state.entries[cell].id!=id) return 0;
         if (target==g_state.window+4)
         {
             int destination=CellAt(x,y);
@@ -687,6 +729,8 @@ void BeginBagDrag(int cell,int x,int y)
         draggable[0]=reinterpret_cast<DWORD>(g_bagDragVtable);
         draggable[6]=cell;draggable[7]=entry.id;draggable[8]=g_state.session;draggable[9]=g_state.revision;
         reinterpret_cast<void(__thiscall*)(void*,void*,void*)>(0x009E353D)(manager,g_state.window+4,draggable);
+        // BeginDragDrop transfers ownership to CWndMan. Clearing this local prevents
+        // the exception path from destroying a draggable now owned by the client.
         draggable=nullptr;
         PlayUiSound(0x737); // Same pickup sound as CUIItem::OnMouseButton.
         ClearToolTip();
@@ -722,7 +766,7 @@ void __fastcall WindowDraw(void* window,void*,const RECT* rect)
     __try { g_drawWnd(window,nullptr,rect); g_getCanvas(window,nullptr,&dest); }
     __except(EXCEPTION_EXECUTE_HANDLER) { return; }
     if(!dest)return;
-    for(int i=0;i<20;i++)
+    for(int i=0;i<g_state.capacity;i++)
     {
         int x=kGridLeft+i%4*kCellPitch, y=kGridTop+i/4*kCellPitch;
         auto& entry=g_state.entries[i];
@@ -734,22 +778,37 @@ void __fastcall WindowDraw(void* window,void*,const RECT* rect)
     DrawButton(dest,g_state.exit,HitTarget::Exit,kCloseX,kCloseY);
     ReleaseCanvas(dest);
 }
-void __fastcall WindowOnKey(void*,void*,unsigned int key,unsigned int)
+void __fastcall WindowOnKey(void*,void*,unsigned int key,unsigned int flags)
 {
-    if(key==VK_ESCAPE)Close();
+    if(key==VK_ESCAPE)
+    {
+        if(IsShown())
+        {
+            if(!(flags&0x80000000U)){PlayUiSound(0x8FF);Close();}
+            return;
+        }
+    }
+    // A hidden synthetic window can briefly remain focused. It must forward Esc too,
+    // otherwise the inventory cannot close and an empty screen cannot open the menu.
+    // CWndMan's default IUIMsgHandler forwards both key edges to the current stage.
+    auto manager=*reinterpret_cast<unsigned char**>(kCWndManPtr);
+    if(manager)
+        reinterpret_cast<void(__thiscall*)(void*,unsigned int,unsigned int)>(0x009E2F05)(
+            manager+4,key,flags);
 }
-int __fastcall WindowOnSetFocus(void*,void*,int focused)
-{ return 1; }
+int __fastcall WindowOnSetFocus(void*,void*,int)
+{
+    return 1;
+}
 void __fastcall WindowSetShow(void*,void*,int show){SetShow(show!=0);}
 int __fastcall WindowIsShown(void*,void*){return IsShown()?1:0;}
 void __fastcall WindowOnMouseButton(void*,void*,unsigned int message,unsigned int,int x,int y)
 {
     auto target=TargetAt(x,y);
+    int cell=CellAt(x,y);
     if(message==WM_LBUTTONDOWN)
     {
         g_state.pressedTarget=target;
-        SetKeyboardFocus(true);
-        int cell=CellAt(x,y);
         if(target==HitTarget::None && cell<0 && y>=0 && y<kTitleBarHeight)
         {
             g_state.dragging=true;
@@ -763,7 +822,7 @@ void __fastcall WindowOnMouseButton(void*,void*,unsigned int message,unsigned in
         g_state.dragging=false;
         if(target==g_state.pressedTarget)
         {
-            if(target==HitTarget::Exit){PlayUiSound(0x5A3);Close();}
+            if(target==HitTarget::Exit){PlayUiSound(0x8FF);Close();}
         }
         g_state.pressedTarget=HitTarget::None;
     }
@@ -802,35 +861,52 @@ void __fastcall WindowOnMouseEnter(void*,void*,int entered)
 {if(!entered){SetHoverCursor(0);g_state.hovered=-1;g_state.hoveredTarget=HitTarget::None;ClearToolTip();Invalidate();}}
 bool CreateBagWindow()
 {
-    if(g_state.windowReady)return true;
+    if(g_state.windowReady && g_state.windowCapacity==g_state.capacity)return true;
     if(g_state.windowFailed)return false;
     g_state.windowFailed=true;
-    g_state.window=new unsigned char[kNativeWindowSize]{};
     __try
     {
-        g_constructWnd(g_state.window,nullptr);
+        if(g_state.windowReady)
+        {
+            SetShow(false);
+            SetKeyboardFocus(false);
+            // Destroy only the native window layers/registration, then reuse the CWnd object.
+            reinterpret_cast<void(__thiscall*)(void*)>(0x009E00AF)(g_state.window);
+            g_state.windowReady=false;
+        }
+        if(!g_state.window)
+        {
+            g_state.window=new unsigned char[kNativeWindowSize]{};
+            g_constructWnd(g_state.window,nullptr);
+        }
         *reinterpret_cast<DWORD*>(g_state.window)=reinterpret_cast<DWORD>(g_state.primaryVtable);
         *reinterpret_cast<DWORD*>(g_state.window+4)=reinterpret_cast<DWORD>(g_state.uiVtable);
         *reinterpret_cast<DWORD*>(g_state.window+8)=reinterpret_cast<DWORD>(g_state.refVtable);
         DWORD path=0;
-        g_constructZXStringW(&path,nullptr,L"UI/UIWindow.img/MineralBag/backgrnd");
+        g_constructZXStringW(&path,nullptr,g_state.capacity==8
+            ? L"UI/UIWindow.img/MineralBag8/backgrnd" : L"UI/UIWindow.img/MineralBag/backgrnd");
         g_setBackgrnd(g_state.window,nullptr,path,0,0);
         if(!ReadField<DWORD>(0x68))return false;
         g_state.windowX=(std::max)(0,Client::m_nGameWidth/2);
-        g_state.windowY=(std::max)(0,(Client::m_nGameHeight-kHeight)/2);
+        g_state.windowY=(std::max)(0,(Client::m_nGameHeight-WindowHeight())/2);
         g_createWnd(g_state.window,nullptr,g_state.windowX,g_state.windowY,
-            kWidth,kHeight,10,1,nullptr,0);
-        reinterpret_cast<void(__fastcall*)(void*,void*)>(0x008E49B5)(g_state.tooltip,nullptr);
-        g_state.tooltipCreated=true;
+            kWidth,WindowHeight(),10,1,nullptr,0);
+        if(!g_state.tooltipCreated)
+        {
+            reinterpret_cast<void(__fastcall*)(void*,void*)>(0x008E49B5)(g_state.tooltip,nullptr);
+            g_state.tooltipCreated=true;
+        }
     }
     __except(EXCEPTION_EXECUTE_HANDLER){return false;}
-    g_state.exit=LoadButtonCanvases(L"UI/Basic.img/BtClose");
+    if(!g_state.exit.normal)g_state.exit=LoadButtonCanvases(L"UI/Basic.img/BtClose");
     for(int i=0;i<10;i++)
     {
         wchar_t path[128];
-        swprintf_s(path,L"UI/Basic.img/ItemNo/%d",i);g_state.numbers[i]=LoadCanvas(path);
+        swprintf_s(path,L"UI/Basic.img/ItemNo/%d",i);
+        if(!g_state.numbers[i])g_state.numbers[i]=LoadCanvas(path);
     }
     g_state.windowReady=true;
+    g_state.windowCapacity=g_state.capacity;
     g_state.windowFailed=false;
     return true;
 }
@@ -840,10 +916,12 @@ bool MineralBagWnd::Install()
 {
     const BYTE branch[]={0x8B,0x4D,0xF0,0x50,0x68,0xF4,0x01,0x00,0x00};
     if(!MatchesExpectedClient() || std::memcmp(reinterpret_cast<void*>(0x004EFF30),branch,sizeof(branch))
-        || *reinterpret_cast<DWORD*>(0x00AF34DC)!=0x004EF140)return false;
+        || *reinterpret_cast<DWORD*>(0x00AF34DC)!=0x004EF140
+        || *reinterpret_cast<DWORD*>(kInventoryOnKeyVtableEntry)!=kInventoryOnKey)return false;
     InitializeVtables();
     Memory::CodeCave(EtcDoubleClickHook,0x004EFF30,sizeof(branch));
     Memory::WriteInt(0x00AF34DC,reinterpret_cast<DWORD>(&InventoryItemDropped));
+    Memory::WriteInt(kInventoryOnKeyVtableEntry,reinterpret_cast<DWORD>(&InventoryOnKey));
     g_state.installed=true;
     return true;
 }
@@ -880,13 +958,30 @@ bool MineralBagWnd::HandlePacket(const unsigned char* data,unsigned short length
 void MineralBagWnd::OnFieldUpdate()
 {
     if(!g_state.installed)return;
+    // Cover open requests and delayed snapshots as well as the visible state. Without
+    // this guard, a server response can reopen the mineral bag after CUIItem was closed.
+    if((IsShown() || g_state.pending || g_state.haveSnapshot || g_state.reopen) && !IsInventoryOpen())
+    {
+        Close();
+        return;
+    }
     bool escapeDown=(GetAsyncKeyState(VK_ESCAPE)&0x8000)!=0;
-    if(IsShown() && escapeDown && !g_state.escapeDown)Close();
+    auto manager=*reinterpret_cast<unsigned char**>(kCWndManPtr);
+    bool active=manager && *reinterpret_cast<void**>(manager+0x80)==g_state.window;
+    if(IsShown() && active && escapeDown && !g_state.escapeDown){PlayUiSound(0x8FF);Close();}
     g_state.escapeDown=escapeDown;
     if(g_state.haveSnapshot)
     {
         g_state.haveSnapshot=false;
-        if(!g_state.session){SetShow(false);g_state.reopen=false;return;}
+        if(!g_state.session)
+        {
+            SetShow(false);SetKeyboardFocus(false);g_state.reopen=false;return;
+        }
+        int bagId=NativeEtcItemId(g_state.bagSlot);
+        if(bagId!=kBagId && bagId!=kSmallBagId){Close();return;}
+        g_state.capacity=bagId==kSmallBagId?8:20;
+        for(int i=g_state.capacity;i<20;i++)
+            if(g_state.entries[i].id){Close();return;}
         if(CreateBagWindow()){SetShow(true);SetKeyboardFocus(true);}
         else Close();
         g_state.reopen=false;
