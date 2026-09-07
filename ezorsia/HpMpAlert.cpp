@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "MineralBagWnd.h"
 #include "AbsoluteDefenseSync.h"
 #include "HpMpAlert.h"
 #include "CrashReporter.h"
@@ -694,6 +695,8 @@ static void TraceIncomingPacket(CInPacket* packet) {
     }
 }
 static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* packet) {
+    if (packet && MineralBagWnd::HandlePacket(
+        reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet && ClientDiagnostics::HandleIncoming(
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     TraceIncomingPacket(packet);

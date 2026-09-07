@@ -189,6 +189,7 @@
     <ClInclude Include="StackedBuffIcons.h" />
     <ClInclude Include="MovementKeyHook.h" />
     <ClInclude Include="NpcShopCurrency.h" />
+    <ClInclude Include="MineralBagWnd.h" />
     <ClInclude Include="PrivateCleanSlateHook.h" />
     <ClInclude Include="SecondPendantRules.h" />
     <ClInclude Include="SecondPendantSlot.h" />
@@ -245,6 +246,7 @@
     <ClCompile Include="SnipeDamageSync.cpp" />
     <ClCompile Include="StackedBuffIcons.cpp" />
     <ClCompile Include="NpcShopCurrency.cpp" />
+    <ClCompile Include="MineralBagWnd.cpp" />
     <ClCompile Include="PrivateCleanSlateHook.cpp" />
     <ClCompile Include="SecondPendantSlot.cpp" />
     <ClCompile Include="Client.cpp" />

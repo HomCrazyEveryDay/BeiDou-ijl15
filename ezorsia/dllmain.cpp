@@ -15,6 +15,7 @@
 #include "NpcShopCurrency.h"
 #include "PrivateCleanSlateHook.h"
 #include "SecondPendantSlot.h"
+#include "MineralBagWnd.h"
 #include "CrashReporter.h"
 #include "ClientLog.h"
 #include "ClientCrashFixes.h"
@@ -1119,6 +1120,7 @@ namespace
 		Client::FixChatPosHook();
 		Client::NoPassword();
 		NpcShopCurrency::Install();
+		MineralBagWnd::Install();
 		PrivateCleanSlateHook::Install();
 		SecondPendantSlot::Install(enableEquipmentSlotLog);
 		Client::MoreHook();
