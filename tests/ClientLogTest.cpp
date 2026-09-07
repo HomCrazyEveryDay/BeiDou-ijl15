@@ -135,9 +135,16 @@ int wmain(int argc, wchar_t** argv)
         return 0;
     }
     const std::wstring directory = ClientLog::Directory();
+    if (argc > 1 && std::wcscmp(argv[1], L"--unwritable") == 0) {
+        Require(directory.empty(), "unwritable client logs does not select another directory");
+        Require(ClientLog::Open(ClientLog::Component::Trace) == INVALID_HANDLE_VALUE, "unwritable logs disables file creation");
+        ClientLog::Append(ClientLog::Component::Trace, "must_not_escape_logs");
+        std::printf("PASS unwritable logs stays local\n");
+        return 0;
+    }
     Require(!directory.empty(), "a writable logs directory exists");
     Require(directory.size() >= 5 && directory.substr(directory.size() - 5) == L"\\logs", "directory ends with logs");
-    if (argc > 1) Require(directory == argv[1], "expected primary or fallback directory selected");
+    if (argc > 1) Require(directory == argv[1], "client logs directory selected");
     CheckDiagnostics();
     const std::wstring lifecycle = directory + L"\\ijl15-lifecycle-" + ClientLog::SessionId() + L".log";
     Require(Read(lifecycle).find("diagnostic_binding clientRunId=" + std::string(ClientDiagnostics::RunId())) != std::string::npos,
@@ -209,6 +216,10 @@ int wmain(int argc, wchar_t** argv)
         && report.find("stackSnapshot=") == std::string::npos,
         "uploadable crash text excludes packet payloads and raw memory snapshots");
     Require(report.find("dumpWritten=true") != std::string::npos, "existing local minidump generation works");
+    search = FindFirstFileW((directory + L"\\ijl15-crash-" + ClientLog::SessionId() + L"*.dmp").c_str(), &found);
+    Require(search != INVALID_HANDLE_VALUE, "minidump is written directly in logs");
+    FindClose(search);
+    Require(GetFileAttributesW((directory + L"\\crash").c_str()) == INVALID_FILE_ATTRIBUTES, "no crash subdirectory is created");
 
     HANDLE file = ClientLog::Open(ClientLog::Component::Trace);
     const std::string block(65536, 'x');

@@ -25,9 +25,8 @@ bool EnsureDirectory(const wchar_t* path)
     return attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
 }
 
-bool UseDirectory(const wchar_t* parent, bool createParent)
+bool UseDirectory(const wchar_t* parent)
 {
-    if (createParent && !EnsureDirectory(parent)) return false;
     wchar_t candidate[MAX_PATH]{};
     if (FAILED(StringCchPrintfW(candidate, ARRAYSIZE(candidate), L"%s\\logs", parent))
         || !EnsureDirectory(candidate)) return false;
@@ -61,18 +60,9 @@ BOOL CALLBACK InitializeOnce(PINIT_ONCE, PVOID, PVOID*)
         wchar_t* slash = wcsrchr(parent, L'\\');
         if (slash) {
             *slash = L'\0';
-            if (UseDirectory(parent, false)) return TRUE;
+            UseDirectory(parent);
         }
     }
-    wchar_t base[MAX_PATH]{};
-    length = GetEnvironmentVariableW(L"LOCALAPPDATA", base, ARRAYSIZE(base));
-    if (length > 0 && length < ARRAYSIZE(base)
-        && SUCCEEDED(StringCchPrintfW(parent, ARRAYSIZE(parent), L"%s\\ZhuMengLauncher", base))
-        && UseDirectory(parent, true)) return TRUE;
-    length = GetTempPathW(ARRAYSIZE(base), base);
-    if (length > 0 && length < ARRAYSIZE(base)
-        && SUCCEEDED(StringCchPrintfW(parent, ARRAYSIZE(parent), L"%sZhuMengLauncher", base)))
-        UseDirectory(parent, true);
     return TRUE;
 }
 

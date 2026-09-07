@@ -265,9 +265,6 @@ void BuildCrashPaths(
 {
 	const WCHAR* logDir = ClientLog::Directory();
 	if (!logDir[0]) return;
-	WCHAR crashDir[MAX_PATH]{};
-	StringCchPrintfW(crashDir, ARRAYSIZE(crashDir), L"%s\\crash", logDir);
-	CreateDirectoryW(crashDir, nullptr);
 
 	const DWORD exceptionCode = exceptionInfo != nullptr && exceptionInfo->ExceptionRecord != nullptr
 		? exceptionInfo->ExceptionRecord->ExceptionCode
@@ -287,7 +284,7 @@ void BuildCrashPaths(
 		exceptionCode,
 		reinterpret_cast<void*>(exceptionAddress));
 
-	StringCchPrintfW(dumpPath, MAX_PATH, L"%s\\%s.dmp", crashDir, baseName);
+	StringCchPrintfW(dumpPath, MAX_PATH, L"%s\\%s.dmp", logDir, baseName);
 	StringCchPrintfW(textPath, MAX_PATH, L"%s\\%s.txt", logDir, baseName);
 }
 
