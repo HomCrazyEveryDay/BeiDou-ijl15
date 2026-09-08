@@ -60,6 +60,9 @@ static DWORD g_AntidoteHotkeyCheckReturn = 0x0094F873;
 static DWORD g_AntidoteHotkeyAllowed = 0x0094F879;
 static DWORD g_HurricaneMovementCheck = 0x0095F914;
 static DWORD g_HurricaneMovementCheckReturn = 0x009CBF13;
+static DWORD g_HurricaneNativeActionInput = 0x009CBFB2;
+static DWORD g_HurricaneNativeKeyboardInput = 0x009CBFFF;
+static DWORD g_HurricaneNativeReverseInput = 0x009CC05D;
 static DWORD g_HurricaneSetMovementInput = 0x009B7B4A;
 static DWORD g_HurricaneSetMovementInputReturn = 0x009CC0DF;
 static DWORD g_BerserkActivationDamageReturn = 0x00A293B7;
@@ -402,13 +405,17 @@ static void SetRapidFireAvatarFacing(DWORD user, DWORD facing)
 	*reinterpret_cast<int*>(user + 0xB58) = 0x7FFFFFFF;
 }
 
-static void __stdcall ApplyHurricaneMovementInput(DWORD user, int* horizontal, int* vertical)
+static int __stdcall ReadHurricaneHorizontalInput()
 {
-	const int clientHorizontal = ReadClientMovementKey(VK_RIGHT) - ReadClientMovementKey(VK_LEFT);
+	return ReadClientMovementKey(VK_RIGHT) - ReadClientMovementKey(VK_LEFT);
+}
+
+static void __stdcall UpdateHurricaneFacing(DWORD user, int horizontal)
+{
 	const DWORD skillId = *reinterpret_cast<DWORD*>(user + 0x2AE8);
 
-	if (clientHorizontal != 0) {
-		const DWORD desiredFacing = clientHorizontal < 0 ? 1 : 0;
+	if (horizontal != 0) {
+		const DWORD desiredFacing = horizontal < 0 ? 1 : 0;
 		if ((*reinterpret_cast<DWORD*>(user + 0x570) & 1) != desiredFacing) {
 			if (skillId == 5221004) {
 				SetRapidFireAvatarFacing(user, desiredFacing);
@@ -417,7 +424,6 @@ static void __stdcall ApplyHurricaneMovementInput(DWORD user, int* horizontal, i
 				SetHurricaneAvatarFacing(user, desiredFacing);
 			}
 		}
-		*horizontal = clientHorizontal;
 	}
 }
 
@@ -439,7 +445,35 @@ __declspec(naked) void AllowHurricaneMovementCave()
 	}
 }
 
-__declspec(naked) void ApplyHurricaneMovementInputCave()
+__declspec(naked) void ReadHurricaneMovementInputCave()
+{
+	__asm {
+		cmp dword ptr[esi + 2AE8h], 02F9F6Ch
+		je readHorizontalInput
+		cmp dword ptr[esi + 2AE8h], 04FAA8Ch
+		je readHorizontalInput
+
+		cmp eax, -1
+		jle nativeKeyboardInput
+		jmp dword ptr[g_HurricaneNativeActionInput]
+
+	nativeKeyboardInput:
+		jmp dword ptr[g_HurricaneNativeKeyboardInput]
+
+	readHorizontalInput:
+		// Focus and forced-input checks have already run. Feed horizontal input
+		// through the native ReverseInput and input-lock checks exactly once.
+		pushfd
+		pushad
+		call ReadHurricaneHorizontalInput
+		mov dword ptr[ebp - 8], eax
+		popad
+		popfd
+		jmp dword ptr[g_HurricaneNativeReverseInput]
+	}
+}
+
+__declspec(naked) void UpdateHurricaneFacingCave()
 {
 	__asm {
 		cmp dword ptr[esi + 2AE8h], 02F9F6Ch
@@ -450,12 +484,9 @@ __declspec(naked) void ApplyHurricaneMovementInputCave()
 	applyMovementInput:
 		pushfd
 		pushad
-		lea eax, [ebp - 4]
-		push eax
-		lea eax, [ebp - 8]
-		push eax
+		push dword ptr[ebp - 8]
 		push esi
-		call ApplyHurricaneMovementInput
+		call UpdateHurricaneFacing
 		popad
 		popfd
 
@@ -470,9 +501,19 @@ __declspec(naked) void ApplyHurricaneMovementInputCave()
 
 static void InstallHurricaneMovement()
 {
-	// Keep native movement checks for every other state, and mirror Hurricane's live layers without resetting it.
+	const unsigned char expectedMovementCheck[] = { 0x8B, 0xCE, 0xE8, 0x01, 0x3A, 0xF9, 0xFF };
+	const unsigned char expectedActionCheck[] = { 0x83, 0xF8, 0xFF, 0x7E, 0x4D };
+	const unsigned char expectedSetInput[] = { 0xFF, 0x75, 0xFC, 0x8B, 0xCF, 0xFF, 0x75, 0xF8, 0xE8, 0x6B, 0xBA, 0xFE, 0xFF };
+	if (memcmp(reinterpret_cast<const void*>(0x009CBF0C), expectedMovementCheck, sizeof(expectedMovementCheck)) != 0
+		|| memcmp(reinterpret_cast<const void*>(0x009CBFAD), expectedActionCheck, sizeof(expectedActionCheck)) != 0
+		|| memcmp(reinterpret_cast<const void*>(0x009CC0D2), expectedSetInput, sizeof(expectedSetInput)) != 0) {
+		return;
+	}
+
 	Memory::CodeCave(AllowHurricaneMovementCave, 0x009CBF0C, 7);
-	Memory::CodeCave(ApplyHurricaneMovementInputCave, 0x009CC0D2, 13);
+	Memory::CodeCave(ReadHurricaneMovementInputCave, 0x009CBFAD, 5);
+	// Use the final native direction for both movement and the held shooting pose.
+	Memory::CodeCave(UpdateHurricaneFacingCave, 0x009CC0D2, 13);
 }
 
 __declspec(naked) void SuperOctopusAttackCadenceCave()
