@@ -39,6 +39,12 @@
     <ClInclude Include="dllmain.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="HurricaneDamageSync.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SkillTooltipLayout.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="MineralBagWnd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -264,6 +270,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="SnipeDamageSync.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="HurricaneDamageSync.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SkillTooltipLayout.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="StackedBuffIcons.cpp">

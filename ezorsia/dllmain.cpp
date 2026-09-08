@@ -10,6 +10,7 @@
 #include "AranComboUi.h"
 #include "HpMpAlert.h"
 #include "StackedBuffIcons.h"
+#include "SkillTooltipLayout.h"
 #include "SelectCharMacFix.h"
 #include "MovementKeyHook.h"
 #include "NpcShopCurrency.h"
@@ -1141,6 +1142,7 @@ namespace
 		InstallAssassinateNoCharge();
 		InstallAntidoteDuringDarkSight();
 		InstallHurricaneMovement();
+		SkillTooltipLayout::Install();
 		InstallSuperOctopusAttackCadence();
 		InstallBattleshipMovementSpeed();
 		InstallProgressiveBerserkDamage();

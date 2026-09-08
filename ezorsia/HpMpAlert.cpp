@@ -6,6 +6,7 @@
 #include "ClientDiagnostics.h"
 #include "IntegratedFinalAttack.h"
 #include "SnipeDamageSync.h"
+#include "HurricaneDamageSync.h"
 #include "StackedBuffIcons.h"
 
 #include <cstddef>
@@ -324,6 +325,42 @@ static MobDamageRenderResult RenderQueuedMobDamage(const QueuedMobDamage& queued
         return MobDamageRenderResult::Dropped;
     }
 }
+static void FlushQueuedMobDamageBeforeRemoval(CInPacket* packet) {
+    if (!g_mobDamageQueueLockInitialized || !packet || !packet->Data || packet->DataLen < 11) {
+        return;
+    }
+    const auto* data = static_cast<const unsigned char*>(packet->Data);
+    unsigned short opcode = 0;
+    int objectId = 0;
+    memcpy(&opcode, data + 4, sizeof(opcode));
+    if (opcode != kOpcodeKillMonster) {
+        return;
+    }
+    memcpy(&objectId, data + 6, sizeof(objectId));
+
+    std::vector<QueuedMobDamage> ready;
+    ready.reserve(kMaxQueuedMobDamage);
+    const DWORD now = GetTickCount();
+    EnterCriticalSection(&g_mobDamageQueueLock);
+    size_t writeIndex = 0;
+    for (const QueuedMobDamage& queued : g_mobDamageQueue) {
+        if (queued.objectId != objectId) {
+            g_mobDamageQueue[writeIndex++] = queued;
+            continue;
+        }
+        if (queued.fieldGeneration == g_mobDamageFieldGeneration && !IsQueuedMobDamageExpired(queued, now)) {
+            ready.push_back(queued);
+        }
+    }
+    g_mobDamageQueue.resize(writeIndex);
+    LeaveCriticalSection(&g_mobDamageQueueLock);
+
+    // The native death packet removes the CMob needed by ShowDamage. Finish its
+    // queued numbers now, even when the normal next-frame budget is exhausted.
+    for (const QueuedMobDamage& queued : ready) {
+        RenderQueuedMobDamage(queued);
+    }
+}
 static unsigned char ClampAlert(int value) {
     if (value < 0) return 0;
     if (value > 20) return 20;
@@ -634,6 +671,9 @@ static bool HandleShowMobDamagePacket(CInPacket* packet) {
 }
 static void __fastcall ShowMobDamage_Hook(void* pThis, void* edx, int damage, int lineIndex, int extra, int compact) {
     if (!g_renderingServerMobDamage) {
+        if (HurricaneDamageSync::ShouldSuppressLocalDamage(pThis, damage)) {
+            return;
+        }
         int synchronizedDamage = 0;
         bool synchronizedCritical = false;
         if (SnipeDamageSync::TryResolveLocalDamage(
@@ -722,8 +762,14 @@ static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* pac
             reinterpret_cast<const unsigned char*>(packet->Data),
             packet->DataLen);
     }
-    s_ProcessPacket(pThis, edx, packet);
-    AbsoluteDefenseSync::EndIncomingAttackPacket();
+    HurricaneDamageSync::BeginIncomingPacket();
+    __try {
+        FlushQueuedMobDamageBeforeRemoval(packet);
+        s_ProcessPacket(pThis, edx, packet);
+    } __finally {
+        HurricaneDamageSync::EndIncomingPacket();
+        AbsoluteDefenseSync::EndIncomingAttackPacket();
+    }
 }
 } // namespace
 void HookSaveGlobal(bool enable) {
@@ -826,6 +872,7 @@ void UpdateQueuedMobDamageDisplay() {
 }
 
 void OnMobDamageFieldInit() {
+    HurricaneDamageSync::Reset();
     AbsoluteDefenseSync::Reset();
     ResetBossVenomVisualTargets();
     if (!g_mobDamageQueueLockInitialized) {
@@ -844,6 +891,7 @@ void OnMobDamageFieldInit() {
 }
 
 void OnMobDamageFieldDispose() {
+    HurricaneDamageSync::Reset();
     AbsoluteDefenseSync::Reset();
     ResetBossVenomVisualTargets();
     if (!g_mobDamageQueueLockInitialized) {

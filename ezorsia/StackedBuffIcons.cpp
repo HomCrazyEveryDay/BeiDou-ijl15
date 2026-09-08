@@ -13,11 +13,19 @@
 namespace
 {
 	constexpr DWORD kOpcodeUpdateStackedBuffIcons = 0x1002;
+	constexpr DWORD kOpcodeUpdateHurricaneFocus = 0x1009;
+	constexpr int kBowExpert = 3120005;
+	volatile LONG g_hurricaneFocusStacks = 0;
 	constexpr WORD kStackedBuffIconPacketMagic = 0xBD1C;
 	constexpr DWORD kTemporaryStatViewDrawAddr = 0x007B2BB0;
 	constexpr DWORD kTemporaryStatViewAddIconAddr = 0x007B24D5;
 	constexpr DWORD kNativeAddIconStringDedupAddr = 0x007B259C;
 	constexpr DWORD kTemporaryStatViewRemoveNodeAddr = 0x007B4BD1;
+	constexpr DWORD kWvsContextPtr = 0x00BE7918;
+	constexpr DWORD kTemporaryStatViewContextOffset = 0x2EA8;
+	constexpr DWORD kTemporaryStatViewVtable = 0x00B3F59C;
+	constexpr DWORD kTemporaryStatViewListVtable = 0x00B3F5A0;
+	constexpr DWORD kNativeSyncRetryInterval = 250;
 	constexpr int kIconRecordSize = 17;
 	constexpr int kMaxIcons = 64;
 	constexpr int kNativeIconTypeSkill = 2;
@@ -57,6 +65,8 @@ namespace
 	bool g_drawHookInstalled = false;
 	bool g_callingVirtualAddIcon = false;
 	bool g_syncingNativeIcons = false;
+	bool g_nativeSyncPending = false;
+	DWORD g_lastNativeSyncAttempt = 0;
 	bool g_addIconStringDedupDisabled = false;
 	DWORD g_lastNativeDrawView = 0;
 	bool g_countdownFieldActive = false;
@@ -157,6 +167,14 @@ namespace
 			g_icons.end());
 		icons = g_icons;
 		LeaveCriticalSection(&g_iconLock);
+		if (InterlockedCompareExchange(&g_hurricaneFocusStacks, 0, 0) > 0) {
+			StackedBuffIcon focus{};
+			focus.sourceId = kBowExpert;
+			focus.iconId = kBowExpert;
+			focus.skill = true;
+			focus.duration = 86400000;
+			icons.push_back(focus);
+		}
 		return icons;
 	}
 
@@ -197,7 +215,7 @@ namespace
 		}
 
 		g_nativeDraw(pThis, edx);
-		if (pThis && !g_syncingNativeIcons)
+		if (pThis)
 		{
 			g_lastNativeDrawView = pThis;
 		}
@@ -315,7 +333,27 @@ namespace
 
 	DWORD ResolveTemporaryStatView()
 	{
-		g_currentTemporaryStatView = g_observedTemporaryStatView;
+		if (!g_countdownFieldActive)
+		{
+			return 0;
+		}
+
+		// CWvsContext owns this view across maps (native access at 0x0094D13C).
+		// AddIcon/Draw are not called for an unchanged or empty buff bar.
+		const DWORD context = ReadDwordOrZero(kWvsContextPtr);
+		if (!context || context > MAXDWORD - kTemporaryStatViewContextOffset - 0x04)
+		{
+			return 0;
+		}
+		const DWORD view = context + kTemporaryStatViewContextOffset;
+		// Constructor 0x00A01D9B initializes both vtables before the list is usable.
+		if (ReadDwordOrZero(view) != kTemporaryStatViewVtable
+			|| ReadDwordOrZero(view + 0x04) != kTemporaryStatViewListVtable)
+		{
+			return 0;
+		}
+		g_observedTemporaryStatView = view;
+		g_currentTemporaryStatView = view;
 		return g_currentTemporaryStatView;
 	}
 
@@ -885,16 +923,20 @@ namespace
 		const DWORD temporaryStatView = ResolveTemporaryStatView();
 		if (!temporaryStatView || temporaryStatView != g_observedTemporaryStatView)
 		{
-			DebugLog("native_sync_skip no_observed_view count=%d", static_cast<int>(icons.size()));
+			g_nativeSyncPending = true;
+			DebugLog("native_sync_deferred no_ready_view count=%d", static_cast<int>(icons.size()));
 			return;
 		}
 		if (g_syncingNativeIcons)
 		{
+			g_nativeSyncPending = true;
 			DebugLog("native_sync_skip busy view=%08X count=%d", temporaryStatView, static_cast<int>(icons.size()));
 			return;
 		}
 
 		g_syncingNativeIcons = true;
+		g_nativeSyncPending = false;
+		g_lastNativeSyncAttempt = GetTickCount();
 		const std::unordered_map<unsigned long long, int> desiredCounts = DesiredIconCounts(icons);
 		const int removed = PruneStackedNativeIcons(temporaryStatView, desiredCounts);
 		std::unordered_map<unsigned long long, int> nativeCounts = CountNativeIconsByKey(temporaryStatView);
@@ -917,6 +959,10 @@ namespace
 			else if (AddNativeVirtualIcon(temporaryStatView, icon))
 			{
 				added++;
+			}
+			else
+			{
+				g_nativeSyncPending = true;
 			}
 		}
 
@@ -945,7 +991,7 @@ namespace
 			DebugLog("icon source=%d icon=%d skill=%d left=%d duration=%d",
 				icon.sourceId, icon.iconId, icon.skill ? 1 : 0, icon.leftDuration, icon.duration);
 		}
-		SyncNativeVirtualIcons(icons);
+		SyncNativeVirtualIcons(SnapshotIcons());
 	}
 
 	bool TryParseIconPacket(CInPacket* packet, StackedBuffIcon* parsedIcons, int* parsedCount, bool* isTargetPacket)
@@ -1027,7 +1073,7 @@ namespace StackedBuffIcons
 			g_iconLockInitialized = true;
 		}
 
-		DebugLog("install nativeAdd=%08X nativeDraw=%08X dedupPatch=%08X observedOnly=1 log=%d",
+		DebugLog("install nativeAdd=%08X nativeDraw=%08X dedupPatch=%08X contextResolver=1 log=%d",
 			kTemporaryStatViewAddIconAddr, kTemporaryStatViewDrawAddr, kNativeAddIconStringDedupAddr, g_logEnabled ? 1 : 0);
 		if (!g_addIconHookInstalled)
 		{
@@ -1046,6 +1092,16 @@ namespace StackedBuffIcons
 	bool HandlePacket(void* rawPacket)
 	{
 		CInPacket* packet = reinterpret_cast<CInPacket*>(rawPacket);
+		if (packet && packet->Data && packet->DataLen >= 6) {
+			const unsigned char* data = reinterpret_cast<const unsigned char*>(packet->Data);
+			if ((data[4] | (data[5] << 8)) == kOpcodeUpdateHurricaneFocus) {
+				if (packet->DataLen == 7 && data[6] <= 5) {
+					InterlockedExchange(&g_hurricaneFocusStacks, data[6]);
+					SyncNativeVirtualIcons(SnapshotIcons());
+				}
+				return true;
+			}
+		}
 		StackedBuffIcon parsedIcons[kMaxIcons]{};
 		int parsedCount = 0;
 		bool isTargetPacket = false;
@@ -1101,7 +1157,12 @@ namespace StackedBuffIcons
 			const DWORD entry = GetNativeNodeEntry(node);
 			char text[4]{};
 			COLORREF color = RGB(255, 255, 255);
-			if (CountdownTextForRemaining(ReadDwordOrZero(entry + 0x38), text, sizeof(text), &color))
+			const int focusStacks = InterlockedCompareExchange(&g_hurricaneFocusStacks, 0, 0);
+			if (focusStacks > 0 && NativeEntryMatches(entry, kNativeIconTypeSkill, kBowExpert)) {
+				AddCountdownNumber(vertices, focusStacks, EstimateNativeIconX(index, nodeCount),
+					EstimateNativeIconY(index), RGB(255, 225, 80));
+			}
+			else if (CountdownTextForRemaining(ReadDwordOrZero(entry + 0x38), text, sizeof(text), &color))
 			{
 				const int iconX = EstimateNativeIconX(index, nodeCount);
 				const int iconY = EstimateNativeIconY(index);
@@ -1115,28 +1176,45 @@ namespace StackedBuffIcons
 
 	void OnFieldUpdate()
 	{
-		if (!g_countdownFieldActive)
+		const bool activating = !g_countdownFieldActive;
+		if (activating)
 		{
 			DebugLog("field_update activate countdownView=%08X", g_lastNativeDrawView);
+			g_nativeSyncPending = true;
 		}
 		g_countdownFieldActive = true;
+		if (g_nativeSyncPending && g_iconLockInitialized
+			&& (activating || GetTickCount() - g_lastNativeSyncAttempt >= kNativeSyncRetryInterval))
+		{
+			const DWORD view = ResolveTemporaryStatView();
+			if (view)
+			{
+				g_lastNativeDrawView = view;
+				SyncNativeVirtualIcons(SnapshotIcons());
+			}
+		}
 	}
 
 	void OnFieldInit()
 	{
+		InterlockedExchange(&g_hurricaneFocusStacks, 0);
 		g_countdownFieldActive = false;
 		g_currentTemporaryStatView = 0;
 		g_observedTemporaryStatView = 0;
-		g_virtualNativeNodes.clear();
+		g_lastNativeDrawView = 0;
+		g_nativeSyncPending = true;
+		// Keep ownership until the next field update prunes the persistent native list.
 		DebugLog("field_init countdownView=%08X", g_lastNativeDrawView);
 	}
 
 	void OnFieldDispose()
 	{
+		InterlockedExchange(&g_hurricaneFocusStacks, 0);
 		g_countdownFieldActive = false;
 		g_currentTemporaryStatView = 0;
 		g_observedTemporaryStatView = 0;
-		g_virtualNativeNodes.clear();
+		g_lastNativeDrawView = 0;
+		g_nativeSyncPending = true;
 		DebugLog("field_dispose countdownView=%08X", g_lastNativeDrawView);
 	}
 }
