@@ -248,7 +248,7 @@ void Client::UpdateResolution() {
 	Memory::WriteInt(0x00437181 + 1, m_nGameWidth);	//mov esi,800 ; CreateWnd
 	Memory::WriteInt(0x0053808B + 1, m_nGameHeight);//push 600
 	Memory::WriteInt(0x00538091 + 1, m_nGameWidth);	//push 800 ; RelMove?
-	Memory::WriteInt(0x004CC160 + 1, m_nGameWidth);	//mov [ebp-16],800 ; CreateWnd
+	Memory::WriteInt(0x004CC160 + 3, m_nGameWidth);	// C7 45 F0 imm32: preserve the [ebp-16] operand.
 	Memory::WriteInt(0x004CC2C5 + 2, m_nGameHeight);//cmp ecx,600
 	Memory::WriteInt(0x004CC2B0 + 1, m_nGameWidth);	//mov eax,800 ; CreateWnd
 	Memory::WriteInt(0x004D59B2 + 1, m_nGameHeight);//mov eax,800
