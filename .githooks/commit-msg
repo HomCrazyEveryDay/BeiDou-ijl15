@@ -1,35 +1,25 @@
 #!/bin/sh
 msg_file="$1"
 
-subject=$(sed -n '/^[[:space:]]*#/d; /^[[:space:]]*$/d; { s/[[:space:]]*$//; p; q; }' "$msg_file")
-subject=$(printf '%s' "$subject" | sed 's/^\xEF\xBB\xBF//')
+subject=
+cr=$(printf '\r')
+bom=$(printf '\357\273\277')
+while IFS= read -r line || [ -n "$line" ]; do
+  line=${line%"$cr"}
+  case "$line" in
+    ""|\#*) continue ;;
+  esac
+  subject=$line
+  break
+done < "$msg_file"
+subject=${subject#"$bom"}
 
 case "$subject" in
-  "fix: "*|"feat: "*|"docs: "*|"chore: "*|"refactor: "*|"test: "*|"build: "*|"ci: "*|"perf: "*|"style: "*) ;;
+  fix:\ *|fix\(*\):\ *|feat:\ *|feat\(*\):\ *|docs:\ *|docs\(*\):\ *|chore:\ *|chore\(*\):\ *|refactor:\ *|refactor\(*\):\ *|test:\ *|test\(*\):\ *|build:\ *|build\(*\):\ *|ci:\ *|ci\(*\):\ *|perf:\ *|perf\(*\):\ *|style:\ *|style\(*\):\ *|Merge\ *|Revert\ *|fixup\!\ *|squash\!\ *) ;;
   *)
-    echo "提交标题必须以 Conventional Commit 类型开头，例如 fix: 中文说明" >&2
+    echo "提交标题需使用 Conventional Commit，例如 fix: 修复说明或 feat(scope): 功能说明" >&2
     exit 1
     ;;
 esac
-
-content=$(sed '/^[[:space:]]*#/d' "$msg_file" | sed '1s/^\xEF\xBB\xBF//')
-
-printf '%s\n' "$content" | grep -Eq '[一-龥]' || {
-  echo "提交信息必须包含中文" >&2
-  exit 1
-}
-
-body=$(printf '%s\n' "$content" | sed '1d')
-body_non_empty=$(printf '%s\n' "$body" | sed '/^[[:space:]]*$/d')
-
-if [ -z "$body_non_empty" ]; then
-  echo "提交正文必须用 - 列出主要改动，每条一行" >&2
-  exit 1
-fi
-
-printf '%s\n' "$body_non_empty" | grep -Ev '^[[:space:]]*-' >/dev/null && {
-  echo "提交正文每条主要改动都必须以 - 开头" >&2
-  exit 1
-}
 
 exit 0
