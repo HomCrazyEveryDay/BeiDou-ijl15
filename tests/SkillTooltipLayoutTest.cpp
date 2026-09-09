@@ -111,6 +111,8 @@ int main() {
     g_skill.id = 3121006;
     g_drawHeight = 151;
     Require(InvokeHeightCave(&g_tooltip, &g_font, &g_skill, 8) == 7, "Phoenix height rounds up partial lines");
+    g_skill.id = 4111002;
+    Require(InvokeHeightCave(&g_tooltip, &g_font, &g_skill, 8) == 7, "Shadow Partner passive description expands tooltip height");
     g_drawHeight = 30;
     Require(InvokeHeightCave(&g_tooltip, &g_font, &g_skill, 8) == 4, "shorter measurement never shrinks native layout");
     g_drawHeight = 0;

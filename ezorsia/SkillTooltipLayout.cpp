@@ -12,7 +12,7 @@ int __stdcall MeasureSkillDescription(void* tooltip, const void* skill, IUnknown
     }
     const auto* data = static_cast<const unsigned char*>(skill);
     const int skillId = *reinterpret_cast<const int*>(data);
-    if (skillId != 3120005 && skillId != 3121006) {
+    if (skillId != 3120005 && skillId != 3121006 && skillId != 4111002) {
         return originalLines;
     }
     const char* description = *reinterpret_cast<const char* const*>(data + 8);

@@ -187,6 +187,8 @@
     <ClInclude Include="LauncherGate.h" />
     <ClInclude Include="SnipeDamageSync.h" />
     <ClInclude Include="HurricaneDamageSync.h" />
+    <ClInclude Include="ShadowPartnerAttack.h" />
+    <ClInclude Include="ShadowPartnerDamageSync.h" />
     <ClInclude Include="SkillTooltipLayout.h" />
     <ClInclude Include="StackedBuffIcons.h" />
     <ClInclude Include="MovementKeyHook.h" />
@@ -247,6 +249,7 @@
     <ClCompile Include="LauncherGate.cpp" />
     <ClCompile Include="SnipeDamageSync.cpp" />
     <ClCompile Include="HurricaneDamageSync.cpp" />
+    <ClCompile Include="ShadowPartnerDamageSync.cpp" />
     <ClCompile Include="SkillTooltipLayout.cpp" />
     <ClCompile Include="StackedBuffIcons.cpp" />
     <ClCompile Include="NpcShopCurrency.cpp" />

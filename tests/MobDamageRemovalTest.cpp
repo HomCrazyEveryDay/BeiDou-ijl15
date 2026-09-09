@@ -81,6 +81,11 @@ namespace HurricaneDamageSync {
 static void BeginIncomingPacket() { ++g_incomingDepth; }
 static void EndIncomingPacket() { --g_incomingDepth; }
 }
+namespace ShadowPartnerDamageSync {
+static void TrackIncomingAttackPacket(const unsigned char*, unsigned long) {}
+static void BeginIncomingPacket() {}
+static void EndIncomingPacket() {}
+}
 static void TraceIncomingPacket(CInPacket*) {}
 static void ObserveBossVenomStatusPacket(CInPacket*) {}
 static bool HandleShowMobDamagePacket(CInPacket*) { return false; }

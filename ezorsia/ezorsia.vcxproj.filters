@@ -42,6 +42,12 @@
     <ClInclude Include="HurricaneDamageSync.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ShadowPartnerAttack.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ShadowPartnerDamageSync.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="SkillTooltipLayout.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -273,6 +279,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="HurricaneDamageSync.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ShadowPartnerDamageSync.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="SkillTooltipLayout.cpp">

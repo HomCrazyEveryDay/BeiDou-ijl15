@@ -6,6 +6,7 @@
 #include "IntegratedFinalAttack.h"
 #include "SnipeDamageSync.h"
 #include "HurricaneDamageSync.h"
+#include "ShadowPartnerDamageSync.h"
 
 #include <cctype>
 #include <cstring>
@@ -163,6 +164,7 @@ static void __fastcall SendPacket_Hook(void* pThis, void* edx, COutPacket* packe
         AbsoluteDefenseSync::TrackOutgoingAttackPacket(outgoingPacket->Data, outgoingPacket->Size);
         SnipeDamageSync::TrackOutgoingAttackPacket(outgoingPacket->Data, outgoingPacket->Size);
         HurricaneDamageSync::TrackOutgoingAttackPacket(outgoingPacket->Data, outgoingPacket->Size);
+        ShadowPartnerDamageSync::TrackOutgoingAttackPacket(outgoingPacket->Data, outgoingPacket->Size);
     }
     g_SendPacket(pThis, edx, outgoingPacket);
 }
