@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "RefreshRateTrace.h"
+#include "FlashRendererFix.h"
 
 #include "CrashReporter.h"
 #include "detours.h"
@@ -69,6 +70,8 @@ void __cdecl HookPcCreateObjectIWzPackage(int param1, DWORD param2, DWORD param3
 	// after the first release has already unloaded PCOM.dll. Pinning the module
 	// keeps its vtables/code valid until the OS tears down the process.
 	PinPcomForProcessLifetime();
+	// The native factory has now initialized and loaded Gr2D safely.
+	FlashRendererFix::Install();
 
 	__try {
 		const DWORD refreshObject = *reinterpret_cast<DWORD*>(0x00BF14EC);

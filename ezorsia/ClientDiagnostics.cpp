@@ -147,6 +147,11 @@ bool ClientDiagnostics::TrySnapshot(Snapshot& snapshot)
 bool ClientDiagnostics::BeginConnection(unsigned char (&packet)[kIdentifyPacketSize], unsigned short triggerOpcode)
 {
     Initialize();
+    Snapshot previous;
+    TrySnapshot(previous);
+    ClientLog::Append(ClientLog::Component::Lifecycle,
+        "diagnostic_previous_connection clientRunId=%s connectionId=%s attempt=%lu nextTriggerOpcode=%04X",
+        previous.clientRunId, previous.connectionId, static_cast<unsigned long>(previous.diagnosticAttempt), triggerOpcode);
     AcquireSRWLockExclusive(&g_stateLock);
     StringCchCopyA(g_state.connectionId, ARRAYSIZE(g_state.connectionId), "unavailable");
     const bool available = InterlockedCompareExchange(&g_ready, 0, 0) == 1

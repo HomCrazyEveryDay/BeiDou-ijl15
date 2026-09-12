@@ -4,6 +4,7 @@
 #include "HpMpAlert.h"
 #include "CrashReporter.h"
 #include "ClientDiagnostics.h"
+#include "DisconnectDiagnostics.h"
 #include "IntegratedFinalAttack.h"
 #include "SnipeDamageSync.h"
 #include "HurricaneDamageSync.h"
@@ -748,6 +749,11 @@ static void TraceIncomingPacket(CInPacket* packet) {
         const unsigned char* data = reinterpret_cast<const unsigned char*>(packet->Data);
         const unsigned short opcode = ReadUInt16LE(data + 4);
         const bool capturePayload = ShouldCapturePacketPayload(opcode);
+        DisconnectDiagnostics::Packet(true, opcode, packet->DataLen);
+        // Transport prefix (4), opcode (2), success (1), IPv4 (4), port (2).
+        if (opcode == 0x10 && packet->DataLen == 13 && data[6] == 1) {
+            DisconnectDiagnostics::ExpectChannelClose();
+        }
         CrashReporter::RecordIncomingPacket(
             opcode,
             packet->DataLen,
@@ -762,12 +768,12 @@ static void TraceIncomingPacket(CInPacket* packet) {
             packet);
     }
 }
-static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* packet) {
+static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
+    TraceIncomingPacket(packet);
     if (packet && MineralBagWnd::HandlePacket(
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet && ClientDiagnostics::HandleIncoming(
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
-    TraceIncomingPacket(packet);
     ObserveBossVenomStatusPacket(packet);
     if (packet != nullptr
         && AbsoluteDefenseSync::HandlePacket(
@@ -801,6 +807,13 @@ static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* pac
         HurricaneDamageSync::EndIncomingPacket();
         ShadowPartnerDamageSync::EndIncomingPacket();
         AbsoluteDefenseSync::EndIncomingAttackPacket();
+    }
+}
+static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* packet) {
+    __try {
+        ProcessPacketBody(pThis, edx, packet);
+    } __except (DisconnectDiagnostics::PacketException(GetExceptionInformation())) {
+        // The observer always returns CONTINUE_SEARCH; native exception handling is unchanged.
     }
 }
 } // namespace

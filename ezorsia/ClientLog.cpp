@@ -101,7 +101,8 @@ HANDLE ClientLog::Open(Component component)
         StringCchPrintfA(header, ARRAYSIZE(header),
             "format=beidou-client-log-v1 session=%ls clientRunId=%s pid=%lu exeBuild=0x%08lX dllBuild=0x%08lX compiled=%s %s timestamps=UTC maxBytes=%lld\r\n",
             g_session, ClientDiagnostics::RunId(), GetCurrentProcessId(), BuildTimestamp(GetModuleHandleW(nullptr)),
-            BuildTimestamp(reinterpret_cast<HMODULE>(&__ImageBase)), __DATE__, __TIME__, kMaximumLogBytes);
+            BuildTimestamp(reinterpret_cast<HMODULE>(&__ImageBase)), __DATE__, __TIME__,
+            component == Component::Lifecycle ? -1LL : kMaximumLogBytes);
         DWORD written = 0;
         WriteFile(file, header, lstrlenA(header), &written, nullptr);
     }
@@ -137,7 +138,15 @@ void ClientLog::Append(Component component, const char* format, ...)
         now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond, now.wMilliseconds,
         GetCurrentProcessId(), GetCurrentThreadId(), message);
     HANDLE file = Open(component);
-    Write(file, line);
+    if (component == Component::Lifecycle && file != INVALID_HANDLE_VALUE) {
+        // Disconnect evidence must continue after the ordinary diagnostic file cap.
+        AcquireSRWLockExclusive(&g_writeLock);
+        DWORD written = 0;
+        WriteFile(file, line, static_cast<DWORD>(lstrlenA(line)), &written, nullptr);
+        ReleaseSRWLockExclusive(&g_writeLock);
+    } else {
+        Write(file, line);
+    }
     if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
     SetLastError(savedError);
 }

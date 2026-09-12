@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "SelectCharMacFix.h"
 #include "ClientDiagnostics.h"
+#include "DisconnectDiagnostics.h"
 #include "ClientLog.h"
 #include "AbsoluteDefenseSync.h"
 #include "IntegratedFinalAttack.h"
@@ -131,6 +132,7 @@ static void SendConnectionDiagnostic(void* pThis, void* edx, COutPacket* packet)
     __try {
         if (packet && packet->Data && packet->Size >= 2) {
             const unsigned short opcode = ReadU16(packet->Data);
+            DisconnectDiagnostics::Packet(false, opcode, packet->Size);
             if (opcode == 0x0001 || opcode == 0x0014) {
                 unsigned char data[ClientDiagnostics::kIdentifyPacketSize]{};
                 if (ClientDiagnostics::BeginConnection(data, opcode)) {

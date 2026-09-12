@@ -10,8 +10,24 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <dbghelp.h>
 
 namespace {
+CONTEXT originalFault{};
+LONG SaveRealFault(EXCEPTION_POINTERS* info) {
+    originalFault = *info->ContextRecord;
+    CrashReporter::CaptureHandledException("test", "real_access_violation", info);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+__declspec(naked) void FaultReadFour() {
+    __asm { mov eax, 4 }
+    __asm { mov eax, [eax] }
+    __asm { ret }
+}
+void CaptureRealFault() {
+    __try { FaultReadFour(); }
+    __except (SaveRealFault(GetExceptionInformation())) { }
+}
 void Require(bool condition, const char* message)
 {
     if (!condition) { std::fprintf(stderr, "FAIL %s\n", message); std::exit(1); }
@@ -193,18 +209,17 @@ int wmain(int argc, wchar_t** argv)
     Require(ClientDiagnostics::TrySnapshot(crashSnapshot), "crash snapshot can be captured");
     const unsigned char privatePayload[] = "test-packet-content-not-for-upload";
     CrashReporter::RecordIncomingPacket(0x11, sizeof(privatePayload), 4, privatePayload, sizeof(privatePayload));
-    EXCEPTION_RECORD exception{};
-    exception.ExceptionCode = EXCEPTION_ACCESS_VIOLATION;
-    exception.ExceptionAddress = reinterpret_cast<void*>(&wmain);
-    CONTEXT context{};
-    EXCEPTION_POINTERS pointers{ &exception, &context };
-    CrashReporter::CaptureHandledException("test", "synthetic", &pointers);
+    CaptureRealFault();
+    Require(originalFault.Eip == reinterpret_cast<DWORD>(&FaultReadFour) + 5, "real fault instruction captured");
     WIN32_FIND_DATAW found{};
     const std::wstring pattern = directory + L"\\ijl15-crash-" + ClientLog::SessionId() + L"*.txt";
     HANDLE search = FindFirstFileW(pattern.c_str(), &found);
     Require(search != INVALID_HANDLE_VALUE, "crash text is written in logs");
     FindClose(search);
     const std::string report = Read(directory + L"\\" + found.cFileName);
+    char expectedEip[40]{};
+    sprintf_s(expectedEip, "EIP=0x%08lX", originalFault.Eip);
+    Require(report.find(expectedEip) != std::string::npos, "text retains original fault EIP after dump writing");
     Require(report.find("clientRunId=" + std::string(crashSnapshot.clientRunId) + "\r\n") != std::string::npos
         && report.find("connectionId=" + std::string(crashSnapshot.connectionId) + "\r\n") != std::string::npos
         && report.find("connectionState=" + std::string(ClientDiagnostics::StateName(crashSnapshot.connectionState)) + "\r\n") != std::string::npos
@@ -219,6 +234,19 @@ int wmain(int argc, wchar_t** argv)
     search = FindFirstFileW((directory + L"\\ijl15-crash-" + ClientLog::SessionId() + L"*.dmp").c_str(), &found);
     Require(search != INVALID_HANDLE_VALUE, "minidump is written directly in logs");
     FindClose(search);
+    const std::string dump = Read(directory + L"\\" + found.cFileName);
+    PMINIDUMP_DIRECTORY entry = nullptr;
+    PVOID stream = nullptr;
+    ULONG streamSize = 0;
+    Require(MiniDumpReadDumpStream(const_cast<char*>(dump.data()), ExceptionStream, &entry, &stream, &streamSize),
+        "dump exception stream readable");
+    auto* exceptionStream = static_cast<MINIDUMP_EXCEPTION_STREAM*>(stream);
+    Require(exceptionStream->ThreadContext.Rva + sizeof(CONTEXT) <= dump.size(), "dump context in bounds");
+    const auto* saved = reinterpret_cast<const CONTEXT*>(dump.data() + exceptionStream->ThreadContext.Rva);
+    Require(saved->Eip == originalFault.Eip && saved->Esp == originalFault.Esp && saved->Ebp == originalFault.Ebp,
+        "dump preserves original EIP ESP EBP");
+    Require(exceptionStream->ExceptionRecord.ExceptionAddress == originalFault.Eip
+        && exceptionStream->ExceptionRecord.ExceptionInformation[1] == 4, "dump retains actual read-of-four fault");
     Require(GetFileAttributesW((directory + L"\\crash").c_str()) == INVALID_FILE_ATTRIBUTES, "no crash subdirectory is created");
 
     HANDLE file = ClientLog::Open(ClientLog::Component::Trace);

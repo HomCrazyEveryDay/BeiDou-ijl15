@@ -19,6 +19,7 @@
 #include "MineralBagWnd.h"
 #include "CrashReporter.h"
 #include "ClientLog.h"
+#include "DisconnectDiagnostics.h"
 #include "ClientCrashFixes.h"
 #include "ChairCompatibility.h"
 #include "RefreshRateTrace.h"
@@ -1095,6 +1096,7 @@ namespace
 		const int requestedHeight = Client::m_nGameHeight;
 		const ResolutionEnvironment resolutionEnvironment = ReadResolutionEnvironment();
 		CrashReporter::Install(enableCrashDump, crashDumpType, enableCrashTrace);
+		DisconnectDiagnostics::Install(true);
 		ClientLog::Append(ClientLog::Component::Lifecycle,
 			"diagnostics_config parseError=%d crashDump=%d crashTrace=%d startupLog=%d equipmentLog=%d buffIconLog=%d",
 			configParseError, enableCrashDump, enableCrashTrace, Client::enableStartupLog,

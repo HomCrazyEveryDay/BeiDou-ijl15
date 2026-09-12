@@ -604,6 +604,24 @@ void WriteTextReport(
 
 void WriteExceptionArtifacts(EXCEPTION_POINTERS* exceptionInfo, const WCHAR* reportTag, const char* reportType)
 {
+    // DbgHelp and exception unwinding must not change the context used by the text report.
+    CONTEXT reportContext{};
+    EXCEPTION_RECORD reportRecord{};
+    EXCEPTION_POINTERS reportInfo{};
+    if (exceptionInfo) {
+        if (exceptionInfo->ContextRecord) {
+            reportContext = *exceptionInfo->ContextRecord;
+            reportInfo.ContextRecord = &reportContext;
+        }
+        if (exceptionInfo->ExceptionRecord) {
+            reportRecord = *exceptionInfo->ExceptionRecord;
+            reportInfo.ExceptionRecord = &reportRecord;
+        }
+    }
+    CONTEXT dumpContext = reportContext;
+    EXCEPTION_RECORD dumpRecord = reportRecord;
+    EXCEPTION_POINTERS dumpInfo{reportInfo.ExceptionRecord ? &dumpRecord : nullptr,
+        reportInfo.ContextRecord ? &dumpContext : nullptr};
 	WCHAR dumpPath[MAX_PATH]{};
 	WCHAR textPath[MAX_PATH]{};
 	BuildCrashPaths(dumpPath, textPath, exceptionInfo, reportTag);
@@ -613,7 +631,7 @@ void WriteExceptionArtifacts(EXCEPTION_POINTERS* exceptionInfo, const WCHAR* rep
 	if (dumpFile != INVALID_HANDLE_VALUE) {
 		MINIDUMP_EXCEPTION_INFORMATION dumpExceptionInfo{};
 		dumpExceptionInfo.ThreadId = GetCurrentThreadId();
-		dumpExceptionInfo.ExceptionPointers = exceptionInfo;
+		dumpExceptionInfo.ExceptionPointers = exceptionInfo ? &dumpInfo : nullptr;
 		dumpExceptionInfo.ClientPointers = FALSE;
 
 		const MINIDUMP_TYPE dumpType = GetMiniDumpType();
@@ -629,7 +647,7 @@ void WriteExceptionArtifacts(EXCEPTION_POINTERS* exceptionInfo, const WCHAR* rep
 		CloseHandle(dumpFile);
 	}
 
-	WriteTextReport(textPath, dumpPath, exceptionInfo, dumpWritten, reportType);
+	WriteTextReport(textPath, dumpPath, exceptionInfo ? &reportInfo : nullptr, dumpWritten, reportType);
 }
 
 LONG WINAPI HandleUnhandledException(EXCEPTION_POINTERS* exceptionInfo)
