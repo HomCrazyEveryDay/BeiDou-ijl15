@@ -133,6 +133,13 @@ static void SendConnectionDiagnostic(void* pThis, void* edx, COutPacket* packet)
         if (packet && packet->Data && packet->Size >= 2) {
             const unsigned short opcode = ReadU16(packet->Data);
             DisconnectDiagnostics::Packet(false, opcode, packet->Size);
+            // SPECIAL_MOVE: opcode(2), tick(4), skill ID(4), level(1).
+            // Record only typed skill metadata, never authentication/packet payloads.
+            if (opcode == 0x005B && packet->Size >= 11) {
+                unsigned long skillId = 0;
+                std::memcpy(&skillId, packet->Data + 6, sizeof(skillId));
+                DisconnectDiagnostics::SkillUse(skillId, packet->Data[10]);
+            }
             if (opcode == 0x0001 || opcode == 0x0014) {
                 unsigned char data[ClientDiagnostics::kIdentifyPacketSize]{};
                 if (ClientDiagnostics::BeginConnection(data, opcode)) {

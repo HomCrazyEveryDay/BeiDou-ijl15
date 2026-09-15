@@ -14,6 +14,11 @@ namespace {
 volatile LONG g_handlingException = 0;
 volatile LONG g_handledExceptionCaptured = 0;
 bool g_dumpEnabled = false;
+bool g_conditionalEnabled = false;
+SRWLOCK g_conditionalLock = SRWLOCK_INIT;
+unsigned long long g_conditionalFingerprints[4]{};
+unsigned int g_conditionalCount = 0;
+volatile LONG g_dumpWriterBusy = 0;
 enum class DumpMode {
 	Normal,
 	Triage,
@@ -539,7 +544,7 @@ void WriteTextReport(
 	const WCHAR* dumpPath,
 	EXCEPTION_POINTERS* exceptionInfo,
 	BOOL dumpWritten,
-	const char* reportType)
+	const char* reportType, bool compact)
 {
 	HANDLE file = CreateFileW(textPath, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (file == INVALID_HANDLE_VALUE) {
@@ -564,7 +569,7 @@ void WriteTextReport(
 	WriteLine(file, "connectionState", ClientDiagnostics::StateName(diagnostic.connectionState));
 	WriteLine(file, "diagnosticSnapshot", snapshotAvailable ? "available" : "unavailable");
 	WriteLine(file, "dumpWritten", dumpWritten ? "true" : "false");
-	WriteLine(file, "dumpType", GetDumpModeName());
+	WriteLine(file, "dumpType", compact ? "mini-conditional" : GetDumpModeName());
 
 	char dumpPathUtf8[MAX_PATH * 3]{};
 	WideCharToMultiByte(CP_UTF8, 0, dumpPath, -1, dumpPathUtf8, sizeof(dumpPathUtf8), nullptr, nullptr);
@@ -602,8 +607,14 @@ void WriteTextReport(
 	CloseHandle(file);
 }
 
-void WriteExceptionArtifacts(EXCEPTION_POINTERS* exceptionInfo, const WCHAR* reportTag, const char* reportType)
+void WriteExceptionArtifacts(EXCEPTION_POINTERS* exceptionInfo, const WCHAR* reportTag, const char* reportType, bool compact = false)
 {
+    // DbgHelp is single-threaded. Do not deadlock a faulting thread by waiting
+    // for a writer that it may itself have interrupted.
+    if (InterlockedCompareExchange(&g_dumpWriterBusy, 1, 0) != 0) {
+        ClientLog::Emergency("dump_skipped type=%s reason=writer_busy", reportType);
+        return;
+    }
     // DbgHelp and exception unwinding must not change the context used by the text report.
     CONTEXT reportContext{};
     EXCEPTION_RECORD reportRecord{};
@@ -628,13 +639,16 @@ void WriteExceptionArtifacts(EXCEPTION_POINTERS* exceptionInfo, const WCHAR* rep
 
 	HANDLE dumpFile = CreateFileW(dumpPath, GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
 	BOOL dumpWritten = FALSE;
+	DWORD dumpError = dumpFile == INVALID_HANDLE_VALUE ? GetLastError() : ERROR_SUCCESS;
 	if (dumpFile != INVALID_HANDLE_VALUE) {
 		MINIDUMP_EXCEPTION_INFORMATION dumpExceptionInfo{};
 		dumpExceptionInfo.ThreadId = GetCurrentThreadId();
 		dumpExceptionInfo.ExceptionPointers = exceptionInfo ? &dumpInfo : nullptr;
 		dumpExceptionInfo.ClientPointers = FALSE;
 
-		const MINIDUMP_TYPE dumpType = GetMiniDumpType();
+		const MINIDUMP_TYPE dumpType = compact
+            ? static_cast<MINIDUMP_TYPE>(MiniDumpNormal | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory)
+            : GetMiniDumpType();
 
 		dumpWritten = MiniDumpWriteDump(
 			GetCurrentProcess(),
@@ -644,14 +658,21 @@ void WriteExceptionArtifacts(EXCEPTION_POINTERS* exceptionInfo, const WCHAR* rep
 			&dumpExceptionInfo,
 			nullptr,
 			nullptr);
+		if (!dumpWritten) dumpError = GetLastError();
 		CloseHandle(dumpFile);
 	}
+	ClientLog::Emergency("dump_result type=%s written=%d win32Error=%lu path=%ls",
+		reportType, dumpWritten, dumpError, dumpPath);
 
-	WriteTextReport(textPath, dumpPath, exceptionInfo ? &reportInfo : nullptr, dumpWritten, reportType);
+	WriteTextReport(textPath, dumpPath, exceptionInfo ? &reportInfo : nullptr, dumpWritten, reportType, compact);
+    InterlockedExchange(&g_dumpWriterBusy, 0);
 }
 
 LONG WINAPI HandleUnhandledException(EXCEPTION_POINTERS* exceptionInfo)
 {
+	ClientLog::Emergency("unhandled_exception code=%08lX address=%p",
+		exceptionInfo && exceptionInfo->ExceptionRecord ? exceptionInfo->ExceptionRecord->ExceptionCode : 0,
+		exceptionInfo && exceptionInfo->ExceptionRecord ? exceptionInfo->ExceptionRecord->ExceptionAddress : nullptr);
 	if (InterlockedExchange(&g_handlingException, 1) != 0) {
 		return EXCEPTION_EXECUTE_HANDLER;
 	}
@@ -688,6 +709,41 @@ void CrashReporter::Install(bool enabled, const std::string& dumpType, bool trac
 	}
 
 	SetUnhandledExceptionFilter(HandleUnhandledException);
+}
+
+void CrashReporter::EnableConditionalDump(bool enabled) {
+    g_conditionalEnabled = enabled;
+    ClientLog::Emergency("conditional_dump_config enabled=%d maxDistinctAttemptsPerSession=4 deduplicate=stack type=mini", enabled);
+}
+
+void CrashReporter::CaptureConditionalException(EXCEPTION_POINTERS* info, const char* reason,
+    unsigned long long fingerprint) {
+    if (!g_dumpEnabled || !g_conditionalEnabled || !info) return;
+    // Never block a faulting thread on another exception's writer.
+    if (!TryAcquireSRWLockExclusive(&g_conditionalLock)) {
+        ClientLog::Emergency("conditional_dump_skipped reason=reservation_busy");
+        return;
+    }
+    for (unsigned int i=0;i<g_conditionalCount;++i) {
+        if (g_conditionalFingerprints[i] == fingerprint) {
+            ReleaseSRWLockExclusive(&g_conditionalLock);
+            ClientLog::Emergency("conditional_dump_skipped reason=duplicate fingerprint=%llX", fingerprint);
+            return;
+        }
+    }
+    if (g_conditionalCount == ARRAYSIZE(g_conditionalFingerprints)) {
+        ReleaseSRWLockExclusive(&g_conditionalLock);
+        ClientLog::Emergency("conditional_dump_skipped reason=session_limit limit=4 fingerprint=%llX", fingerprint);
+        return;
+    }
+    const unsigned int attempt = ++g_conditionalCount;
+    g_conditionalFingerprints[attempt-1] = fingerprint;
+    ReleaseSRWLockExclusive(&g_conditionalLock);
+    ClientLog::Emergency("conditional_dump_trigger reason=%s firstChance=1 fatalUnknown=1 attempt=%u fingerprint=%llX",
+        reason, attempt, fingerprint);
+    WCHAR tag[40]{};
+    swprintf_s(tag, L"_conditional-%u", attempt);
+    WriteExceptionArtifacts(info, tag, "conditional_first_chance", true);
 }
 
 void CrashReporter::RecordEvent(const char* category, const char* format, ...)

@@ -5,6 +5,9 @@
 #include "DisconnectClassification.h"
 #include "ClientDiagnostics.h"
 #include "ClientLog.h"
+#include "CrashReporter.h"
+#include "ConditionalDumpPolicy.h"
+#include "ResourceProvenance.h"
 #include <strsafe.h>
 #pragma comment(lib, "Ws2_32.lib")
 
@@ -29,7 +32,6 @@ struct ExceptionDetail {
     const char* kind = nullptr;
 };
 thread_local ExceptionDetail g_detail;
-DWORD g_gameThread = 0;
 thread_local ULONGLONG g_channelCloseDeadline = 0;
 thread_local const char* g_phase = "active";
 bool g_knownExitSites = false;
@@ -70,6 +72,14 @@ using Recv = int (WSAAPI*)(SOCKET, char*, int, int);
 using Close = int (WSAAPI*)(SOCKET);
 Recv g_recv = nullptr;
 Close g_close = nullptr;
+using Exit = void (WINAPI*)(UINT);
+using Terminate = BOOL (WINAPI*)(HANDLE, UINT);
+Exit g_exit = nullptr;
+Terminate g_terminate = nullptr;
+using SetFilter = LPTOP_LEVEL_EXCEPTION_FILTER (WINAPI*)(LPTOP_LEVEL_EXCEPTION_FILTER);
+SetFilter g_setFilter = nullptr;
+thread_local bool g_observingException = false;
+thread_local ULONGLONG g_recoveryAuraTick = 0;
 
 bool FromGame(void* caller) {
     MEMORY_BASIC_INFORMATION memory{};
@@ -105,8 +115,10 @@ void Event(const char* kind, SOCKET socket, int error, EXCEPTION_POINTERS* excep
         detail.count = count;
         detail.code = record.ExceptionCode;
         detail.address = record.ExceptionAddress;
-        detail.access = record.NumberParameters > 0 ? record.ExceptionInformation[0] : 0;
-        detail.target = record.NumberParameters > 1 ? record.ExceptionInformation[1] : 0;
+        const bool memoryFault = record.ExceptionCode == EXCEPTION_ACCESS_VIOLATION
+            || record.ExceptionCode == EXCEPTION_IN_PAGE_ERROR;
+        detail.access = memoryFault && record.NumberParameters > 0 ? record.ExceptionInformation[0] : 0;
+        detail.target = memoryFault && record.NumberParameters > 1 ? record.ExceptionInformation[1] : 0;
         detail.generation = generation;
         detail.id = id;
         detail.phase = phase;
@@ -148,6 +160,14 @@ void Event(const char* kind, SOCKET socket, int error, EXCEPTION_POINTERS* excep
         static_cast<unsigned long>(connection.diagnosticAttempt), id, phase, stack);
     if (exception && exception->ExceptionRecord && exception->ContextRecord) {
         const CONTEXT& c = *exception->ContextRecord;
+        const auto& record = *exception->ExceptionRecord;
+        ClientLog::Append(ClientLog::Component::Lifecycle,
+            "exception_kind connectionId=%s kind=%s parameterCount=%lu memoryAccessFieldsValid=%d",
+            connection.connectionId, record.ExceptionCode == 0xE06D7363 ? "msvc_cpp_throw"
+                : (record.ExceptionCode == EXCEPTION_ACCESS_VIOLATION || record.ExceptionCode == EXCEPTION_IN_PAGE_ERROR)
+                    ? "memory_fault" : "structured_exception",
+            record.NumberParameters,
+            record.ExceptionCode == EXCEPTION_ACCESS_VIOLATION || record.ExceptionCode == EXCEPTION_IN_PAGE_ERROR);
         ClientLog::Append(ClientLog::Component::Lifecycle,
             "disconnect_exception connectionId=%s code=%08lX address=%p eip=%08lX esp=%08lX ebp=%08lX eax=%08lX ecx=%08lX edx=%08lX access=%llu target=%p",
             connection.connectionId, exception->ExceptionRecord->ExceptionCode, exception->ExceptionRecord->ExceptionAddress,
@@ -210,19 +230,115 @@ int WSAAPI CloseSocket(SOCKET s) {
         const bool expected = g_channelCloseDeadline && GetTickCount64() <= g_channelCloseDeadline;
         g_channelCloseDeadline = 0;
         if (result == SOCKET_ERROR) Event("local_socket_close_error", s, error);
-        else if (!expected && path == DisconnectDiagnostics::ClosePath::Unknown) Event("local_socket_close", s, 0);
+        else Event(expected ? "expected_channel_close"
+            : path == DisconnectDiagnostics::ClosePath::ConfirmedLogout ? "confirmed_logout_close"
+            : path == DisconnectDiagnostics::ClosePath::ProcessCleanup ? "process_cleanup_close"
+            : "local_socket_close", s, 0);
     }
     WSASetLastError(error);
     return result;
 }
+// Read exception data without dereferencing potentially invalid native pointers.
+bool ReadDiagnosticMemory(ULONG_PTR address, void* target, SIZE_T size) {
+    SIZE_T read = 0;
+    return address && ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<const void*>(address),
+        target, size, &read) && read == size;
+}
+void LogExceptionParameters(EXCEPTION_POINTERS* info) {
+    const auto& record = *info->ExceptionRecord;
+    for (DWORD i=0;i<record.NumberParameters && i<EXCEPTION_MAXIMUM_PARAMETERS;++i)
+        ClientLog::Emergency("exception_parameter index=%lu value=%p", i,
+            reinterpret_cast<void*>(record.ExceptionInformation[i]));
+    // MSVC x86 _com_error has a vtable followed by HRESULT. Keep the label a
+    // candidate: other thrown objects must never be silently treated as _com_error.
+    DWORD object[2]{};
+    if (record.ExceptionCode == 0xE06D7363 && record.NumberParameters >= 2 && ReadDiagnosticMemory(record.ExceptionInformation[1], object, sizeof(object)))
+        ClientLog::Emergency("cpp_object_candidate vtable=%08lX hresultCandidate=%08lX", object[0], object[1]);
+}
+void LogResourceFailure(EXCEPTION_POINTERS* info, ULONG_PTR base) {
+    ULONG_PTR frame = info->ContextRecord->Ebp;
+    bool found = false;
+    for (int depth=0;depth<48;++depth) {
+        DWORD words[4]{};
+        if (!ReadDiagnosticMemory(frame, words, sizeof(words))) break;
+        // 004444BF calls 0043E86F(out, wchar_t* path, ...). EBP+0C is
+        // the path; 004444C4 is the verified return site in this failure.
+        if (words[1] == base + 0x444C4) {
+            wchar_t path[512]{};
+            bool complete = false;
+            for (SIZE_T i=0;i<ARRAYSIZE(path)-1;++i) {
+                if (!ReadDiagnosticMemory(static_cast<ULONG_PTR>(words[3])+i*sizeof(wchar_t), &path[i], sizeof(wchar_t))) break;
+                if (!path[i]) { complete = true; break; }
+            }
+            ClientLog::Emergency("resource_failure_path returnSite=%08lX pointer=%08lX complete=%d path=%ls",
+                words[1], words[3], complete, path);
+            found = true;
+            break;
+        }
+        if (words[0] <= frame || words[0]-frame > 1024*1024) break;
+        frame = words[0];
+    }
+    if (!found) ClientLog::Emergency("resource_failure_path unavailable=1 reason=frame_not_found seeDump=1");
+}
+__declspec(noinline) void CaptureObservedDump(EXCEPTION_POINTERS* info) {
+    void* frames[24]{};
+    const USHORT count = CaptureStackBackTrace(0, ARRAYSIZE(frames), frames, nullptr);
+    const ULONG_PTR base = reinterpret_cast<ULONG_PTR>(GetModuleHandleW(nullptr));
+    std::uintptr_t addresses[24]{};
+    unsigned long long fingerprint = info->ExceptionRecord->ExceptionCode;
+    for (USHORT i=0;i<count;++i) {
+        addresses[i]=reinterpret_cast<std::uintptr_t>(frames[i]);
+        fingerprint = (fingerprint ^ addresses[i]) * 1099511628211ULL;
+    }
+    LogExceptionParameters(info);
+    ResourceProvenance::Failure();
+    const bool resourceFailure = ConditionalDumpPolicy::ResourceFailure(
+        info->ExceptionRecord->ExceptionCode,addresses,count,base);
+    if (resourceFailure) LogResourceFailure(info, base);
+    CrashReporter::CaptureConditionalException(info,
+        resourceFailure ? "native_resource_get_object_failure" : "observed_exception", fingerprint);
+}
 LONG CALLBACK ObserveException(EXCEPTION_POINTERS* info) {
-    if (g_logging || GetCurrentThreadId() != g_gameThread || !info || !info->ExceptionRecord) return EXCEPTION_CONTINUE_SEARCH;
+    if (g_logging || g_observingException || !info || !info->ExceptionRecord || !info->ContextRecord) return EXCEPTION_CONTINUE_SEARCH;
     const DWORD code = info->ExceptionRecord->ExceptionCode;
     if (code == EXCEPTION_ACCESS_VIOLATION || code == EXCEPTION_ILLEGAL_INSTRUCTION
-        || code == EXCEPTION_INT_DIVIDE_BY_ZERO || code == 0xE06D7363) {
+        || code == EXCEPTION_INT_DIVIDE_BY_ZERO || code == EXCEPTION_IN_PAGE_ERROR
+        || code == EXCEPTION_NONCONTINUABLE_EXCEPTION || code == 0xE06D7363) {
+        g_observingException = true;
+        ClientLog::Emergency("first_chance_not_necessarily_fatal code=%08lX address=%p eip=%08lX esp=%08lX",
+            code, info->ExceptionRecord->ExceptionAddress, info->ContextRecord->Eip, info->ContextRecord->Esp);
         Event("first_chance_exception_not_necessarily_fatal", INVALID_SOCKET, 0, info);
+        // First-chance snapshots remain explicitly non-fatal. Capture is bounded
+        // and deduplicated, independent of the skill or final exception filter.
+        CaptureObservedDump(info);
+        g_observingException = false;
     }
     return EXCEPTION_CONTINUE_SEARCH;
+}
+void WINAPI ExitProcessObserved(UINT code) {
+    ClientLog::Emergency("process_exit_requested api=ExitProcess exitCode=%08X caller=%p", code, _ReturnAddress());
+    Event("process_exit_requested", INVALID_SOCKET, static_cast<int>(code));
+    g_exit(code);
+}
+BOOL WINAPI TerminateProcessObserved(HANDLE process, UINT code) {
+    const DWORD savedError = GetLastError();
+    const bool self = process == GetCurrentProcess() || GetProcessId(process) == GetCurrentProcessId();
+    if (self) {
+        ClientLog::Emergency("process_termination_requested api=TerminateProcess exitCode=%08X caller=%p", code, _ReturnAddress());
+        Event("process_termination_requested", INVALID_SOCKET, static_cast<int>(code));
+    }
+    SetLastError(savedError);
+    const BOOL result = g_terminate(process, code);
+    const DWORD error = GetLastError();
+    if (self && !result) ClientLog::Emergency("process_termination_failed win32Error=%lu", error);
+    SetLastError(error);
+    return result;
+}
+LPTOP_LEVEL_EXCEPTION_FILTER WINAPI SetFilterObserved(LPTOP_LEVEL_EXCEPTION_FILTER filter) {
+    const DWORD savedError = GetLastError();
+    ClientLog::Emergency("unhandled_filter_change requested=%p caller=%p passthrough=1", filter, _ReturnAddress());
+    SetLastError(savedError);
+    return g_setFilter(filter);
 }
 }
 
@@ -238,11 +354,20 @@ void DisconnectDiagnostics::Install(bool enabled) {
     g_recv = reinterpret_cast<Recv>(GetProcAddress(module, "recv"));
     g_close = reinterpret_cast<Close>(GetProcAddress(module, "closesocket"));
     g_enabled = true;
-    g_gameThread = GetCurrentThreadId();
     g_knownExitSites = ValidateExitSites();
+    ResourceProvenance::Install(g_knownExitSites);
     const bool exceptionObserver = AddVectoredExceptionHandler(1, ObserveException) != nullptr;
     const bool receive = g_recv && Memory::SetHook(true, reinterpret_cast<void**>(&g_recv), Receive);
     const bool close = g_close && Memory::SetHook(true, reinterpret_cast<void**>(&g_close), CloseSocket);
+    HMODULE kernel = GetModuleHandleW(L"kernel32.dll");
+    g_exit = reinterpret_cast<Exit>(GetProcAddress(kernel, "ExitProcess"));
+    g_terminate = reinterpret_cast<Terminate>(GetProcAddress(kernel, "TerminateProcess"));
+    g_setFilter = reinterpret_cast<SetFilter>(GetProcAddress(kernel, "SetUnhandledExceptionFilter"));
+    const bool exitHook = g_exit && Memory::SetHook(true, reinterpret_cast<void**>(&g_exit), ExitProcessObserved);
+    const bool terminateHook = g_terminate && Memory::SetHook(true, reinterpret_cast<void**>(&g_terminate), TerminateProcessObserved);
+    const bool filterHook = g_setFilter && Memory::SetHook(true, reinterpret_cast<void**>(&g_setFilter), SetFilterObserved);
+    ClientLog::Emergency("diagnostic_ready exceptionObserver=%d allThreads=1 exitHook=%d terminateHook=%d filterHook=%d normalCloseLogging=1",
+        exceptionObserver, exitHook, terminateHook, filterHook);
     ClientLog::Append(ClientLog::Component::Lifecycle, "disconnect_diagnostics enabled=1 recvHook=%d closeHook=%d exceptionObserver=%d eventLimitPerConnection=unlimited", receive, close, exceptionObserver);
     ClientLog::Append(ClientLog::Component::Lifecycle, "disconnect_classification verifiedExitSites=%d", g_knownExitSites);
 }
@@ -270,4 +395,10 @@ LONG DisconnectDiagnostics::PacketException(EXCEPTION_POINTERS* info) {
     Event("packet_processing_exception", INVALID_SOCKET, 0, info);
     // Observe before native handlers unwind the stack; never consume the exception.
     return EXCEPTION_CONTINUE_SEARCH;
+}
+
+void DisconnectDiagnostics::SkillUse(unsigned long skillId, unsigned char level) {
+    g_recoveryAuraTick = skillId == 22161003 ? GetTickCount64() : 0;
+    if (g_enabled) ClientLog::Append(ClientLog::Component::Lifecycle,
+        "skill_use_packet_observed opcode=005B skillId=%lu level=%u sentNotConfirmed=1", skillId, level);
 }

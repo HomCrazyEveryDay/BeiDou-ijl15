@@ -17,9 +17,12 @@
 #include "PrivateCleanSlateHook.h"
 #include "SecondPendantSlot.h"
 #include "MineralBagWnd.h"
+#include "EvanCreation.h"
+#include "EvanRuntime.h"
 #include "CrashReporter.h"
 #include "ClientLog.h"
 #include "DisconnectDiagnostics.h"
+#include "ProcessExitMonitor.h"
 #include "ClientCrashFixes.h"
 #include "ChairCompatibility.h"
 #include "RefreshRateTrace.h"
@@ -1096,7 +1099,9 @@ namespace
 		const int requestedHeight = Client::m_nGameHeight;
 		const ResolutionEnvironment resolutionEnvironment = ReadResolutionEnvironment();
 		CrashReporter::Install(enableCrashDump, crashDumpType, enableCrashTrace);
-		DisconnectDiagnostics::Install(true);
+		DisconnectDiagnostics::Install(reader.GetBoolean("debug", "enableLifecycleDiagnostics", true));
+		CrashReporter::EnableConditionalDump(reader.GetBoolean("debug", "enableConditionalMiniDump", true));
+		if (reader.GetBoolean("debug", "enableExitMonitor", true)) ProcessExitMonitor::Start();
 		ClientLog::Append(ClientLog::Component::Lifecycle,
 			"diagnostics_config parseError=%d crashDump=%d crashTrace=%d startupLog=%d equipmentLog=%d buffIconLog=%d",
 			configParseError, enableCrashDump, enableCrashTrace, Client::enableStartupLog,
@@ -1120,6 +1125,12 @@ namespace
 		HookIWzNameSpace__Mount(true);
 		HookCWvsApp__InitializeResMan(false); //experimental //ty to all the contributors of the ragezone release: Client load .img instead of .wz v62~v92
 		Hook_StringPool__GetString(true); //hook stringpool modification //ty !! popcorn //ty darter
+		if (!EvanCreation::Install()) {
+			MessageBoxA(nullptr, "Evan creation hooks do not match this v83 client.", "BeiDou", MB_OK | MB_ICONERROR);
+		}
+		if (!EvanRuntime::Install()) {
+			MessageBoxA(nullptr, "Evan skill hooks do not match this v83 client.", "BeiDou", MB_OK | MB_ICONERROR);
+		}
 		Hook_lpfn_NextLevel(true);
 		HookSaveGlobal(true);
 		HookHpMpAlertRecv(true);

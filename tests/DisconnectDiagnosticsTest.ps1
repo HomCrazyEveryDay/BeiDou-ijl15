@@ -6,8 +6,8 @@ Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-ar
 $output = Join-Path $env:TEMP ('beidou-disconnect-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $output | Out-Null
 $repo = Split-Path $PSScriptRoot
-$sources = @('DisconnectDiagnostics.cpp', 'ClientDiagnostics.cpp', 'ClientLog.cpp', 'Memory.cpp') | ForEach-Object { Join-Path $repo "ezorsia/$_" }
-& cl.exe /nologo /std:c++17 /O2 /EHsc (Join-Path $PSScriptRoot 'DisconnectDiagnosticsTest.cpp') @sources "/I:$repo/ezorsia" "/Fo:$output\" "/Fe:$output/test.exe" /link "$repo/detours/detours.lib" Advapi32.lib Ws2_32.lib
+$sources = @('DisconnectDiagnostics.cpp', 'ClientDiagnostics.cpp', 'ClientLog.cpp', 'CrashReporter.cpp', 'Memory.cpp') | ForEach-Object { Join-Path $repo "ezorsia/$_" }
+& cl.exe /nologo /std:c++17 /O2 /EHsc (Join-Path $PSScriptRoot 'DisconnectDiagnosticsTest.cpp') @sources "/I:$repo/ezorsia" "/Fo:$output\" "/Fe:$output/test.exe" /link "$repo/detours/detours.lib" Advapi32.lib Ws2_32.lib Dbghelp.lib
 if ($LASTEXITCODE -ne 0) { throw 'Diagnostic test build failed' }
 & "$output/test.exe"
 if ($LASTEXITCODE -ne 0) { throw "Diagnostic test failed: $LASTEXITCODE; artifacts: $output" }

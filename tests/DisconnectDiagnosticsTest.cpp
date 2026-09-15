@@ -104,6 +104,10 @@ int main() {
     const std::wstring path = std::wstring(ClientLog::Directory()) + L"/ijl15-lifecycle-" + ClientLog::SessionId() + L".log";
     std::ifstream file(path, std::ios::binary);
     const std::string log((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    if (log.find("kind=msvc_cpp_throw parameterCount=0 memoryAccessFieldsValid=0") == std::string::npos
+        || log.find("kind=memory_fault parameterCount=2 memoryAccessFieldsValid=1") == std::string::npos
+        || log.find("access=429065504") != std::string::npos
+        || log.find("target=12345678") != std::string::npos) return 21;
     char expectedFault[100]{};
     sprintf_s(expectedFault, "code=C0000005 address=%08lX eip=%08lX", g_faultEip, g_faultEip);
     char expectedReturn[40]{};

@@ -6,6 +6,9 @@
 
 namespace CrashReporter {
 void Install(bool enabled, const std::string& dumpType, bool traceEnabled);
+void EnableConditionalDump(bool enabled);
+// Observes a matching first-chance exception; never handles it.
+void CaptureConditionalException(EXCEPTION_POINTERS* info, const char* reason = "observed_exception", unsigned long long fingerprint = 0);
 void RecordEvent(const char* category, const char* format, ...);
 void RecordRecentEvent(const char* category, const char* format, ...);
 void RecordIncomingPacket(

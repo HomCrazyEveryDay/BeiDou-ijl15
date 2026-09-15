@@ -150,3 +150,37 @@ void ClientLog::Append(Component component, const char* format, ...)
     if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
     SetLastError(savedError);
 }
+
+void ClientLog::Emergency(const char* format, ...)
+{
+    // Initialize() ran before diagnostic hooks were installed. Do not acquire
+    // InitOnce, g_writeLock, or connection locks from a fault/exit callback.
+    const DWORD savedError = GetLastError();
+    wchar_t path[MAX_PATH]{};
+    if (!g_directory[0] || FAILED(StringCchPrintfW(path, ARRAYSIZE(path),
+        L"%s\\ijl15-emergency-%s.log", g_directory, g_session))) {
+        SetLastError(savedError);
+        return;
+    }
+    char message[1536]{};
+    va_list args;
+    va_start(args, format);
+    StringCchVPrintfA(message, ARRAYSIZE(message), format, args);
+    va_end(args);
+    SYSTEMTIME now{};
+    GetSystemTime(&now);
+    char line[1792]{};
+    StringCchPrintfA(line, ARRAYSIZE(line),
+        "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ pid=%lu tid=%lu %s\r\n",
+        now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond,
+        now.wMilliseconds, GetCurrentProcessId(), GetCurrentThreadId(), message);
+    HANDLE file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file != INVALID_HANDLE_VALUE) {
+        DWORD written = 0;
+        WriteFile(file, line, static_cast<DWORD>(lstrlenA(line)), &written, nullptr);
+        FlushFileBuffers(file);
+        CloseHandle(file);
+    }
+    SetLastError(savedError);
+}

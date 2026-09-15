@@ -195,6 +195,9 @@
     <ClInclude Include="MovementKeyHook.h" />
     <ClInclude Include="NpcShopCurrency.h" />
     <ClInclude Include="MineralBagWnd.h" />
+    <ClInclude Include="EvanCreation.h" />
+    <ClInclude Include="EvanRuntime.h" />
+    <ClInclude Include="EvanCreationOptions.h" />
     <ClInclude Include="PrivateCleanSlateHook.h" />
     <ClInclude Include="SecondPendantRules.h" />
     <ClInclude Include="SecondPendantSlot.h" />
@@ -257,6 +260,9 @@
     <ClCompile Include="StackedBuffIcons.cpp" />
     <ClCompile Include="NpcShopCurrency.cpp" />
     <ClCompile Include="MineralBagWnd.cpp" />
+    <ClCompile Include="EvanCreation.cpp" />
+    <ClCompile Include="EvanRuntime.cpp" />
+    <ClCompile Include="ProcessExitMonitor.cpp" />
     <ClCompile Include="PrivateCleanSlateHook.cpp" />
     <ClCompile Include="SecondPendantSlot.cpp" />
     <ClCompile Include="Client.cpp" />
@@ -284,6 +290,9 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
+  <Target Name="BuildExitMonitor" AfterTargets="Build">
+    <MSBuild Projects="$(ProjectDir)..\monitor\BeiDouExitMonitor.vcxproj" Targets="Build" Properties="Configuration=$(Configuration);Platform=$(Platform)" />
+  </Target>
 </Project>
 
 

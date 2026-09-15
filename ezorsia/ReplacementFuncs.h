@@ -2260,6 +2260,31 @@ bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //t
         }
 		switch (nIdx)
 		{
+			// Register the actual v84 avatar AND dragon action names in two unused
+			// v83 Evan prototype slots (avatar 146/156, dragon 10/20). Current
+			// Skill.wz references neither prototype. Load original v84 body and
+			// dragon frames; never alias a skill to the old prototype animation.
+			case 5497:
+				if (ret && static_cast<const char*>(*ret) &&
+					!strcmp(static_cast<const char*>(*ret), "superMagicmissile")) *ret = "blaze";
+				break;
+			// Native tables own the UTF-16 BSTR and its lifetime.
+			// The unused elemental-resistance prototype slot registers both native
+			// action tables. GMS 084 skills use mapleHero, with original body/dragon frames.
+			case 5505:
+				if (ret && static_cast<const char*>(*ret) &&
+					!strcmp(static_cast<const char*>(*ret), "elementalRegistance")) *ret = "mapleHero";
+				break;
+			case 5506:
+				if (ret && static_cast<const char*>(*ret) &&
+					!strcmp(static_cast<const char*>(*ret), "dragonAura")) *ret = "recoveryAura";
+				break;
+			case 5507:
+				if (ret && static_cast<const char*>(*ret) &&
+					!strcmp(static_cast<const char*>(*ret), "dragonSkin")) *ret = "OnixBlessing";
+				break;
+			case 5508: // v83 dragonEyes -> GMS v84 Dragon Fury resource.
+				*ret = "Effect/BasicEff.img/dragonFury"; break;
 			case 1307:	//1307_UI_LOGINIMG_COMMON_FRAME = 51Bh
 				if (EzorsiaV2WzIncluded && !ownLoginFrame) {
 					switch (Client::m_nGameWidth)
