@@ -944,11 +944,28 @@ static bool IsAllowedLocalEndpointAddress(const std::string& value, std::string&
 	const bool private10 = parts[0] == 10;
 	const bool private172 = parts[0] == 172 && parts[1] >= 16 && parts[1] <= 31;
 	const bool private192 = parts[0] == 192 && parts[1] == 168;
-	if (!loopback && !private10 && !private172 && !private192) {
+	// Explicit public endpoints owned/approved by the operator. Match parsed octets,
+	// not prefixes, so neighboring addresses remain blocked.
+	static const unsigned int publicEndpoints[][4] = {
+		{103, 14, 77, 46},
+		{114, 132, 97, 50},
+		{13, 212, 38, 93},
+		{69, 165, 65, 146}, // ssh hk146
+	};
+	bool approvedPublic = false;
+	for (const auto& endpoint : publicEndpoints) {
+		if (parts[0] == endpoint[0] && parts[1] == endpoint[1]
+			&& parts[2] == endpoint[2] && parts[3] == endpoint[3]) {
+			approvedPublic = true;
+			break;
+		}
+	}
+	if (!loopback && !private10 && !private172 && !private192 && !approvedPublic) {
 		return false;
 	}
 
-	normalized = value;
+	normalized = std::to_string(parts[0]) + "." + std::to_string(parts[1])
+		+ "." + std::to_string(parts[2]) + "." + std::to_string(parts[3]);
 	return true;
 }
 
