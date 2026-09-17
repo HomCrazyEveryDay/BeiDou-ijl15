@@ -1116,8 +1116,9 @@ namespace
 		const int requestedHeight = Client::m_nGameHeight;
 		const ResolutionEnvironment resolutionEnvironment = ReadResolutionEnvironment();
 		CrashReporter::Install(enableCrashDump, crashDumpType, enableCrashTrace);
-		DisconnectDiagnostics::Install(reader.GetBoolean("debug", "enableLifecycleDiagnostics", true));
-		CrashReporter::EnableConditionalDump(reader.GetBoolean("debug", "enableConditionalMiniDump", true));
+		// Opt in only: first-chance diagnostics can synchronously flush logs on the game thread.
+		DisconnectDiagnostics::Install(reader.GetBoolean("debug", "enableLifecycleDiagnostics", false));
+		CrashReporter::EnableConditionalDump(reader.GetBoolean("debug", "enableConditionalMiniDump", false));
 		if (reader.GetBoolean("debug", "enableExitMonitor", true)) ProcessExitMonitor::Start();
 		ClientLog::Append(ClientLog::Component::Lifecycle,
 			"diagnostics_config parseError=%d crashDump=%d crashTrace=%d startupLog=%d equipmentLog=%d buffIconLog=%d",
