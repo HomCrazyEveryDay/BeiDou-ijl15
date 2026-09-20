@@ -212,6 +212,18 @@ int WSAAPI Receive(SOCKET s, char* buffer, int length, int flags) {
     void* caller = _ReturnAddress();
     const int result = g_recv(s, buffer, length, flags);
     const int error = WSAGetLastError();
+    // Native v83 OnConnect reads the two-byte length and hello body here.
+    // This bounded loop retries at most 41 times; never log packet contents.
+    const auto offset = reinterpret_cast<std::uintptr_t>(caller)
+        - reinterpret_cast<std::uintptr_t>(GetModuleHandleW(nullptr));
+    if (offset == 0x94FFC && !g_logging) {
+        g_logging = true;
+        ClientLog::Append(ClientLog::Component::Lifecycle,
+            "handshake_recv socket=%llu requested=%d received=%d error=%d flags=%d",
+            static_cast<unsigned long long>(s), length, result,
+            result == SOCKET_ERROR ? error : 0, flags);
+        g_logging = false;
+    }
     if (FromGame(caller) && (result == 0 || (result == SOCKET_ERROR && error != WSAEWOULDBLOCK)))
         Event(result == 0 ? "peer_eof" : "recv_error", s, result == 0 ? 0 : error);
     WSASetLastError(error);

@@ -141,6 +141,13 @@ static void SendConnectionDiagnostic(void* pThis, void* edx, COutPacket* packet)
                 DisconnectDiagnostics::SkillUse(skillId, packet->Data[10]);
             }
             if (opcode == 0x0001 || opcode == 0x0014) {
+                // Fields checked by the native SendPacket at 00496397-004963AB.
+                const auto* nativeSocket = static_cast<const unsigned char*>(pThis);
+                const unsigned long handle = *reinterpret_cast<const unsigned long*>(nativeSocket + 8);
+                const unsigned long connecting = *reinterpret_cast<const unsigned long*>(nativeSocket + 0x14);
+                ClientLog::Append(ClientLog::Component::Lifecycle,
+                    "login_send_gate opcode=%04X socket=%lu connecting=%lu nativeWillSkip=%d",
+                    opcode, handle, connecting, handle == 0 || handle == 0xFFFFFFFF || connecting != 0);
                 unsigned char data[ClientDiagnostics::kIdentifyPacketSize]{};
                 if (ClientDiagnostics::BeginConnection(data, opcode)) {
                     COutPacket diagnostic{};
