@@ -7,8 +7,8 @@
 
 /*
 Client patch release defaults:
-- config.ini may override IME, resolution, movement-key rebind, and crash dump settings.
-- Server endpoint is fixed in code, with a config-gated local/LAN override for testing only.
+- The launcher snapshot supplies IME, resolution, movement keys, and diagnostic settings.
+- Server endpoint is fixed in code, with a validated launcher test override.
 - Sensitive gameplay/login/chat policies are fixed in code.
 */
 int Client::m_nGameHeight = 720;

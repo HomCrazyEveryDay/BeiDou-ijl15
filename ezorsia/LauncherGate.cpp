@@ -13,6 +13,7 @@ namespace
 	constexpr wchar_t LauncherExecutable[] = L"ZhuMengLauncher.exe";
 	constexpr size_t TokenLength = 64;
 	bool g_showUnauthorizedLaunchMessage = true;
+	game_settings::Snapshot g_settings;
 
 	void WriteAuthorizationLog(HANDLE file, const wchar_t* format, ...)
 	{
@@ -318,9 +319,9 @@ bool LauncherGate::Authorize()
 	const DWORD permitError = permit == nullptr ? GetLastError() : ERROR_SUCCESS;
 	const HANDLE acknowledgement = OpenEventW(EVENT_MODIFY_STATE, FALSE, acknowledgementName);
 	const DWORD acknowledgementError = acknowledgement == nullptr ? GetLastError() : ERROR_SUCCESS;
-	SecureZeroMemory(token, sizeof(token));
 	if (permit == nullptr || acknowledgement == nullptr)
 	{
+		SecureZeroMemory(token, sizeof(token));
 		if (permit != nullptr)
 		{
 			CloseHandle(permit);
@@ -336,6 +337,22 @@ bool LauncherGate::Authorize()
 			permit == nullptr ? permitError : acknowledgementError);
 	}
 
+	wchar_t settingsName[128]{};
+	wchar_t settingsAckName[128]{};
+	const bool ackNameOk = BuildObjectName(settingsAckName, _countof(settingsAckName), L"Local\\ZhuMengGameSettingsAck-", token);
+	const bool nameOk = BuildObjectName(settingsName, _countof(settingsName), L"Local\\ZhuMengGameSettings-", token);
+	SecureZeroMemory(token, sizeof(token));
+	HANDLE mapping = nameOk ? OpenFileMappingW(FILE_MAP_READ, FALSE, settingsName) : nullptr;
+	const void* settingsView = mapping ? MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, sizeof(g_settings)) : nullptr;
+	if (settingsView) memcpy(&g_settings, settingsView, sizeof(g_settings));
+	const bool settingsValid = settingsView && game_settings::Valid(g_settings);
+	if (settingsView) UnmapViewOfFile(settingsView);
+	if (mapping) CloseHandle(mapping);
+	if (!settingsValid) {
+		CloseHandle(acknowledgement);
+		CloseHandle(permit);
+		return FinishAuthorization(log, false, L"settings-invalid-upgrade-launcher", ERROR_INVALID_DATA);
+	}
 	const DWORD permitWait = WaitForSingleObject(permit, 0);
 	const DWORD permitWaitError = permitWait == WAIT_FAILED ? GetLastError() : ERROR_SUCCESS;
 	if (permitWait != WAIT_OBJECT_0)
@@ -349,7 +366,10 @@ bool LauncherGate::Authorize()
 			permitWait == WAIT_FAILED ? permitWaitError : ERROR_NOT_READY);
 	}
 
-	const bool acknowledged = SetEvent(acknowledgement) != FALSE;
+	HANDLE settingsAck = ackNameOk ? OpenEventW(EVENT_MODIFY_STATE, FALSE, settingsAckName) : nullptr;
+	const bool settingsAcknowledged = settingsAck && SetEvent(settingsAck) != FALSE;
+	if (settingsAck) CloseHandle(settingsAck);
+	const bool acknowledged = settingsAcknowledged && SetEvent(acknowledgement) != FALSE;
 	const DWORD acknowledgementSignalError = acknowledged ? ERROR_SUCCESS : GetLastError();
 	CloseHandle(acknowledgement);
 	CloseHandle(permit);
@@ -364,6 +384,8 @@ bool LauncherGate::ShouldShowUnauthorizedLaunchMessage()
 {
 	return g_showUnauthorizedLaunchMessage;
 }
+
+const game_settings::Snapshot& LauncherGate::Settings() { return g_settings; }
 
 void LauncherGate::ShowUnauthorizedLaunchMessage()
 {

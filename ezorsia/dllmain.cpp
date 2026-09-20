@@ -2,7 +2,7 @@
 #include "stdafx.h"
 #include "NMCO.h"
 #include "ijl15.h"
-#include "INIReader.h"
+#include "GameLaunchSettings.h"
 #include "ReplacementFuncs.h"
 #include "D3D8DisplayModeHook.h"
 #include <comutil.h>
@@ -928,7 +928,7 @@ static bool ParseIpv4Address(const std::string& value, unsigned int parts[4])
 	return true;
 }
 
-static bool IsAllowedLocalEndpointAddress(const std::string& value, std::string& normalized)
+static bool IsValidLauncherEndpointAddress(const std::string& value, std::string& normalized)
 {
 	if (_stricmp(value.c_str(), "localhost") == 0) {
 		normalized = "127.0.0.1";
@@ -940,54 +940,31 @@ static bool IsAllowedLocalEndpointAddress(const std::string& value, std::string&
 		return false;
 	}
 
-	const bool loopback = parts[0] == 127;
-	const bool private10 = parts[0] == 10;
-	const bool private172 = parts[0] == 172 && parts[1] >= 16 && parts[1] <= 31;
-	const bool private192 = parts[0] == 192 && parts[1] == 168;
-	// Explicit public endpoints owned/approved by the operator. Match parsed octets,
-	// not prefixes, so neighboring addresses remain blocked.
-	static const unsigned int publicEndpoints[][4] = {
-		{103, 14, 77, 46},
-		{114, 132, 97, 50},
-		{13, 212, 38, 93},
-		{69, 165, 65, 146}, // ssh hk146
-	};
-	bool approvedPublic = false;
-	for (const auto& endpoint : publicEndpoints) {
-		if (parts[0] == endpoint[0] && parts[1] == endpoint[1]
-			&& parts[2] == endpoint[2] && parts[3] == endpoint[3]) {
-			approvedPublic = true;
-			break;
-		}
-	}
-	if (!loopback && !private10 && !private172 && !private192 && !approvedPublic) {
-		return false;
-	}
-
 	normalized = std::to_string(parts[0]) + "." + std::to_string(parts[1])
 		+ "." + std::to_string(parts[2]) + "." + std::to_string(parts[3]);
 	return true;
 }
 
-static void ApplyLocalEndpointOverride(const INIReader& reader)
+static bool ApplyLocalEndpointOverride(const game_settings::Snapshot& settings)
 {
-	if (!reader.GetBoolean("dev", "enableLocalEndpointOverride", false)) {
-		return;
+	if (!settings.values[game_settings::TestEndpoint]) {
+		return true;
 	}
 
-	std::string endpoint = reader.Get("dev", "ServerIP_Address", "127.0.0.1");
+	std::string endpoint = settings.endpoint;
 	std::string normalizedEndpoint;
-	if (!IsAllowedLocalEndpointAddress(endpoint, normalizedEndpoint)) {
-		return;
+	if (!IsValidLauncherEndpointAddress(endpoint, normalizedEndpoint)) {
+		return false;
 	}
 
-	const long port = reader.GetInteger("dev", "serverIP_Port", Client::serverIP_Port);
+	const long port = settings.values[game_settings::Port];
 	if (port <= 0 || port > 65535) {
-		return;
+		return false;
 	}
 
 	Client::ServerIP_Address = normalizedEndpoint;
 	Client::serverIP_Port = static_cast<int>(port);
+	return true;
 }
 
 struct ResolutionEnvironment {
@@ -999,7 +976,7 @@ struct ResolutionEnvironment {
 
 static ResolutionEnvironment ReadResolutionEnvironment()
 {
-	// Resolution is intentionally not normalized: config.ini is the source of truth.
+	// Resolution is supplied by the validated launcher snapshot.
 	ResolutionEnvironment environment{};
 	environment.desktopWidth = GetSystemMetrics(SM_CXSCREEN);
 	environment.desktopHeight = GetSystemMetrics(SM_CYSCREEN);
@@ -1044,8 +1021,7 @@ static void WriteStartupLog(
 	WriteLogText(file, line);
 	WriteLogText(file, "resolutionFallback=false\r\n");
 	WriteLogText(file, "resolutionFallbackReason=disabled\r\n");
-	wsprintfA(line, "serverEndpoint=%s:%d\r\n", Client::ServerIP_Address.c_str(), Client::serverIP_Port);
-	WriteLogText(file, line);
+	WriteLogText(file, "serverEndpoint=launcher_route\r\n");
 	CloseHandle(file);
 }
 
@@ -1089,37 +1065,32 @@ namespace
 
 		//CreateConsole();	//console for devs, use this to log stuff if you want
 
-		// config.ini exposes compatibility/debug settings plus an opt-in local/LAN endpoint override for testing.
-		// Other patch behavior stays in code defaults.
-		INIReader reader("config.ini");
-		bool enableCrashDump = true;
-		bool enableCrashTrace = true;
-		std::string crashDumpType = "mini";
-		bool enableStackedBuffIconLog = false;
-		bool enableEquipmentSlotLog = true;
-		const int configParseError = reader.ParseError();
-		if (configParseError == 0) {
-			// Resolution and IME are local client compatibility settings.
-			Client::m_nGameWidth = reader.GetInteger("general", "width", 1280);
-			Client::m_nGameHeight = reader.GetInteger("general", "height", 720);
-			Client::imeType = reader.GetInteger("general", "imeType", 1);
-			Client::enableMovementKeyRebind = reader.GetBoolean("general", "enableMovementKeyRebind", false);
-			enableCrashDump = reader.GetBoolean("debug", "enableCrashDump", true);
-			enableCrashTrace = reader.GetBoolean("dev", "enableCrashTrace", true);
-			crashDumpType = reader.Get("debug", "crashDumpType", "mini");
-			Client::enableStartupLog = reader.GetBoolean("debug", "enableStartupLog", false);
-			enableStackedBuffIconLog = reader.GetBoolean("debug", "enableStackedBuffIconLog", false);
-			enableEquipmentSlotLog = reader.GetBoolean("debug", "enableEquipmentSlotLog", true);
-			ApplyLocalEndpointOverride(reader);
+		using namespace game_settings;
+		const auto& settings = LauncherGate::Settings();
+		Client::m_nGameWidth = settings.values[Width];
+		Client::m_nGameHeight = settings.values[Height];
+		Client::imeType = static_cast<unsigned char>(settings.values[Ime]);
+		Client::enableMovementKeyRebind = settings.values[MovementKeys] != 0;
+		const bool enableCrashDump = settings.values[CrashDump] != 0;
+		const bool enableCrashTrace = settings.values[CrashTrace] != 0;
+		const std::string crashDumpType = settings.values[FullDump] ? "full" : "mini";
+		Client::enableStartupLog = settings.values[StartupLog] != 0;
+		const bool enableStackedBuffIconLog = settings.values[BuffLog] != 0;
+		const bool enableEquipmentSlotLog = settings.values[EquipmentLog] != 0;
+		const int configParseError = 0;
+		if (!ApplyLocalEndpointOverride(settings)) {
+			ClientLog::Append(ClientLog::Component::Lifecycle, "startup_rejected stage=settings_endpoint");
+			MessageBoxW(nullptr, L"\u542f\u52a8\u5668\u4e2d\u7684\u6d4b\u8bd5\u8fde\u63a5\u5730\u5740\u65e0\u6548\uff0c\u8bf7\u5728\u8bbe\u7f6e\u4e2d\u4fee\u6b63\u3002", L"\u65e0\u6cd5\u542f\u52a8\u6e38\u620f", MB_OK | MB_ICONERROR);
+			ExitProcess(ERROR_INVALID_DATA);
 		}
 		const int requestedWidth = Client::m_nGameWidth;
 		const int requestedHeight = Client::m_nGameHeight;
 		const ResolutionEnvironment resolutionEnvironment = ReadResolutionEnvironment();
 		CrashReporter::Install(enableCrashDump, crashDumpType, enableCrashTrace);
 		// Opt in only: first-chance diagnostics can synchronously flush logs on the game thread.
-		DisconnectDiagnostics::Install(reader.GetBoolean("debug", "enableLifecycleDiagnostics", false));
-		CrashReporter::EnableConditionalDump(reader.GetBoolean("debug", "enableConditionalMiniDump", false));
-		if (reader.GetBoolean("debug", "enableExitMonitor", true)) ProcessExitMonitor::Start();
+		DisconnectDiagnostics::Install(settings.values[LifecycleDiagnostics] != 0);
+		CrashReporter::EnableConditionalDump(settings.values[ConditionalDump] != 0);
+		if (settings.values[ExitMonitor] != 0) ProcessExitMonitor::Start();
 		ClientLog::Append(ClientLog::Component::Lifecycle,
 			"diagnostics_config parseError=%d crashDump=%d crashTrace=%d startupLog=%d equipmentLog=%d buffIconLog=%d",
 			configParseError, enableCrashDump, enableCrashTrace, Client::enableStartupLog,
