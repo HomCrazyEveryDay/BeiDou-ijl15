@@ -4,6 +4,8 @@
 
 #include <cstdarg>
 #include <strsafe.h>
+#include <map>
+#include <string>
 
 extern "C" IMAGE_DOS_HEADER __ImageBase;
 
@@ -116,10 +118,41 @@ void ClientLog::Write(HANDLE file, const char* text)
     AcquireSRWLockExclusive(&g_writeLock);
     LARGE_INTEGER size{};
     const DWORD length = static_cast<DWORD>(lstrlenA(text));
-    if (GetFileSizeEx(file, &size) && size.QuadPart + length <= kMaximumLogBytes) {
-        DWORD written = 0;
-        WriteFile(file, text, length, &written, nullptr);
+    HANDLE target = file;
+    if (GetFileSizeEx(file, &size) && size.QuadPart + length > kMaximumLogBytes) {
+        wchar_t path[1024]{};
+        const DWORD count = GetFinalPathNameByHandleW(file, path, ARRAYSIZE(path), FILE_NAME_NORMALIZED);
+        if (count > 0 && count < ARRAYSIZE(path)) {
+            static std::map<std::wstring, unsigned> parts;
+            const std::wstring base(path);
+            unsigned& part = parts[base];
+            if (part == 0) part = 1;
+            for (;;) {
+                const std::wstring next = base.substr(0, base.size() - 4) + L"-part" + std::to_wstring(part) + L".log";
+                target = CreateFileW(next.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                    nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+                if (target == INVALID_HANDLE_VALUE) break;
+                if (!GetFileSizeEx(target, &size)) { CloseHandle(target); target = INVALID_HANDLE_VALUE; break; }
+                if (size.QuadPart == 0) {
+                    char header[256]{};
+                    StringCchPrintfA(header, ARRAYSIZE(header),
+                        "format=beidou-client-log-v1 session=%ls clientRunId=%s part=%u timestamps=UTC\r\n",
+                        g_session, ClientDiagnostics::RunId(), part);
+                    DWORD written = 0;
+                    WriteFile(target, header, lstrlenA(header), &written, nullptr);
+                    size.QuadPart += written;
+                }
+                if (size.QuadPart + length <= kMaximumLogBytes) break;
+                CloseHandle(target);
+                ++part;
+            }
+        } else target = INVALID_HANDLE_VALUE;
     }
+    if (target != INVALID_HANDLE_VALUE) {
+        DWORD written = 0;
+        WriteFile(target, text, length, &written, nullptr);
+    }
+    if (target != file && target != INVALID_HANDLE_VALUE) CloseHandle(target);
     ReleaseSRWLockExclusive(&g_writeLock);
 }
 

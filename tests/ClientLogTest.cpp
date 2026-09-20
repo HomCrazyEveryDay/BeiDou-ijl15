@@ -255,6 +255,9 @@ int wmain(int argc, wchar_t** argv)
     LARGE_INTEGER size{};
     Require(GetFileSizeEx(file, &size) && size.QuadPart <= 8 * 1024 * 1024, "session file respects 8 MiB limit");
     CloseHandle(file);
+    const std::wstring rotated = path.substr(0, path.size() - 4) + L"-part1.log";
+    Require(Read(rotated).find(std::string(65536, 'x')) != std::string::npos, "overflow bytes continue in rotated file");
+    Require(Read(rotated).find("clientRunId=") != std::string::npos, "rotated file preserves run identity");
     Require(Read(path).compare(0, prefix.size(), prefix) == 0, "size limiting does not truncate old bytes");
     std::printf("PASS ClientLogTest: diagnostic protocol/state, concurrent append, upload sharing, bounded size, immutable prefix, error state, crash correlation/privacy\n");
     return 0;
