@@ -1,6 +1,9 @@
 #include "stdafx.h"
 #include "EvanRuntime.h"
 #include <cstring>
+#ifndef EVAN_RUNTIME_TEST
+#include "EvanTimingDiagnostics.h"
+#endif
 
 namespace {
 #ifdef EVAN_RUNTIME_TEST
@@ -67,6 +70,81 @@ __declspec(naked) void EvanMastery() {
 const DWORD blazeChainReturn = Native(0x00955EE4);
 const DWORD blazeBallReturn = Native(0x00955F25);
 const DWORD blazeOriginReturn = Native(0x00955FB8);
+// v83 Illusion starts its action at 0x956339, AFTER the hit-delay calculation
+// at 0x955C2D. Unlike v84 (0x991FAF), the avatar duration here still belongs
+// to the previous action. Reconstruct the current duration using the same
+// per-frame truncation as CAvatar::PrepareAction (0x454776..0x454837).
+// Keep target selection, native hit scheduling and the original WZ frames.
+int __cdecl IllusionDuration(const unsigned char* action, int speed, int previous) {
+    const int* frames = *reinterpret_cast<const int* const*>(action + 0x14);
+    if (!frames) return previous;
+    const unsigned count = reinterpret_cast<const unsigned*>(frames)[-1];
+    if (!count || count > 1024) return previous;
+    if (speed < 2) speed = 2;
+    if (speed > 10) speed = 10;
+    long long total = 0;
+    for (unsigned i = 0; i < count; ++i) {
+        const int delay = frames[i * 8 + 2]; // 32-byte ACTIONFRAME, delay +8
+        if (delay < 0) return previous; // Native loader already took abs(delay).
+        total += static_cast<long long>(delay) * (speed + 10) / 16;
+    }
+    const int duration = total > 0 && total <= 0x7fffffff ? static_cast<int>(total) : previous;
+#ifndef EVAN_RUNTIME_TEST
+    EvanTimingDiagnostics::HitDelay(previous, duration, speed,
+        *reinterpret_cast<const int*>(action+0x10), *reinterpret_cast<const int*>(action+0x0c));
+#endif
+    return duration;
+}
+const DWORD illusionDurationReturn = Native(0x00955C34);
+__declspec(naked) void IllusionTiming() {
+    __asm {
+        mov eax, [ecx+ebx+4f8h]
+        pushfd
+        cmp dword ptr [ebp-14h], 22171002
+        jne finished
+        push ecx
+        push edx
+        push eax
+        push dword ptr [ebp-98h]
+        push esi
+        call IllusionDuration
+        add esp, 0ch
+        pop edx
+        pop ecx
+    finished:
+        popfd
+        jmp dword ptr [illusionDurationReturn]
+    }
+}
+// CMob::AddDamage queues each Illusion hit separately. GMS084 0x68129C
+// uses 0/60/180/420ms, whereas the v83 prototype uses 0/90/270/630ms.
+// User-requested Ghost Lettering pacing scales v84 offsets to 0/24/72/168ms,
+// paired with the 800ms illusion avatar and dragon actions in WZ/XML + IMG.
+// Observe the actual queue boundary, not just the earlier base-delay estimate.
+void __cdecl IllusionQueueTrace(int index, int base, int offset) {
+#ifndef EVAN_RUNTIME_TEST
+    const DWORD now = reinterpret_cast<DWORD(__cdecl*)()>(0x987257)();
+    EvanTimingDiagnostics::QueuedHit(index, offset,
+        static_cast<int>(static_cast<DWORD>(base) + offset - now));
+#endif
+}
+const DWORD illusionQueueReturn = Native(0x0066B101);
+__declspec(naked) void IllusionQueue() {
+    __asm {
+        pushfd
+        pushad
+        push eax
+        push dword ptr [ebp+10h]
+        push dword ptr [ebp+24h]
+        call IllusionQueueTrace
+        add esp, 0ch
+        popad
+        popfd
+        mov ecx, [ebp+10h]
+        add ecx, eax
+        jmp dword ptr [illusionQueueReturn]
+    }
+}
 __declspec(naked) void BlazeChain() {
     __asm {
         cmp dword ptr [ebp-14h], 22181001
@@ -104,11 +182,20 @@ Patch patches[] = {
     {Native(0x00955FB1), {0x81,0x7d,0xec,0x7b,0x4d,0x52,0x01}, {0xe9,0,0,0,0,0x90,0x90}, 7},
     {Native(0x004E8F04), {0x8b,0x44,0x24,0x04,0x99}, {0xe9,0,0,0,0}, 5},
     {Native(0x004F06C6), {0x3d,0xe4,0,0,0}, {0xe9,0,0,0,0}, 5},
-    {Native(0x00A0A1CD), {0x3d,0xe4,0,0,0}, {0xe9,0,0,0,0}, 5}
+    {Native(0x00A0A1CD), {0x3d,0xe4,0,0,0}, {0xe9,0,0,0,0}, 5},
+    {Native(0x00955C2D), {0x8b,0x84,0x19,0xf8,0x04,0,0}, {0xe9,0,0,0,0,0x90,0x90}, 7},
+    {Native(0x0066B0DD), {0xc7,0x45,0xe4,0x5a,0,0,0}, {0xc7,0x45,0xe4,0x18,0,0,0}, 7},
+    {Native(0x0066B0E4), {0xc7,0x45,0xe8,0x0e,0x01,0,0}, {0xc7,0x45,0xe8,0x48,0,0,0}, 7},
+    {Native(0x0066B0EB), {0xc7,0x45,0xec,0x76,0x02,0,0}, {0xc7,0x45,0xec,0xa8,0,0,0}, 7},
+    {Native(0x0066B0FC), {0x8b,0x4d,0x10,0x03,0xc8}, {0xe9,0,0,0,0}, 5}
 };
 }
 
 bool EvanRuntime::Install() {
+    const DWORD queueDisplacement = reinterpret_cast<DWORD>(&IllusionQueue) - (patches[15].address + 5);
+    std::memcpy(patches[15].after+1, &queueDisplacement, sizeof(queueDisplacement));
+    const DWORD illusionDisplacement = reinterpret_cast<DWORD>(&IllusionTiming) - (patches[11].address + 5);
+    std::memcpy(patches[11].after+1, &illusionDisplacement, sizeof(illusionDisplacement));
     const DWORD bookTargets[] = {reinterpret_cast<DWORD>(&EvanMastery), reinterpret_cast<DWORD>(&BookClick), reinterpret_cast<DWORD>(&BookSend)};
     for (size_t i=0;i<3;++i) {
         const DWORD displacement = bookTargets[i] - (patches[8+i].address + 5);
@@ -147,5 +234,8 @@ bool EvanRuntime::Install() {
         DWORD ignored;
         VirtualProtect(reinterpret_cast<void*>(patches[i-1].address), patches[i-1].size, previous[i-1], &ignored);
     }
+#ifndef EVAN_RUNTIME_TEST
+    EvanTimingDiagnostics::Install();
+#endif
     return true;
 }
