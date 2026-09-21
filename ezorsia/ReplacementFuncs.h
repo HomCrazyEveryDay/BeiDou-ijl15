@@ -2264,6 +2264,16 @@ bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //t
 			// v83 Evan prototype slots (avatar 146/156, dragon 10/20). Current
 			// Skill.wz references neither prototype. Load original v84 body and
 			// dragon frames; never alias a skill to the old prototype animation.
+			// Unused v83 dragonSpark/dragonFly slots register the original v84
+			// actions in both avatar and dragon tables. Skill IDs/names stay intact.
+			case 5491:
+				if (ret && static_cast<const char*>(*ret) &&
+					!strcmp(static_cast<const char*>(*ret), "dragonSpark")) *ret = "dragonThrust";
+				break;
+			case 5503:
+				if (ret && static_cast<const char*>(*ret) &&
+					!strcmp(static_cast<const char*>(*ret), "dragonFly")) *ret = "flameWheel";
+				break;
 			case 5497:
 				if (ret && static_cast<const char*>(*ret) &&
 					!strcmp(static_cast<const char*>(*ret), "superMagicmissile")) *ret = "blaze";
