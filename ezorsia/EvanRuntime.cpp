@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "EvanRuntime.h"
 #include <cstring>
+#include "EvanKillingWing.h"
 #ifndef EVAN_RUNTIME_TEST
 #include "EvanTimingDiagnostics.h"
 #endif
@@ -192,6 +193,7 @@ Patch patches[] = {
 }
 
 bool EvanRuntime::Install() {
+    if (!EvanKillingWing::Validate()) return false;
     const DWORD queueDisplacement = reinterpret_cast<DWORD>(&IllusionQueue) - (patches[15].address + 5);
     std::memcpy(patches[15].after+1, &queueDisplacement, sizeof(queueDisplacement));
     const DWORD illusionDisplacement = reinterpret_cast<DWORD>(&IllusionTiming) - (patches[11].address + 5);
@@ -237,5 +239,5 @@ bool EvanRuntime::Install() {
 #ifndef EVAN_RUNTIME_TEST
     EvanTimingDiagnostics::Install();
 #endif
-    return true;
+    return EvanKillingWing::Install();
 }

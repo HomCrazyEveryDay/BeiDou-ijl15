@@ -2292,6 +2292,12 @@ bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //t
 				if (ret && static_cast<const char*>(*ret) &&
 					!strcmp(static_cast<const char*>(*ret), "dragonShield")) *ret = "soulStone";
 				break;
+			// Unused v83 dragonFury action slot: avatar 004A5EE3, dragon 004A9C5D.
+			// Keep the original GMS 084 ghostLettering action and frames.
+			case 5502:
+				if (ret && static_cast<const char*>(*ret) &&
+					!strcmp(static_cast<const char*>(*ret), "dragonFury")) *ret = "ghostLettering";
+				break;
 			case 5505:
 				if (ret && static_cast<const char*>(*ret) &&
 					!strcmp(static_cast<const char*>(*ret), "elementalRegistance")) *ret = "mapleHero";
