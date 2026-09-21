@@ -26,6 +26,7 @@
 #include "ClientCrashFixes.h"
 #include "ChairCompatibility.h"
 #include "RefreshRateTrace.h"
+#include "PetLootTiming.h"
 #include "LauncherGate.h"
 #include <wincrypt.h>
 
@@ -1170,6 +1171,7 @@ namespace
 		BossHP::Hook();
 		Client::WorldMap();
 		RefreshRateTrace::Install();
+		PetLootTiming::Install();
 		Client::DeleteChar();
 		std::cout << "GetModuleFileName hook created" << std::endl;
 		ijl15::CreateHook(); //NMCO::CreateHook();
