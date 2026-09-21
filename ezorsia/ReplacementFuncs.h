@@ -2274,6 +2274,12 @@ bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //t
 				if (ret && static_cast<const char*>(*ret) &&
 					!strcmp(static_cast<const char*>(*ret), "dragonFly")) *ret = "flameWheel";
 				break;
+			// Register GMS084 darkFog in the unused ultimate prototype slot.
+			// Both native avatar and dragon tables read this StringPool entry.
+			case 5496:
+				if (ret && static_cast<const char*>(*ret) &&
+					!strcmp(static_cast<const char*>(*ret), "infinityExplosion")) *ret = "darkFog";
+				break;
 			case 5497:
 				if (ret && static_cast<const char*>(*ret) &&
 					!strcmp(static_cast<const char*>(*ret), "superMagicmissile")) *ret = "blaze";
@@ -2281,6 +2287,11 @@ bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //t
 			// Native tables own the UTF-16 BSTR and its lifetime.
 			// The unused elemental-resistance prototype slot registers both native
 			// action tables. GMS 084 skills use mapleHero, with original body/dragon frames.
+			// Original soulStone avatar/dragon action: v83 004A5EA4 / 004A9C47.
+			case 5501:
+				if (ret && static_cast<const char*>(*ret) &&
+					!strcmp(static_cast<const char*>(*ret), "dragonShield")) *ret = "soulStone";
+				break;
 			case 5505:
 				if (ret && static_cast<const char*>(*ret) &&
 					!strcmp(static_cast<const char*>(*ret), "elementalRegistance")) *ret = "mapleHero";
@@ -2292,6 +2303,12 @@ bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //t
 			case 5507:
 				if (ret && static_cast<const char*>(*ret) &&
 					!strcmp(static_cast<const char*>(*ret), "dragonSkin")) *ret = "OnixBlessing";
+				break;
+			// Native Soul Stone revival confirmation (GMS083 StringPool).
+			case 5460:
+				if (ret && static_cast<const char*>(*ret) &&
+					!strcmp(static_cast<const char*>(*ret), "You have revived on the current map through the effect of the Spirit Stone."))
+					*ret = "\xC4\xE3\xD2\xD1\xBD\xE8\xD6\xFA\xC1\xE9\xBB\xEA\xD6\xAE\xCA\xAF\xB5\xC4\xC1\xA6\xC1\xBF\xD4\xDA\xB5\xB1\xC7\xB0\xB5\xD8\xCD\xBC\xB8\xB4\xBB\xEE\xA1\xA3";
 				break;
 			case 5508: // v83 dragonEyes -> GMS v84 Dragon Fury resource.
 				*ret = "Effect/BasicEff.img/dragonFury"; break;
