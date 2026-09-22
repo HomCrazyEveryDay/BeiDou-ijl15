@@ -550,7 +550,12 @@ void __fastcall InventoryOnKey(void* ui,void*,unsigned int key,unsigned int flag
 bool IsMineral(int id)
 {
     return (id >= 4010000 && id <= 4010007) || (id >= 4011000 && id <= 4011008)
-        || (id >= 4020000 && id <= 4020008) || (id >= 4021000 && id <= 4021009);
+        || (id >= 4020000 && id <= 4020008) || (id >= 4021000 && id <= 4021009)
+        || (id >= 4004000 && id <= 4004004) // Crystal ores
+        || (id >= 4005000 && id <= 4005004) // Refined crystals
+        || (id >= 4260000 && id <= 4260008) // Maker monster/item crystals
+        || ((id / 100 == 42504 || (id / 100 >= 42508 && id / 100 <= 42514))
+            && id % 100 <= 2); // Lower/intermediate/advanced Maker crystals
 }
 int __stdcall HandleEtcDoubleClick(void* nativeItem, int slot)
 {
