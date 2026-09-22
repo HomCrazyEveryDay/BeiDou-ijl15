@@ -13,6 +13,37 @@ constexpr DWORD Native(DWORD address) { return address + 0x10000000; }
 #else
 constexpr DWORD Native(DWORD address) { return address; }
 #endif
+// CDragon's movement tear-off is dragon+4. v83 4FEAA7 chooses the normal
+// movement direction from vx; this turns Mir around when the owner is knocked
+// backwards without turning. Keep the native move/stand action and trajectory,
+// but use the local owner's CAvatar direction for ordinary following only.
+// v84 50753A adds direction hysteresis; it still uses vx, so this is an explicit
+// follow-facing fix, not a claim that v84 already implements this policy.
+const DWORD dragonMoveContinue = Native(0x004FEAAC);
+__declspec(naked) void DragonMoveOriginal() {
+    __asm {
+        push esi
+        mov esi, [esp+10h]
+        jmp dword ptr [dragonMoveContinue]
+    }
+}
+int __fastcall DragonMoveFacing(void* movement, void*, int vx, int vy, int stance, void* controller) {
+    using Calculate = int(__thiscall*)(void*, int, int, int, void*);
+    const int result = reinterpret_cast<Calculate>(&DragonMoveOriginal)(movement, vx, vy, stance, controller);
+    auto dragon = static_cast<unsigned char*>(movement) - 4;
+    void* owner = *reinterpret_cast<void**>(dragon + 0xf8);
+    if (!owner || (result >> 1) < 1 || (result >> 1) > 2) return result;
+    using IsLocal = int(__thiscall*)(void*);
+    const auto table = *reinterpret_cast<void***>(owner);
+    if (!reinterpret_cast<IsLocal>(table[3])(owner)) return result;
+    // Same secure one-time-action getter used by 4FEB23 / 4FF44F.
+    using Decode = int(__cdecl*)(void*, int);
+    const int action = reinterpret_cast<Decode>(Native(0x00416563))(
+        dragon + 0x98, *reinterpret_cast<int*>(dragon + 0xa0));
+    if (action > -1) return result; // Preserve casting, including breath layer flip.
+    const int ownerStance = *reinterpret_cast<int*>(static_cast<unsigned char*>(owner) + 0x570);
+    return (result & ~1) | (ownerStance & 1); // CAvatar+4E8, owner+88.
+}
 // v84 treats 5620006..8 as mastery books (0x4F959A). Keep the v83
 // native skill-book packet/lock lifecycle and accept their CASH slots.
 const DWORD bookClickReturn = Native(0x004F06CB);
@@ -345,12 +376,15 @@ Patch patches[] = {
     {Native(0x00982C0C), {0x81,0xf9,0x28,0x8a,0x51,0x01}, {0xe9,0x87,0x01,0,0,0x90}, 6},
     {Native(0x006660BD), {0x8b,0x86,0xbc,0,0,0}, {0xe9,0,0,0,0,0x90}, 6},
     {Native(0x00980760), {0xe8,0x4d,0xe6,0xfa,0xff}, {0xe9,0,0,0,0}, 5},
-    {Native(0x00666111), {0xe8,0x17,0x05,0x10,0}, {0xe9,0,0,0,0}, 5}
+    {Native(0x00666111), {0xe8,0x17,0x05,0x10,0}, {0xe9,0,0,0,0}, 5},
+    {Native(0x004FEAA7), {0x56,0x8b,0x74,0x24,0x10}, {0xe9,0,0,0,0}, 5}
 };
 }
 
 bool EvanRuntime::Install() {
     if (!EvanKillingWing::Validate()) return false;
+    const DWORD dragonDisplacement = reinterpret_cast<DWORD>(&DragonMoveFacing) - (patches[26].address + 5);
+    std::memcpy(patches[26].after+1, &dragonDisplacement, sizeof(dragonDisplacement));
     const DWORD beaconDisplacement=reinterpret_cast<DWORD>(&BeaconCleanupProbe)-(patches[25].address+5);
     std::memcpy(patches[25].after+1,&beaconDisplacement,sizeof(beaconDisplacement));
     const DWORD actionDisplacement = reinterpret_cast<DWORD>(&RemoteAction) - (patches[24].address + 5);

@@ -258,6 +258,8 @@ __declspec(naked) int LoadsResource(int offset) {
         ret
     }
 }
+static int __fastcall DragonTestLocal(void*, void*) { return 1; }
+static int __fastcall DragonTestRemote(void*, void*) { return 0; }
 int main(int argc,char** argv) {
     if(argc!=2)return 1;
     // Reserve native addresses before loading the large PE file into a heap buffer.
@@ -515,7 +517,32 @@ int main(int argc,char** argv) {
             }
         }
     }
-    puts("PASS native signatures, atomic rejection, Dark Fog area gate, critical footer trampoline, Illusion timing, Blaze/Flame Wheel gates, mastery and cash books");
+    // Execute the installed dragon entry hook and its displaced instructions.
+    // Stub action decoding only; the original vx -> move/stand calculation runs.
+    const BYTE dragonAction[]={0x33,0xc0,0xc2,0x04,0x00};
+    const BYTE decodeAction[]={0x8b,0x44,0x24,0x08,0xc3};
+    memcpy(reinterpret_cast<void*>(0x104feb23),dragonAction,sizeof(dragonAction));
+    memcpy(reinterpret_cast<void*>(0x10416563),decodeAction,sizeof(decodeAction));
+    int dragon[0x120/4]{}, dragonOwner[0x580/4]{};
+    void* ownerTable[4]{nullptr,nullptr,nullptr,reinterpret_cast<void*>(&DragonTestLocal)};
+    *reinterpret_cast<void***>(dragonOwner)=ownerTable;
+    *reinterpret_cast<void**>(reinterpret_cast<BYTE*>(dragon)+0xf8)=dragonOwner;
+    auto dragonMove=reinterpret_cast<int(__thiscall*)(void*,int,int,int,void*)>(0x104feaa7);
+    for(int local:{0,1}) {
+        ownerTable[3]=reinterpret_cast<void*>(local?&DragonTestLocal:&DragonTestRemote);
+        for(int active:{-1,0,8,24}) {
+            dragon[0xa0/4]=active;
+            for(int facing:{0,1}) for(int vx:{-100,0,100}) for(int previous:{2,3,4,5}) {
+                dragonOwner[0x570/4]=8|facing;
+                const int native=vx ? (2|(vx<0 ? 1 : 0)) : (4|(previous&1));
+                const int expected=local && active<0 ? ((native&~1)|facing) : native;
+                if(dragonMove(reinterpret_cast<BYTE*>(dragon)+4,vx,0,previous,nullptr)!=expected)return 55;
+            }
+        }
+    }
+    *reinterpret_cast<void**>(reinterpret_cast<BYTE*>(dragon)+0xf8)=nullptr;
+    if(dragonMove(reinterpret_cast<BYTE*>(dragon)+4,-100,0,2,nullptr)!=3)return 56;
+    puts("PASS native signatures, atomic rejection, dragon follow facing/ABI, Dark Fog area gate, critical footer trampoline, Illusion timing, Blaze/Flame Wheel gates, mastery and cash books");
     for(DWORD page:{0x104e0000,0x104f0000,0x10750000,0x10760000,0x10950000,0x10960000,0x10a00000}) VirtualFree(reinterpret_cast<void*>(page),0,MEM_RELEASE);
     return 0;
 }
