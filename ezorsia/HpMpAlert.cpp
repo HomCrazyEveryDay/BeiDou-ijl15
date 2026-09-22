@@ -4,6 +4,7 @@
 #include "HpMpAlert.h"
 #include "CrashReporter.h"
 #include "ClientDiagnostics.h"
+#include "EvanAttackDiagnostics.h"
 #include "DisconnectDiagnostics.h"
 #include "IntegratedFinalAttack.h"
 #include "SnipeDamageSync.h"
@@ -683,6 +684,7 @@ static bool HandleShowMobDamagePacket(CInPacket* packet) {
     }
 }
 static void __fastcall ShowMobDamage_Hook(void* pThis, void* edx, int damage, int lineIndex, int extra, int compact) {
+    EvanAttackDiagnostics::RenderCall(pThis, damage, lineIndex, extra, false);
     if (!g_renderingServerMobDamage) {
         if (HurricaneDamageSync::ShouldSuppressLocalDamage(pThis, damage)) {
             return;
@@ -726,6 +728,7 @@ static void __fastcall ShowMobDamage_Hook(void* pThis, void* edx, int damage, in
             return;
         }
     }
+    EvanAttackDiagnostics::RenderCall(pThis, damage, lineIndex, extra, true);
     g_ShowMobDamage(pThis, edx, damage, lineIndex, extra, compact);
     int additionalDamage = 0;
     if (!g_renderingServerMobDamage
@@ -770,6 +773,8 @@ static void TraceIncomingPacket(CInPacket* packet) {
 }
 static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
     TraceIncomingPacket(packet);
+    if (packet) EvanAttackDiagnostics::Observe(
+        reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen, true);
     if (packet && MineralBagWnd::HandlePacket(
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet && ClientDiagnostics::HandleIncoming(
@@ -847,6 +852,9 @@ void HookHpMpAlertRecv(bool enable) {
     Memory::SetHook(enable, reinterpret_cast<void**>(&g_ShowMobDamage), ShowMobDamage_Hook);
     const bool receiveReady = Memory::SetHook(enable, reinterpret_cast<void**>(&s_ProcessPacket), ProcessPacket_Hook);
     if (enable) ClientDiagnostics::SetAckConsumerReady(receiveReady);
+    if (enable) ClientLog::Append(ClientLog::Component::Trace,
+        "event=evan_attack_diagnostics version=1 enabled=%d receiveHook=%d maxSkills=32 maxCastsPerSkill=8 maxRecords=8192",
+        EvanAttackDiagnostics::Enabled(), receiveReady);
 }
 
 void UpdateQueuedMobDamageDisplay() {

@@ -7,6 +7,62 @@
 
 // Execute the actual patched comparison gates in an isolated executable.
 // Map original image bytes for signature validation; never run game startup.
+__declspec(naked) DWORD MarkerAt(void* mob) {
+    __asm {
+        push ebp
+        mov ebp,esp
+        push esi
+        push edi
+        sub esp,40h
+        mov esi,[ebp+8]
+        xor edi,edi
+        mov eax,106660bdh
+        call eax
+        lea esp,[ebp-8]
+        pop edi
+        pop esi
+        pop ebp
+        ret
+    }
+}
+__declspec(naked) unsigned FooterAt(int skill, int count, void* target) {
+    __asm {
+        push ebp
+        mov ebp, esp
+        push esi
+        push edi
+        mov edi, ebp
+        sub esp, 80h
+        lea ebp, [esp+70h]
+        mov eax, [edi+8]
+        mov [ebp-14h], eax
+        mov eax, [edi+0ch]
+        mov [ebp-64h], eax
+        mov esi, [edi+10h]
+        mov eax, 10957069h
+        call eax
+        mov ebp, edi
+        lea esp, [ebp-8]
+        pop edi
+        pop esi
+        pop ebp
+        ret
+    }
+}
+__declspec(naked) int RemoteScreenEffect(int skill) {
+    __asm {
+        push ebp
+        sub esp, 24h
+        lea ebp, [esp+14h]
+        mov eax, [esp+2ch]
+        mov [ebp-14h], eax
+        mov eax, 10982b33h
+        call eax
+        add esp, 24h
+        pop ebp
+        ret
+    }
+}
 __declspec(naked) DWORD CompareAt(DWORD site, DWORD skill) {
     __asm {
         push ebp
@@ -149,6 +205,30 @@ __declspec(naked) void ResetCells(void* avatar,int bank) {
         ret
     }
 }
+__declspec(naked) int AreaBranch(int skill) {
+    __asm {
+        mov eax, [esp+4]
+        mov ecx, 10982744h
+        jmp ecx
+    }
+}
+__declspec(naked) DWORD CompareEcx(DWORD site, DWORD skill) {
+    __asm {
+        mov ecx, [esp+8]
+        mov eax, [esp+4]
+        call eax
+        pushfd
+        pop eax
+        ret
+    }
+}
+__declspec(naked) int RemoteBallBranch(int skill) {
+    __asm {
+        mov eax, [esp+4]
+        mov ecx, 10982966h
+        jmp ecx
+    }
+}
 // Execute the native metadata-loader comparison, not just action name lookup.
 __declspec(naked) int LoadsAction(int index) {
     __asm {
@@ -204,26 +284,47 @@ int main(int argc,char** argv) {
     *reinterpret_cast<BYTE*>(0x10955edd)=0;
     if(EvanRuntime::Install() || *reinterpret_cast<BYTE*>(0x10955e26)!=0x0f) return 4;
     *reinterpret_cast<BYTE*>(0x10955edd)=original;
+    // Every new observer-site mismatch must reject the entire install.
+    for(DWORD site:{0x10982752,0x1098296d,0x109829e8,0x10982acd,0x10982fac,0x10957069,0x10982c0c}) {
+        const BYTE saved=*reinterpret_cast<BYTE*>(site);
+        *reinterpret_cast<BYTE*>(site)=0;
+        if(EvanRuntime::Install() || *reinterpret_cast<DWORD*>(0x10955e22)!=22181001)return 38;
+        *reinterpret_cast<BYTE*>(site)=saved;
+    }
+    // Execute the original dispatch first, then the patched dispatch against
+    // the same native bytes. Ordinary mage effects must remain unchanged.
+    const DWORD effectSites[]={0x10982b7f,0x10982c20,0x10982ca9,0x10982d98};
+    for(unsigned i=0;i<4;++i) {
+        const BYTE stub[]={0xb8,static_cast<BYTE>(i+1),0,0,0,0xc3};
+        memcpy(reinterpret_cast<void*>(effectSites[i]),stub,sizeof(stub));
+    }
+    for(int skill:{22121000,22151001}) if(RemoteScreenEffect(skill)!=2)return 46;
+    const std::pair<int,int> screenCases[]={
+        {2111002,1},{2121001,2},{2221001,2},{2321001,2},
+        {2121007,3},{2221007,3},{2321008,3},{12111003,3},
+        {22121000,4},{22151001,4},{22171003,4},{22181001,4},{22181002,4}};
+    for(auto c:screenCases) if(c.first/1000000!=22 && RemoteScreenEffect(c.first)!=c.second)return 47;
     if(!EvanRuntime::Install())return 5;
+    for(auto c:screenCases) if(RemoteScreenEffect(c.first)!=c.second)return 48;
     // Appended action tables keep all existing indexes and extend only the
     // name lookup, avatar bounds, and dynamically allocated dragon caches.
     const DWORD avatarTable=*reinterpret_cast<DWORD*>(0x10406c1c);
     const DWORD dragonTable=*reinterpret_cast<DWORD*>(0x10411494);
     if(!avatarTable || !dragonTable || avatarTable==0xbec620 || dragonTable==0xbec3f8)return 21;
-    if(*reinterpret_cast<DWORD*>(0x104a8d33)!=avatarTable+163*24)return 22;
-    if(*reinterpret_cast<DWORD*>(0x104a8dc5)!=dragonTable+22*4)return 23;
-    if(*reinterpret_cast<BYTE*>(0x10453b2d)!=163 || *reinterpret_cast<BYTE*>(0x104fec49)!=22)return 24;
+    if(*reinterpret_cast<DWORD*>(0x104a8d33)!=avatarTable+166*24)return 22;
+    if(*reinterpret_cast<DWORD*>(0x104a8dc5)!=dragonTable+25*4)return 23;
+    if(*reinterpret_cast<BYTE*>(0x10453b2d)!=166 || *reinterpret_cast<BYTE*>(0x104fec49)!=25)return 24;
 
     // Regression for the 2026-09-21 null-frame crash at native 00455F53:
-    // both loader loops must reach index 162, but stop before index 163.
+    // both loader loops must reach every appended action and stop at 166.
     *reinterpret_cast<BYTE*>(0x104073a8)=0xc3;
     *reinterpret_cast<BYTE*>(0x1040b2a9)=0xc3;
-    for(int index:{0,161,162,163}) {
-        if(LoadsAction(index)!=(index<163))return 35;
-        if(LoadsResource(index*48)!=(index<163))return 36;
+    for(int index:{0,161,162,163,164,165,166}) {
+        if(LoadsAction(index)!=(index<166))return 35;
+        if(LoadsResource(index*48)!=(index<166))return 36;
     }
-    if(*reinterpret_cast<DWORD*>(0x1040acdb)!=163 ||
-       *reinterpret_cast<DWORD*>(0x1040acff)!=163*16)return 37;
+    if(*reinterpret_cast<DWORD*>(0x1040acdb)!=166 ||
+       *reinterpret_cast<DWORD*>(0x1040acff)!=166*16)return 37;
 
     // Exercise the installed cache trampolines, both banks and destruction.
     *reinterpret_cast<BYTE*>(0x1045456f)=0xc3;
@@ -240,6 +341,12 @@ int main(int argc,char** argv) {
     DWORD cell=PrepareCells(owner+0x4f0,162,&normal);
     if(!normal || cell!=reinterpret_cast<DWORD>(normal)+4)return 26;
     if(UpdateCells(owner+0x4f0,162,&updated)!=cell || normal!=updated)return 27;
+    void* first=normal;
+    for(int action:{163,164,165}) {
+        DWORD extra=PrepareCells(owner+0x4f0,action,&normal);
+        if(normal==first || UpdateCells(owner+0x4f0,action,&updated)!=extra || normal!=updated)return 49;
+        first=normal;
+    }
     void* second=nullptr;
     PrepareCells(owner+0x4f0+0x5dc,162,&second);
     if(normal==second)return 28;
@@ -249,13 +356,43 @@ int main(int argc,char** argv) {
         if(UpdateCells(owner+0x4f0,index,&updated)!=reinterpret_cast<DWORD>(owner+0x4f0+0x298+index*4) || normal!=updated)return 31;
     }
     ResetCells(owner,0);
-    if(destroyed!=2)return 32;
+    if(destroyed!=8)return 32;
     ResetCells(owner,0);
-    if(destroyed!=2)return 33;
+    if(destroyed!=8)return 33;
     reinterpret_cast<void(__thiscall*)(void*)>(0x10450093)(owner+0x4f0+0x5dc);
-    if(destroyed!=4)return 34;
+    if(destroyed!=16)return 34;
     // Execute the new gate, including the predecessor comparison flags.
     const BYTE yes[]={0xb8,1,0,0,0,0xc3},no[]={0x31,0xc0,0xc3};
+    // Run the predecessor Breath checks and actual JZ after the trampoline.
+    // Simulate eight successive target visits; every area target must reach
+    // scheduling regardless of where the projectile culling would have exited.
+    memcpy(reinterpret_cast<void*>(0x10982784),yes,sizeof(yes));
+    memcpy(reinterpret_cast<void*>(0x10982759),no,sizeof(no));
+    for(int skill:{22121000,22151001,22131000,22161001,22171003,22181001,22181002})
+        for(int target=0;target<8;++target) if(AreaBranch(skill)!=1)return 49;
+    for(int skill:{22001001,22141001,22171002,1121008}) if(AreaBranch(skill)!=0)return 50;
+    // Execute native observer dispatch, including the existing Chain Lightning
+    // predecessor: Flame Wheel must never enter the ball queue (/1 failure).
+    memcpy(reinterpret_cast<void*>(0x109829e2),yes,sizeof(yes));
+    memcpy(reinterpret_cast<void*>(0x10982974),no,sizeof(no));
+    for(int skill:{22181001,22171003,22181002,22131000,22161001,22171002,2221006,2121006}) {
+        if(RemoteBallBranch(skill)!=(skill==22181001 || skill==2221006))return 39;
+    }
+    for(DWORD site:{0x10982752,0x1098296d}) {
+        *reinterpret_cast<BYTE*>(site+5)=0xc3;
+        for(int skill:{22181001,22171003,22181002,22131000,22161001,22171002,22001001,22141001,2221006}) {
+            const bool area=skill==22171003 || skill==22181002 || skill==22131000 || skill==22161001;
+            if(((CompareRegister(site,skill)&0x40)!=0)!=(skill==22181001 || (site==0x10982752 && area)))return 40;
+        }
+    }
+    *reinterpret_cast<BYTE*>(0x109829ee)=0xc3;
+    for(int skill:{22181001,22171003,22181002,2221006})
+        if(((CompareEcx(0x109829e8,skill)&0x40)!=0)!=(skill==22181001))return 41;
+    for(DWORD site:{0x10982acd,0x10982fac}) {
+        *reinterpret_cast<BYTE*>(site+7)=0xc3;
+        for(int skill:{22181001,22171003,22181002,2221006})
+            if(((CompareAt(site,skill)&0x40)!=0)!=(skill==22181001))return 42;
+    }
     memcpy(reinterpret_cast<void*>(0x10956372),yes,sizeof(yes));
     memcpy(reinterpret_cast<void*>(0x10955e2c),no,sizeof(no));
     for(int skill:{22151002,22171003,22181001,22001001}) {
@@ -342,7 +479,43 @@ int main(int argc,char** argv) {
     *reinterpret_cast<BYTE*>(0x10955e26)=0xc3;
     for(DWORD skill:{22171003,22181001,22171002,2121006})
         if(((CompareRegister(0x10955e21,skill)&0x40)!=0)!=(skill==22171003))return 11;
-    puts("PASS native image signatures, atomic rejection, Illusion timing independent of previous action across booster speeds, unrelated skills unchanged, Blaze/Flame Wheel gates, mastery and cash books");
+    // Execute marker registration, not merely a byte comparison. No state means
+    // no visual; active/refreshed state uses the received skill ID exactly once.
+    if(!VirtualAlloc(reinterpret_cast<void*>(0x10470000),0x10000,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE))return 50;
+    int markerCalls=0, markerSkill=0;
+    BYTE insert[]={0x8b,0x44,0x24,0x04,0x8b,0x00,0xa3,0,0,0,0,0xff,0x05,0,0,0,0,0xc2,0x08,0x00};
+    *reinterpret_cast<int**>(insert+7)=&markerSkill;
+    *reinterpret_cast<int**>(insert+13)=&markerCalls;
+    memcpy(reinterpret_cast<void*>(0x1047ccb7),insert,sizeof(insert));
+    *reinterpret_cast<BYTE*>(0x106660c3)=0xc3;
+    int mob[0x400/4]{}; mob[0xbc/4]=123;
+    if(MarkerAt(mob)!=123 || markerCalls)return 51;
+    mob[0x370/4]=10; mob[0x374/4]=22161002;
+    if(MarkerAt(mob)!=123 || markerCalls!=1 || markerSkill!=22161002)return 52;
+    MarkerAt(mob);
+    if(markerCalls!=2)return 53;
+    mob[0x370/4]=0; MarkerAt(mob);
+    if(markerCalls!=2)return 54;
+    // Run the actual footer trampoline against a native-shaped target. The
+    // original getter is stubbed, and the damage array must stay untouched.
+    auto footerPage=VirtualAlloc(reinterpret_cast<void*>(0x10670000),0x10000,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE);
+    if(!footerPage)return 43;
+    const BYTE getter[]={0xb8,0x78,0x56,0x34,0x12,0xc3};
+    memcpy(reinterpret_cast<void*>(0x106711ac),getter,sizeof(getter));
+    *reinterpret_cast<BYTE*>(0x10957070)=0xc3;
+    int target[0x98/4]{};
+    for(int skill:{22181002,22171002,22001001,2121006}) {
+        for(int count:{0,1,4,15,16}) {
+            for(unsigned mask:{0u,1u,5u,0x7fffu}) {
+                for(int i=0;i<15;++i) {target[6+i]=95002+i;target[21+i]=(mask>>i)&1;}
+                unsigned expected=(skill/1000000==22 && count>=1 && count<=15)
+                    ? 0xec010000u|(mask&((1u<<count)-1)) : 0x12345678;
+                if(FooterAt(skill,count,target)!=expected)return 44;
+                for(int i=0;i<15;++i)if(target[6+i]!=95002+i)return 45;
+            }
+        }
+    }
+    puts("PASS native signatures, atomic rejection, Dark Fog area gate, critical footer trampoline, Illusion timing, Blaze/Flame Wheel gates, mastery and cash books");
     for(DWORD page:{0x104e0000,0x104f0000,0x10750000,0x10760000,0x10950000,0x10960000,0x10a00000}) VirtualFree(reinterpret_cast<void*>(page),0,MEM_RELEASE);
     return 0;
 }

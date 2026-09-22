@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "EvanAttackDiagnostics.h"
 #include "SelectCharMacFix.h"
 #include "ClientDiagnostics.h"
 #include "DisconnectDiagnostics.h"
@@ -177,6 +178,7 @@ static void __fastcall SendPacket_Hook(void* pThis, void* edx, COutPacket* packe
         outgoingPacket = &integratedPacket;
     }
     if (outgoingPacket != nullptr) {
+        EvanAttackDiagnostics::Observe(outgoingPacket->Data, outgoingPacket->Size, false);
         AbsoluteDefenseSync::TrackOutgoingAttackPacket(outgoingPacket->Data, outgoingPacket->Size);
         SnipeDamageSync::TrackOutgoingAttackPacket(outgoingPacket->Data, outgoingPacket->Size);
         HurricaneDamageSync::TrackOutgoingAttackPacket(outgoingPacket->Data, outgoingPacket->Size);
