@@ -12,6 +12,8 @@ extern "C" IMAGE_DOS_HEADER __ImageBase;
 namespace {
 INIT_ONCE g_initialized = INIT_ONCE_STATIC_INIT;
 SRWLOCK g_writeLock = SRWLOCK_INIT;
+thread_local unsigned int g_emergencyBatchDepth = 0;
+thread_local HANDLE g_emergencyBatchFile = INVALID_HANDLE_VALUE;
 wchar_t g_directory[MAX_PATH]{};
 wchar_t g_session[80]{};
 constexpr LONGLONG kMaximumLogBytes = 8 * 1024 * 1024;
@@ -184,6 +186,17 @@ void ClientLog::Append(Component component, const char* format, ...)
     SetLastError(savedError);
 }
 
+ClientLog::EmergencyBatch::EmergencyBatch() { ++g_emergencyBatchDepth; }
+ClientLog::EmergencyBatch::~EmergencyBatch() {
+    const DWORD savedError = GetLastError();
+    if (--g_emergencyBatchDepth == 0 && g_emergencyBatchFile != INVALID_HANDLE_VALUE) {
+        FlushFileBuffers(g_emergencyBatchFile);
+        CloseHandle(g_emergencyBatchFile);
+        g_emergencyBatchFile = INVALID_HANDLE_VALUE;
+    }
+    SetLastError(savedError);
+}
+
 void ClientLog::Emergency(const char* format, ...)
 {
     // Initialize() ran before diagnostic hooks were installed. Do not acquire
@@ -207,13 +220,19 @@ void ClientLog::Emergency(const char* format, ...)
         "%04u-%02u-%02uT%02u:%02u:%02u.%03uZ pid=%lu tid=%lu %s\r\n",
         now.wYear, now.wMonth, now.wDay, now.wHour, now.wMinute, now.wSecond,
         now.wMilliseconds, GetCurrentProcessId(), GetCurrentThreadId(), message);
-    HANDLE file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-        nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    HANDLE file = g_emergencyBatchFile;
+    if (file == INVALID_HANDLE_VALUE) {
+        file = CreateFileW(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (g_emergencyBatchDepth) g_emergencyBatchFile = file;
+    }
     if (file != INVALID_HANDLE_VALUE) {
         DWORD written = 0;
         WriteFile(file, line, static_cast<DWORD>(lstrlenA(line)), &written, nullptr);
-        FlushFileBuffers(file);
-        CloseHandle(file);
+        if (!g_emergencyBatchDepth) {
+            FlushFileBuffers(file);
+            CloseHandle(file);
+        }
     }
     SetLastError(savedError);
 }

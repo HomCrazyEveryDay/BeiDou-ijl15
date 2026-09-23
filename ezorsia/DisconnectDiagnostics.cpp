@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "ReactorTimingDiagnostics.h"
 #include <winsock2.h>
 #include <intrin.h>
 #include "DisconnectDiagnostics.h"
@@ -302,6 +303,27 @@ __declspec(noinline) void CaptureObservedDump(EXCEPTION_POINTERS* info) {
         addresses[i]=reinterpret_cast<std::uintptr_t>(frames[i]);
         fingerprint = (fingerprint ^ addresses[i]) * 1099511628211ULL;
     }
+    // Gate the entire first-chance report BEFORE logging or provenance expansion.
+    // Native code can catch these exceptions on every cast. Dump-only deduplication
+    // still left dozens of synchronous disk flushes on the game thread per cast.
+    static SRWLOCK observedLock = SRWLOCK_INIT;
+    static unsigned long long observed[16]{};
+    static unsigned int observedCount = 0;
+    if (!TryAcquireSRWLockExclusive(&observedLock)) return;
+    bool duplicate = false;
+    for (unsigned int i = 0; i < observedCount; ++i)
+        if (observed[i] == fingerprint) duplicate = true;
+    if (duplicate || observedCount == ARRAYSIZE(observed)) {
+        ReleaseSRWLockExclusive(&observedLock);
+        return;
+    }
+    observed[observedCount++] = fingerprint;
+    ReleaseSRWLockExclusive(&observedLock);
+    ClientLog::EmergencyBatch batch;
+    ClientLog::Emergency("first_chance_not_necessarily_fatal code=%08lX address=%p eip=%08lX esp=%08lX",
+        info->ExceptionRecord->ExceptionCode, info->ExceptionRecord->ExceptionAddress,
+        info->ContextRecord->Eip, info->ContextRecord->Esp);
+    Event("first_chance_exception_not_necessarily_fatal", INVALID_SOCKET, 0, info);
     LogExceptionParameters(info);
     ResourceProvenance::Failure();
     const bool resourceFailure = ConditionalDumpPolicy::ResourceFailure(
@@ -317,12 +339,14 @@ LONG CALLBACK ObserveException(EXCEPTION_POINTERS* info) {
         || code == EXCEPTION_INT_DIVIDE_BY_ZERO || code == EXCEPTION_IN_PAGE_ERROR
         || code == EXCEPTION_NONCONTINUABLE_EXCEPTION || code == 0xE06D7363) {
         g_observingException = true;
-        ClientLog::Emergency("first_chance_not_necessarily_fatal code=%08lX address=%p eip=%08lX esp=%08lX",
-            code, info->ExceptionRecord->ExceptionAddress, info->ContextRecord->Eip, info->ContextRecord->Esp);
-        Event("first_chance_exception_not_necessarily_fatal", INVALID_SOCKET, 0, info);
+        const DWORD savedError = GetLastError();
         // First-chance snapshots remain explicitly non-fatal. Capture is bounded
         // and deduplicated, independent of the skill or final exception filter.
+        const DWORD reactorStart=GetTickCount();
         CaptureObservedDump(info);
+        if(ReactorTimingDiagnostics::Active())
+            ReactorTimingDiagnostics::Log("exception_observer",GetTickCount()-reactorStart,static_cast<int>(code));
+        SetLastError(savedError);
         g_observingException = false;
     }
     return EXCEPTION_CONTINUE_SEARCH;

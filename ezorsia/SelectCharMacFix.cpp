@@ -1,5 +1,7 @@
 #include "stdafx.h"
+#include "ReactorTimingDiagnostics.h"
 #include "EvanAttackDiagnostics.h"
+#include "SnailTimingDiagnostics.h"
 #include "SelectCharMacFix.h"
 #include "ClientDiagnostics.h"
 #include "DisconnectDiagnostics.h"
@@ -184,7 +186,14 @@ static void __fastcall SendPacket_Hook(void* pThis, void* edx, COutPacket* packe
         HurricaneDamageSync::TrackOutgoingAttackPacket(outgoingPacket->Data, outgoingPacket->Size);
         ShadowPartnerDamageSync::TrackOutgoingAttackPacket(outgoingPacket->Data, outgoingPacket->Size);
     }
+    const bool reactorTracked=outgoingPacket && ReactorTimingDiagnostics::Send(outgoingPacket->Data,outgoingPacket->Size);
+    if(outgoingPacket)SnailTimingDiagnostics::Packet(outgoingPacket->Data,outgoingPacket->Size);
+    const bool snailTracked=SnailTimingDiagnostics::Active();
+    const DWORD snailStart=GetTickCount();
     g_SendPacket(pThis, edx, outgoingPacket);
+    if(reactorTracked)ReactorTimingDiagnostics::Log("send_return",GetTickCount()-snailStart);
+    if(snailTracked && GetTickCount()-snailStart>=100)
+        SnailTimingDiagnostics::Log("send_slow",GetTickCount()-snailStart,0);
 }
 }
 

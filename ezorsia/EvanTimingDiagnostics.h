@@ -1,5 +1,7 @@
 #pragma once
 #include "ClientLog.h"
+#include "SnailTimingDiagnostics.h"
+#include "ReactorTimingDiagnostics.h"
 
 // Event-only diagnostics. No packet contents, frame traces, or process scanning.
 // Thread-local state follows the client's game thread; update observes only the
@@ -89,6 +91,15 @@ static void End(Cast& cast, int result) {
     }
 }
 static int __fastcall AttackHook(void* user, void*, void* skill, int level, int x, int y) {
+    if (skill && SnailTimingDiagnostics::Skill(Read(skill,0))) {
+        const bool tracked=SnailTimingDiagnostics::Begin(Read(skill,0),"magic_entry");
+        SnailTimingDiagnostics::Current().entering=tracked;
+        const DWORD start=GetTickCount();
+        int result=attack(user,skill,level,x,y);
+        SnailTimingDiagnostics::Current().entering=false;
+        if(tracked)SnailTimingDiagnostics::Log("magic_return",GetTickCount()-start,result);
+        return result;
+    }
     if (!Evan(skill) || records >= 512 || !Sample(user,skill)) return attack(user, skill, level, x, y);
     Cast cast = Begin(user, skill);
     int result;
@@ -112,7 +123,12 @@ static void __fastcall PrepareHook(void* avatar, void*, int speed, int movementS
     if (tracked) Record(*cast, "prepare_end", speed, action(avatar), Duration(avatar));
 }
 static void __fastcall UpdateHook(void* user, void*) {
+    const DWORD snailStart=GetTickCount();
+    ReactorTimingDiagnostics::UpdateBegin(snailStart);
+    SnailTimingDiagnostics::UpdateBegin(snailStart);
     update(user);
+    ReactorTimingDiagnostics::UpdateEnd(snailStart);
+    SnailTimingDiagnostics::UpdateEnd(snailStart);
     if (!current.pending || current.user != user) return;
     void* avatar = static_cast<unsigned char*>(user) + 0x88;
     const int state = action(avatar);

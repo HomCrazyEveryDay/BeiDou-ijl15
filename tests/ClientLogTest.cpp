@@ -200,6 +200,24 @@ int wmain(int argc, wchar_t** argv)
     CloseHandle(reader);
     Require(Read(path).find("upload_in_progress") != std::string::npos, "writing continues during upload");
 
+    SetLastError(ERROR_ACCESS_DENIED);
+    {
+        ClientLog::EmergencyBatch outer;
+        ClientLog::Emergency("batch_outer");
+        {
+            ClientLog::EmergencyBatch inner;
+            ClientLog::Emergency("batch_inner");
+        }
+        std::thread other([] { ClientLog::Emergency("batch_other_thread"); });
+        other.join();
+        SetLastError(ERROR_ACCESS_DENIED);
+    }
+    Require(GetLastError() == ERROR_ACCESS_DENIED, "batch flush preserves last error");
+    ClientLog::Emergency("after_batch");
+    const auto emergency = Read(directory + L"\\ijl15-emergency-" + ClientLog::SessionId() + L".log");
+    for (const char* marker : {"batch_outer", "batch_inner", "batch_other_thread", "after_batch"})
+        Require(emergency.find(marker) != std::string::npos, "nested and cross-thread emergency records survive batching");
+
     CrashReporter::Install(true, "normal", true);
     if (argc > 2 && std::wcscmp(argv[2], L"pending") == 0) {
         unsigned char identify[ClientDiagnostics::kIdentifyPacketSize]{};

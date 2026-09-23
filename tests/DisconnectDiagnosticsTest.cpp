@@ -123,7 +123,8 @@ int main() {
         || count("kind=local_socket_close socket=") != 5
         || count("kind=local_socket_close_error socket=") != 1
         || count("kind=recv_error") != 27
-        || count("kind=first_chance_exception_not_necessarily_fatal") != 127) return 11;
+        || count("kind=first_chance_exception_not_necessarily_fatal") < 2
+        || count("kind=first_chance_exception_not_necessarily_fatal") > 16) return 11;
     if (log.find("recvHook=1 closeHook=1 exceptionObserver=1") == std::string::npos
         || log.find("kind=recv_error") == std::string::npos
         || log.find("kind=local_socket_close") == std::string::npos
@@ -133,9 +134,14 @@ int main() {
         || log.find("opcode=0200") != std::string::npos) return 5;
     const auto begin = log.find("repeat_test_begin");
     const auto end = log.find("repeat_test_end");
-    if (begin == std::string::npos || end == std::string::npos || end - begin > 100000
-        || count("exception_repeat ") < 95 || count("opcode=0999") == 0) return 20;
-    printf("100 real exceptions retained: %zu bytes, with refreshed details after a new packet\n", end - begin);
+    if (begin == std::string::npos || end == std::string::npos || end - begin > 20000
+        || count("exception_repeat ") != 0) return 20;
+    const auto repeated = log.substr(begin, end - begin);
+    const auto first = repeated.find("kind=first_chance_exception_not_necessarily_fatal");
+    // CaptureRealFault already ran above. Optimized stack capture may identify
+    // that call and this loop as the same fingerprint: zero new reports is valid.
+    if (first != std::string::npos && repeated.find("kind=first_chance_exception_not_necessarily_fatal", first + 1) != std::string::npos) return 22;
+    printf("100 real exceptions propagate with at most one new bounded report: %zu bytes\n", end - begin);
     WSACleanup();
     puts("PASS socket hooks preserve errors, exceptions propagate, packet history is bounded");
     return 0;

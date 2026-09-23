@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "ReactorTimingDiagnostics.h"
 #include "MineralBagWnd.h"
 #include "AbsoluteDefenseSync.h"
 #include "HpMpAlert.h"
@@ -815,11 +816,15 @@ static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
     }
 }
 static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* packet) {
+    const bool reactorTracked=packet && ReactorTimingDiagnostics::Receive(
+        reinterpret_cast<const unsigned char*>(packet->Data),packet->DataLen);
+    const DWORD reactorStart=GetTickCount();
     __try {
         ProcessPacketBody(pThis, edx, packet);
     } __except (DisconnectDiagnostics::PacketException(GetExceptionInformation())) {
         // The observer always returns CONTINUE_SEARCH; native exception handling is unchanged.
     }
+    if(reactorTracked)ReactorTimingDiagnostics::Log("receive_return",GetTickCount()-reactorStart);
 }
 } // namespace
 void HookSaveGlobal(bool enable) {
