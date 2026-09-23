@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "LauncherGate.h"
+#include "LauncherParentPolicy.h"
 #include "ClientLog.h"
 #include <TlHelp32.h>
 #include <cstdarg>
@@ -246,11 +247,12 @@ namespace
 		WriteAuthorizationLog(log, L"parentPid=%lu", parentProcessId);
 		WriteAuthorizationLog(log, L"parentPath=%s", parentPath);
 		WriteAuthorizationLog(log, L"expectedParentPath=%s", expectedPath);
-		if (CompareStringOrdinal(parentPath, -1, expectedPath, -1, TRUE) != CSTR_EQUAL)
+		if (!LauncherParentPolicy::IsAllowed(parentPath, expectedPath))
 		{
 			error = ERROR_BAD_PATHNAME;
 			return false;
 		}
+		WriteAuthorizationLog(log, L"parent policy accepted: release-or-developer in client directory");
 
 		error = ERROR_SUCCESS;
 		return true;

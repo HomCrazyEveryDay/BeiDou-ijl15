@@ -293,6 +293,9 @@
   <Target Name="BuildExitMonitor" AfterTargets="Build">
     <MSBuild Projects="$(ProjectDir)..\monitor\BeiDouExitMonitor.vcxproj" Targets="Build" Properties="Configuration=$(Configuration);Platform=$(Platform)" />
   </Target>
+  <Target Name="VerifyLauncherParentPolicy" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(ProjectDir)..\tests\LauncherParentPolicyTest.ps1&quot; -DllPath &quot;$(TargetPath)&quot;" />
+  </Target>
 </Project>
 
 
