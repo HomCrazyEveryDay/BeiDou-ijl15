@@ -13,6 +13,31 @@ constexpr DWORD Native(DWORD address) { return address + 0x10000000; }
 #else
 constexpr DWORD Native(DWORD address) { return address; }
 #endif
+// CDraggableItem's double-click dispatcher recognizes CUIEquip/CUIPetEquip,
+// but omits CUIDragonEquip (RTTI 00BF0E50, vtable 00B38B40).
+// Extend only this failed window check, then reuse native UnequipItem.
+const DWORD dragonEquipType = Native(0x00BF0E50);
+const DWORD dragonEquipClickContinue = Native(0x004F0CE7);
+__declspec(naked) void DragonEquipDoubleClick() {
+    __asm {
+        call dword ptr [eax+48h]
+        test eax, eax
+        jnz done
+        cmp dword ptr [edi+18h], 1
+        jne done
+        cmp dword ptr [edi+1ch], -1000
+        jg done
+        cmp dword ptr [edi+1ch], -1003
+        jl done
+        mov ecx, [edi+24h]
+        mov eax, [ecx]
+        push dword ptr [dragonEquipType]
+        call dword ptr [eax+48h]
+    done:
+        test eax, eax
+        jmp dword ptr [dragonEquipClickContinue]
+    }
+}
 // CDragon's movement tear-off is dragon+4. v83 4FEAA7 chooses the normal
 // movement direction from vx; this turns Mir around when the owner is knocked
 // backwards without turning. Keep the native move/stand action and trajectory,
@@ -385,12 +410,15 @@ Patch patches[] = {
     {Native(0x006660BD), {0x8b,0x86,0xbc,0,0,0}, {0xe9,0,0,0,0,0x90}, 6},
     {Native(0x00980760), {0xe8,0x4d,0xe6,0xfa,0xff}, {0xe9,0,0,0,0}, 5},
     {Native(0x00666111), {0xe8,0x17,0x05,0x10,0}, {0xe9,0,0,0,0}, 5},
-    {Native(0x004FEAA7), {0x56,0x8b,0x74,0x24,0x10}, {0xe9,0,0,0,0}, 5}
+    {Native(0x004FEAA7), {0x56,0x8b,0x74,0x24,0x10}, {0xe9,0,0,0,0}, 5},
+    {Native(0x004F0CE2), {0xff,0x50,0x48,0x85,0xc0}, {0xe9,0,0,0,0}, 5}
 };
 }
 
 bool EvanRuntime::Install() {
     if (!EvanKillingWing::Validate()) return false;
+    const DWORD equipClickDisplacement = reinterpret_cast<DWORD>(&DragonEquipDoubleClick) - (patches[27].address + 5);
+    std::memcpy(patches[27].after+1, &equipClickDisplacement, sizeof(equipClickDisplacement));
     const DWORD dragonDisplacement = reinterpret_cast<DWORD>(&DragonMoveFacing) - (patches[26].address + 5);
     std::memcpy(patches[26].after+1, &dragonDisplacement, sizeof(dragonDisplacement));
     const DWORD beaconDisplacement=reinterpret_cast<DWORD>(&BeaconCleanupProbe)-(patches[25].address+5);

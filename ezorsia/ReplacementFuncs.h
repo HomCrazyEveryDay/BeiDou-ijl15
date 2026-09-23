@@ -2121,6 +2121,10 @@ KeyValuePair newKeyValuePairs[] = {
     {5603, "背包已满"},
     {5617, "和 \r"},
     {5639, " 金币"},
+    {5467, "\xC1\xFA\xC3\xE6\xD5\xD6"}, // Dragon Hat
+    {5468, "\xC1\xFA\xB5\xF5\xD7\xB9"}, // Dragon Pendant
+    {5469, "\xC1\xFA\xB7\xC9\xD2\xED"}, // Dragon Wing Accessory
+    {5470, "\xC1\xFA\xCE\xB2\xB0\xCD"}, // Dragon Tail Accessory
 };
 static bool LocalizeClientMessageString(ZXString<char>* ret)
 {

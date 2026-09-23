@@ -259,6 +259,24 @@ __declspec(naked) int LoadsResource(int offset) {
     }
 }
 static int __fastcall DragonTestLocal(void*, void*) { return 1; }
+static int __fastcall EquipmentWindowType(void* window, void*, DWORD type) {
+    return static_cast<DWORD*>(window)[1] == type;
+}
+__declspec(naked) int __cdecl EquipmentDoubleClickAt(void* drag) {
+    __asm {
+        push edi
+        mov edi, [esp+8]
+        call dispatch
+        pop edi
+        ret
+    dispatch:
+        mov ecx, [edi+24h]
+        mov eax, [ecx]
+        push 10bf0e4ch
+        mov edx, 104f0ce2h
+        jmp edx
+    }
+}
 static int __fastcall DragonTestRemote(void*, void*) { return 0; }
 int main(int argc,char** argv) {
     if(argc!=2)return 1;
@@ -287,7 +305,7 @@ int main(int argc,char** argv) {
     if(EvanRuntime::Install() || *reinterpret_cast<BYTE*>(0x10955e26)!=0x0f) return 4;
     *reinterpret_cast<BYTE*>(0x10955edd)=original;
     // Every new observer-site mismatch must reject the entire install.
-    for(DWORD site:{0x10982752,0x1098296d,0x109829e8,0x10982acd,0x10982fac,0x10957069,0x10982c0c}) {
+    for(DWORD site:{0x10982752,0x1098296d,0x109829e8,0x10982acd,0x10982fac,0x10957069,0x10982c0c,0x104f0ce2}) {
         const BYTE saved=*reinterpret_cast<BYTE*>(site);
         *reinterpret_cast<BYTE*>(site)=0;
         if(EvanRuntime::Install() || *reinterpret_cast<DWORD*>(0x10955e22)!=22181001)return 38;
@@ -295,6 +313,16 @@ int main(int argc,char** argv) {
     }
     // Execute the original dispatch first, then the patched dispatch against
     // the same native bytes. Ordinary mage effects must remain unchanged.
+    // Preserve the original call/test; replace only its continuation with a
+    // flag-return stub so this runs the actual installed trampoline and ABI.
+    const BYTE equipReturn[]={0x0f,0x95,0xc0,0x0f,0xb6,0xc0,0xc3};
+    memcpy(reinterpret_cast<void*>(0x104f0ce7),equipReturn,sizeof(equipReturn));
+    void* equipTable[19]{};
+    equipTable[18]=reinterpret_cast<void*>(&EquipmentWindowType);
+    DWORD equipWindow[]={reinterpret_cast<DWORD>(equipTable),0x10bf0e50};
+    DWORD drag[10]{};
+    drag[6]=1; drag[7]=static_cast<DWORD>(-1000); drag[9]=reinterpret_cast<DWORD>(equipWindow);
+    if(EquipmentDoubleClickAt(drag)!=0)return 57; // native dragon rejection
     const DWORD effectSites[]={0x10982b7f,0x10982c20,0x10982ca9,0x10982d98};
     for(unsigned i=0;i<4;++i) {
         const BYTE stub[]={0xb8,static_cast<BYTE>(i+1),0,0,0,0xc3};
@@ -544,7 +572,16 @@ int main(int argc,char** argv) {
     }
     *reinterpret_cast<void**>(reinterpret_cast<BYTE*>(dragon)+0xf8)=nullptr;
     if(dragonMove(reinterpret_cast<BYTE*>(dragon)+4,-100,0,2,nullptr)!=3)return 56;
-    puts("PASS native signatures, atomic rejection, dragon follow facing/ABI, Dark Fog area gate, critical footer trampoline, Illusion timing, Blaze/Flame Wheel gates, mastery and cash books");
+    for(DWORD type:{0x10bf0e4c,0x10bf0e50,0x10bf0eb0}) {
+        equipWindow[1]=type;
+        for(int inventory:{1,2}) for(int slot:{-1004,-1003,-1002,-1001,-1000,-999,-18,1}) {
+            drag[6]=inventory;drag[7]=slot;
+            const bool expected=type==0x10bf0e4c ||
+                (type==0x10bf0e50 && inventory==1 && slot>=-1003 && slot<=-1000);
+            if(EquipmentDoubleClickAt(drag)!=expected)return 58;
+        }
+    }
+    puts("PASS native signatures, atomic rejection, dragon equipment double-click/ABI, dragon follow facing/ABI, Dark Fog area gate, critical footer trampoline, Illusion timing, Blaze/Flame Wheel gates, mastery and cash books");
     for(DWORD page:{0x104e0000,0x104f0000,0x10750000,0x10760000,0x10950000,0x10960000,0x10a00000}) VirtualFree(reinterpret_cast<void*>(page),0,MEM_RELEASE);
     return 0;
 }
