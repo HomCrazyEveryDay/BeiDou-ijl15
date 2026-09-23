@@ -1118,7 +1118,9 @@ namespace
 		if (!EvanCreation::Install()) {
 			MessageBoxA(nullptr, "Evan creation hooks do not match this v83 client.", "BeiDou", MB_OK | MB_ICONERROR);
 		}
-		if (!EvanRuntime::Install()) {
+		const bool evanRuntimeReady = EvanRuntime::Install();
+		ClientLog::Append(ClientLog::Component::Lifecycle, "event=evan_runtime_install success=%d mountDiagnostics=packet-v1", evanRuntimeReady);
+		if (!evanRuntimeReady) {
 			MessageBoxA(nullptr, "Evan skill hooks do not match this v83 client.", "BeiDou", MB_OK | MB_ICONERROR);
 		}
 		Hook_lpfn_NextLevel(true);

@@ -6,6 +6,7 @@
 #include "CrashReporter.h"
 #include "ClientDiagnostics.h"
 #include "EvanAttackDiagnostics.h"
+#include "EvanMountDiagnostics.h"
 #include "DisconnectDiagnostics.h"
 #include "IntegratedFinalAttack.h"
 #include "SnipeDamageSync.h"
@@ -774,6 +775,7 @@ static void TraceIncomingPacket(CInPacket* packet) {
 }
 static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
     TraceIncomingPacket(packet);
+    if(packet) EvanMountDiagnostics::Log("received", reinterpret_cast<const unsigned char*>(packet->Data),packet->DataLen);
     if (packet) EvanAttackDiagnostics::Observe(
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen, true);
     if (packet && MineralBagWnd::HandlePacket(
@@ -808,7 +810,9 @@ static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
     ShadowPartnerDamageSync::BeginIncomingPacket();
     __try {
         FlushQueuedMobDamageBeforeRemoval(packet);
+        if(packet) EvanMountDiagnostics::Log("native_enter", reinterpret_cast<const unsigned char*>(packet->Data),packet->DataLen);
         s_ProcessPacket(pThis, edx, packet);
+        if(packet) EvanMountDiagnostics::Log("native_return", reinterpret_cast<const unsigned char*>(packet->Data),packet->DataLen);
     } __finally {
         HurricaneDamageSync::EndIncomingPacket();
         ShadowPartnerDamageSync::EndIncomingPacket();

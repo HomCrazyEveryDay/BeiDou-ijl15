@@ -1,4 +1,6 @@
 #pragma once
+#include "ClientLog.h"
+#include "EvanMountRender.h"
 #include "MapleClientCollectionTypes/ZXString.h"
 typedef void(__fastcall* _CWndCreateWnd_t)(void* pThis, void* edx, int nLeft, int nTop, int nWidth, int nHeight, int z, int bScreenCoord, void* esi, int bSetFocus);
 static auto _CWndCreateWnd = reinterpret_cast<_CWndCreateWnd_t>(0x009DE4D2); //thanks you teto for helping me on this learning journey
@@ -139,6 +141,15 @@ static auto _AvatarLayerBuild = reinterpret_cast<_AvatarLayerBuild_t>(0x00407757
 
 static void __fastcall AvatarLayerBuild_Hook(void* pThis, void* edx, int a1, int a2, int a3, DWORD a4, DWORD a5, DWORD a6, DWORD a7, DWORD a8, DWORD a9, DWORD a10)
 {
+	// 407925 reads argument 8 as mount ID; 407948 passes argument 9
+	// to the native mount loader. Record its raw value, without assuming its type.
+	static LONG mountRecords=0;
+	char mountLogSetting[8]{};
+	GetEnvironmentVariableA("BEIDOU_EVAN_MOUNT_LOG",mountLogSetting,sizeof(mountLogSetting));
+	const bool mountTrace=mountLogSetting[0]!='0' && a8>=1902040 && a8<=1902042
+		&& InterlockedIncrement(&mountRecords)<=96;
+	if(mountTrace) ClientLog::Append(ClientLog::Component::Trace,
+		"event=evan_mount_layers stage=enter model=%lu action=%d arg9=%lu",a8,a1,a9);
 	const int avatarPrefixDwords = 0x10;
 	const int avatarBodyDwords = 0xD0 / sizeof(DWORD);
 	DWORD fixedAvatar[avatarPrefixDwords + avatarBodyDwords]{};
@@ -172,6 +183,14 @@ static void __fastcall AvatarLayerBuild_Hook(void* pThis, void* edx, int a1, int
 		}
 	}
 
+	DWORD mountAppearance[0xD0 / sizeof(DWORD)]{};
+	const bool mountPrepared = EvanMountRender::Prepare(a8,
+		reinterpret_cast<const DWORD*>(callA4), mountAppearance);
+	if (mountPrepared) callA4 = reinterpret_cast<DWORD>(mountAppearance);
+	if (mountTrace) ClientLog::Append(ClientLog::Component::Trace,
+		"event=evan_mount_layers stage=appearance model=%lu mountSlot=%lu saddleSlot=%lu prepared=%d",
+		a8, SafeReadPreviewDword(callA4 + 18 * sizeof(DWORD)),
+		SafeReadPreviewDword(callA4 + 19 * sizeof(DWORD)), mountPrepared);
 	const DWORD previousFacePreviewFaceId = g_facePreviewFaceId;
 	const DWORD previousFacePreviewFaceId2 = g_facePreviewFaceId2;
 	const DWORD previousFacePreviewFaceId3 = g_facePreviewFaceId3;
@@ -181,6 +200,8 @@ static void __fastcall AvatarLayerBuild_Hook(void* pThis, void* edx, int a1, int
 		g_facePreviewFaceId3 = IsKnownFaceId(previewFace3) ? previewFace3 : 0;
 	}
 	_AvatarLayerBuild(pThis, a1, a2, callA3, callA4, a5, a6, a7, a8, a9, a10);
+	if(mountTrace) ClientLog::Append(ClientLog::Component::Trace,
+		"event=evan_mount_layers stage=return model=%lu action=%d arg9=%lu",a8,a1,a9);
 	if (facePreview) {
 		g_facePreviewFaceId = previousFacePreviewFaceId;
 		g_facePreviewFaceId2 = previousFacePreviewFaceId2;

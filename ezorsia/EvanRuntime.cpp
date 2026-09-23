@@ -2,9 +2,12 @@
 #include "EvanRuntime.h"
 #include <cstring>
 #include "EvanKillingWing.h"
+#include "EvanDragonVisibility.h"
+#include "EvanMountRender.h"
 #ifndef EVAN_RUNTIME_TEST
 #include "EvanTimingDiagnostics.h"
 #include "EvanAttackDiagnostics.h"
+#include "ClientLog.h"
 #endif
 
 namespace {
@@ -13,6 +16,112 @@ constexpr DWORD Native(DWORD address) { return address + 0x10000000; }
 #else
 constexpr DWORD Native(DWORD address) { return address; }
 #endif
+// The existing server derives Mir from the equipped saddle (no inventory
+void __cdecl UpdateDragonVisibility(void* dragon) {
+    DWORD model = 0;
+    const HRESULT result = EvanDragonVisibility::Update(dragon, model);
+#ifndef EVAN_RUNTIME_TEST
+    static DWORD lastModel = 0xFFFFFFFF;
+    static unsigned records = 0;
+    static const bool logging = [] { char setting[8]{};
+        GetEnvironmentVariableA("BEIDOU_EVAN_MOUNT_LOG", setting, sizeof(setting));
+        return setting[0] != '0'; }();
+    if (logging && model != lastModel && records < 96) {
+        lastModel = model; ++records;
+        ClientLog::Append(ClientLog::Component::Trace,
+            "event=evan_dragon_visibility model=%lu result=%08lX", model, result);
+    }
+#endif
+}
+const DWORD dragonUpdateNative = Native(0x004FF794);
+int __cdecl SelectMountBody(int model, int requested, int selected) {
+    return EvanMountRender::BodyAction(model, requested, selected);
+}
+// Select and observe the actual body-loader input after native pose selection.
+void __cdecl TraceMountBody(int model, int requested, int bodyAction, int skin) {
+#ifndef EVAN_RUNTIME_TEST
+    static unsigned records = 0;
+    if (model < 1902040 || model > 1902042 || records >= 48) return;
+    if (requested != 36 && requested != 37) return;
+    char setting[8]{};
+    GetEnvironmentVariableA("BEIDOU_EVAN_MOUNT_LOG", setting, sizeof(setting));
+    if (setting[0] == '0') return;
+    ++records;
+    ClientLog::Append(ClientLog::Component::Trace,
+        "event=evan_mount_body requested=%d bodyAction=%d model=%d skin=%d", requested, bodyAction, model, skin);
+#endif
+}
+const DWORD mountBodyNative = Native(0x0041272C);
+const DWORD mountBodyResume = Native(0x00407A03);
+__declspec(naked) void MountBodyTraceGate() {
+    __asm {
+        pushfd
+        pushad
+        push dword ptr [ebp-18h]
+        push dword ptr [ebp+8]
+        push dword ptr [ebp+24h]
+        call SelectMountBody
+        add esp, 12
+        mov [ebp-18h], eax
+        // Six native args are already on the stack. Patch arg 1 too;
+        // pushad (32) + pushfd (4) are above it.
+        mov [esp+24h], eax
+        push dword ptr [ebp+0ch]
+        push dword ptr [ebp-18h]
+        push dword ptr [ebp+8]
+        push dword ptr [ebp+24h]
+        call TraceMountBody
+        add esp, 16
+        popad
+        popfd
+        call dword ptr [mountBodyNative]
+        jmp dword ptr [mountBodyResume]
+    }
+}
+const DWORD dragonUpdateResume = Native(0x004FF02A);
+__declspec(naked) void DragonVisibilityGate() {
+    __asm {
+        call dword ptr [dragonUpdateNative]
+        pushfd
+        pushad
+        push ebx
+        call UpdateDragonVisibility
+        add esp, 4
+        popad
+        popfd
+        jmp dword ptr [dragonUpdateResume]
+    }
+}
+// The existing server derives Mir from the equipped saddle (no inventory
+// mount in -18). v83 968BA0, like v84 9A7D35, otherwise requires both slots.
+// Validate only Evan here, then rejoin the native field/action/send checks.
+int __cdecl EvanSaddleReady(void* characterData) {
+    auto saddle = *reinterpret_cast<unsigned char**>(static_cast<unsigned char*>(characterData) + 0x183);
+    return saddle != nullptr;
+}
+const DWORD mountOriginal = Native(0x00968BA7);
+const DWORD mountMissing = Native(0x00968EE2);
+const DWORD mountFieldCheck = Native(0x00968D83);
+__declspec(naked) void EvanSaddleGate() {
+    __asm {
+        cmp esi, 20011004
+        jne original
+        pushad
+        push eax
+        call EvanSaddleReady
+        add esp, 4
+        test eax, eax
+        popad
+        jz missing
+        xor edi, edi
+        jmp dword ptr [mountFieldCheck]
+    missing:
+        jmp dword ptr [mountMissing]
+    original:
+        cmp dword ptr [eax+17bh], 0
+        jmp dword ptr [mountOriginal]
+    }
+}
 // CDraggableItem's double-click dispatcher recognizes CUIEquip/CUIPetEquip,
 // but omits CUIDragonEquip (RTTI 00BF0E50, vtable 00B38B40).
 // Extend only this failed window check, then reuse native UnequipItem.
@@ -411,12 +520,21 @@ Patch patches[] = {
     {Native(0x00980760), {0xe8,0x4d,0xe6,0xfa,0xff}, {0xe9,0,0,0,0}, 5},
     {Native(0x00666111), {0xe8,0x17,0x05,0x10,0}, {0xe9,0,0,0,0}, 5},
     {Native(0x004FEAA7), {0x56,0x8b,0x74,0x24,0x10}, {0xe9,0,0,0,0}, 5},
-    {Native(0x004F0CE2), {0xff,0x50,0x48,0x85,0xc0}, {0xe9,0,0,0,0}, 5}
+    {Native(0x004F0CE2), {0xff,0x50,0x48,0x85,0xc0}, {0xe9,0,0,0,0}, 5},
+    {Native(0x00968BA0), {0x83,0xb8,0x7b,0x01,0,0,0}, {0xe9,0,0,0,0,0x90,0x90}, 7},
+    {Native(0x004FF025), {0xe8,0x6a,0x07,0,0}, {0xe9,0,0,0,0}, 5},
+    {Native(0x004079FE), {0xe8,0x29,0xad,0,0}, {0xe9,0,0,0,0}, 5}
 };
 }
 
 bool EvanRuntime::Install() {
     if (!EvanKillingWing::Validate()) return false;
+    const DWORD visibilityDisplacement = reinterpret_cast<DWORD>(&DragonVisibilityGate) - (patches[29].address + 5);
+    std::memcpy(patches[29].after+1, &visibilityDisplacement, sizeof(visibilityDisplacement));
+    const DWORD bodyDisplacement = reinterpret_cast<DWORD>(&MountBodyTraceGate) - (patches[30].address + 5);
+    std::memcpy(patches[30].after+1, &bodyDisplacement, sizeof(bodyDisplacement));
+    const DWORD mountDisplacement = reinterpret_cast<DWORD>(&EvanSaddleGate) - (patches[28].address + 5);
+    std::memcpy(patches[28].after+1, &mountDisplacement, sizeof(mountDisplacement));
     const DWORD equipClickDisplacement = reinterpret_cast<DWORD>(&DragonEquipDoubleClick) - (patches[27].address + 5);
     std::memcpy(patches[27].after+1, &equipClickDisplacement, sizeof(equipClickDisplacement));
     const DWORD dragonDisplacement = reinterpret_cast<DWORD>(&DragonMoveFacing) - (patches[26].address + 5);

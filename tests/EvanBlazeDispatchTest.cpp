@@ -1,5 +1,7 @@
 #include "../ezorsia/stdafx.h"
 #include "../ezorsia/EvanRuntime.h"
+#include "../ezorsia/EvanDragonVisibility.h"
+#include "../ezorsia/EvanMountRender.h"
 #include <fstream>
 #include <iterator>
 #include <vector>
@@ -278,7 +280,96 @@ __declspec(naked) int __cdecl EquipmentDoubleClickAt(void* drag) {
     }
 }
 static int __fastcall DragonTestRemote(void*, void*) { return 0; }
+__declspec(naked) int MountGateAt(int skill, void* data, void* player) {
+    __asm {
+        push ebp
+        mov ebp, esp
+        push ebx
+        push esi
+        push edi
+        sub esp, 80h
+        mov esi, [ebp+8]
+        mov eax, [ebp+0ch]
+        mov ebx, [ebp+10h]
+        xor edi, edi
+        mov ecx, 10968ba0h
+        call ecx
+        lea esp, [ebp-0ch]
+        pop edi
+        pop esi
+        pop ebx
+        pop ebp
+        ret
+    }
+}
+static void* alphaTable[37]{};
+static void** alphaObject = alphaTable;
+static LONG opacitySeen = -1;
+static unsigned releases = 0;
+static HRESULT __stdcall TestAlpha(void*, void** result) { *result = &alphaObject; return S_OK; }
+static HRESULT __stdcall TestAlphaMove(void*, LONG x, LONG y, VARIANT a, VARIANT b) {
+    if (x != y || a.vt != VT_ERROR || b.vt != VT_ERROR ||
+        a.scode != DISP_E_PARAMNOTFOUND || b.scode != DISP_E_PARAMNOTFOUND) return E_INVALIDARG;
+    opacitySeen=x; return S_OK;
+}
+static ULONG __stdcall TestAlphaRelease(void*) { ++releases; return 1; }
+__declspec(naked) static void VisibilityAt(void* dragon) {
+    __asm {
+        push ebx
+        mov ebx,[esp+8]
+        mov ecx,ebx
+        mov eax,104ff025h
+        call eax
+        pop ebx
+        ret
+    }
+}
+__declspec(naked) static int MountBodyAt(int model, int requested, int selected) {
+    __asm {
+        push ebp
+        mov ebp,esp
+        push esi
+        mov esi,ebp
+        sub esp,96
+        lea ebp,[esp+32]
+        mov eax,[esi+8]
+        mov [ebp+24h],eax
+        mov eax,[esi+12]
+        mov [ebp+8],eax
+        mov dword ptr [ebp+0ch],0
+        mov eax,[esi+16]
+        mov [ebp-18h],eax
+        push offset finished
+        push 0
+        push 0
+        push 0
+        push 0
+        push 0
+        push eax
+        mov eax,104079feh
+        jmp eax
+    finished:
+        mov ebp,esi
+        lea esp,[ebp-4]
+        pop esi
+        pop ebp
+        ret
+    }
+}
 int main(int argc,char** argv) {
+    DWORD appearance[52]{}, copy[52]{};
+    appearance[0]=30000;
+    for(unsigned stage=0; stage<3; ++stage) {
+        appearance[19]=1912033+stage;
+        if(!EvanMountRender::Prepare(1902040+stage,appearance,copy) ||
+            copy[18]!=1902040+stage || copy[19]!=appearance[19] ||
+            copy[0]!=30000 || appearance[18]!=0) return 70;
+    }
+    if(EvanMountRender::Prepare(1902040,appearance,copy) ||
+        EvanMountRender::Prepare(1902000,appearance,copy)) return 71;
+    appearance[19]=0;
+    if(EvanMountRender::Prepare(1902040,appearance,copy)) return 72;
+    puts("PASS Evan render appearance: three stages, source unchanged, wrong/missing saddle and ordinary mount excluded");
     if(argc!=2)return 1;
     // Reserve native addresses before loading the large PE file into a heap buffer.
     for(DWORD page:{0x10400000,0x10410000,0x10450000,0x104a0000,0x104e0000,0x104f0000,0x10640000,0x10660000,0x10750000,0x10760000,0x10920000,0x10950000,0x10960000,0x10970000,0x10980000,0x10a00000})
@@ -305,7 +396,7 @@ int main(int argc,char** argv) {
     if(EvanRuntime::Install() || *reinterpret_cast<BYTE*>(0x10955e26)!=0x0f) return 4;
     *reinterpret_cast<BYTE*>(0x10955edd)=original;
     // Every new observer-site mismatch must reject the entire install.
-    for(DWORD site:{0x10982752,0x1098296d,0x109829e8,0x10982acd,0x10982fac,0x10957069,0x10982c0c,0x104f0ce2}) {
+    for(DWORD site:{0x10982752,0x1098296d,0x109829e8,0x10982acd,0x10982fac,0x10957069,0x10982c0c,0x104f0ce2,0x10968ba0}) {
         const BYTE saved=*reinterpret_cast<BYTE*>(site);
         *reinterpret_cast<BYTE*>(site)=0;
         if(EvanRuntime::Install() || *reinterpret_cast<DWORD*>(0x10955e22)!=22181001)return 38;
@@ -335,6 +426,35 @@ int main(int argc,char** argv) {
         {22121000,4},{22151001,4},{22171003,4},{22181001,4},{22181002,4}};
     for(auto c:screenCases) if(c.first/1000000!=22 && RemoteScreenEffect(c.first)!=c.second)return 47;
     if(!EvanRuntime::Install())return 5;
+    const BYTE bodyLoaderStub[]={0x8b,0x44,0x24,0x04,0xc2,0x18,0x00};
+    memcpy(reinterpret_cast<void*>(0x1041272c),bodyLoaderStub,sizeof(bodyLoaderStub));
+    *reinterpret_cast<BYTE*>(0x10407a03)=0xc3;
+    for(int model : {1902040,1902041,1902042}) {
+        if(MountBodyAt(model,36,37)!=36 || MountBodyAt(model,37,37)!=37 ||
+            MountBodyAt(model,2,39)!=39) return 75;
+    }
+    if(MountBodyAt(1902000,36,37)!=37 || MountBodyAt(0,36,36)!=36) return 76;
+    puts("PASS actual mount body gate: ladder/rope, seated action, ordinary mounts and x86 stack arguments");
+    // Execute the actual installed call-site trampoline. Native update and
+    // COM methods are stubbed; x86 stdcall must consume both full VARIANTs.
+    *reinterpret_cast<BYTE*>(0x104ff794)=0xc3;
+    *reinterpret_cast<BYTE*>(0x104ff02a)=0xc3;
+    void* layerTable[58]{};
+    layerTable[57]=reinterpret_cast<void*>(&TestAlpha);
+    void** layerObject=layerTable;
+    alphaTable[2]=reinterpret_cast<void*>(&TestAlphaRelease);
+    alphaTable[36]=reinterpret_cast<void*>(&TestAlphaMove);
+    DWORD visibilityDragon[0x100/4]{}, visibilityOwner[0x550/4]{};
+    visibilityDragon[0xf8/4]=reinterpret_cast<DWORD>(visibilityOwner);
+    visibilityDragon[0x88/4]=reinterpret_cast<DWORD>(&layerObject);
+    for(DWORD model : {0u,1902040u,1902041u,1902042u,0u}) {
+        visibilityOwner[0x544/4]=model;
+        opacitySeen=-1;
+        VisibilityAt(visibilityDragon);
+        if(opacitySeen != (model ? 0 : 255)) return 73;
+    }
+    if(releases!=5) return 74;
+    puts("PASS installed dragon visibility trampoline: login, three mounts, dismount, COM VARIANT ABI and release");
     for(auto c:screenCases) if(RemoteScreenEffect(c.first)!=c.second)return 48;
     // Appended action tables keep all existing indexes and extend only the
     // name lookup, avatar bounds, and dynamically allocated dragon caches.
@@ -581,7 +701,34 @@ int main(int argc,char** argv) {
             if(EquipmentDoubleClickAt(drag)!=expected)return 58;
         }
     }
-    puts("PASS native signatures, atomic rejection, dragon equipment double-click/ABI, dragon follow facing/ABI, Dark Fog area gate, critical footer trampoline, Illusion timing, Blaze/Flame Wheel gates, mastery and cash books");
+    // Real mounted-entry trampoline, secure item getter stubbed only. Native
+    // continuations identify missing equipment, field checks, and ordinary path.
+    if(!VirtualAlloc(reinterpret_cast<void*>(0x10420000),0x10000,MEM_COMMIT|MEM_RESERVE,PAGE_EXECUTE_READWRITE))return 59;
+    const BYTE itemGetter[]={0x8b,0x01,0xc3};
+    memcpy(reinterpret_cast<void*>(0x1042873d),itemGetter,sizeof(itemGetter));
+    const DWORD mountEnds[]={0x10968ee2,0x10968da5,0x10968bad};
+    for(int i=0;i<3;++i) {
+        const BYTE result[]={0xb8,static_cast<BYTE>(i),0,0,0,0xc3};
+        memcpy(reinterpret_cast<void*>(mountEnds[i]),result,sizeof(result));
+    }
+    BYTE mountData[0x400]{}, mountPlayer[0x2b00]{}, saddle[0x20]{};
+    for(int id:{0,1912000,1912032,1912033,1912034,1912035,1912036}) {
+        *reinterpret_cast<void**>(mountData+0x183)=id?saddle:nullptr;
+        *reinterpret_cast<int*>(saddle+0xc)=id;
+        for(int level:{49,50,79,80,119,120,200}) {
+            *reinterpret_cast<int*>(mountPlayer+0x2a88)=level;
+            const bool ready=id != 0;
+            if(MountGateAt(20011004,mountData,mountPlayer)!=(ready?1:0))return 60;
+            for(int skill:{1004,10001004,20001004}) {
+                *reinterpret_cast<void**>(mountData+0x17b)=nullptr;
+                if(MountGateAt(skill,mountData,mountPlayer)!=0)return 61;
+                *reinterpret_cast<void**>(mountData+0x17b)=saddle;
+                if(MountGateAt(skill,mountData,mountPlayer)!=2)return 62;
+            }
+            *reinterpret_cast<void**>(mountData+0x17b)=nullptr;
+        }
+    }
+    puts("PASS Evan saddle gate/ABI, level boundaries, missing/wrong saddle, ordinary mounts, native signatures, atomic rejection, dragon equipment double-click/ABI, dragon follow facing/ABI, Dark Fog area gate, critical footer trampoline, Illusion timing, Blaze/Flame Wheel gates, mastery and cash books");
     for(DWORD page:{0x104e0000,0x104f0000,0x10750000,0x10760000,0x10950000,0x10960000,0x10a00000}) VirtualFree(reinterpret_cast<void*>(page),0,MEM_RELEASE);
     return 0;
 }
