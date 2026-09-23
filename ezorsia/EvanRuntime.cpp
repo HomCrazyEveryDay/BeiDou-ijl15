@@ -151,8 +151,9 @@ __declspec(naked) void IllusionTiming() {
 }
 // CMob::AddDamage queues each Illusion hit separately. GMS084 0x68129C
 // uses 0/60/180/420ms, whereas the v83 prototype uses 0/90/270/630ms.
-// User-requested Ghost Lettering pacing scales v84 offsets to 0/24/72/168ms,
-// paired with the 800ms illusion avatar and dragon actions in WZ/XML + IMG.
+// The five-hit skill uses 0/42/84/126/168ms, retaining the previous final-hit
+// offset and the 800ms avatar/dragon actions. The native four-entry table
+// returns zero for hit index 4, so replace its result at the queue boundary.
 // Observe the actual queue boundary, not just the earlier base-delay estimate.
 void __cdecl IllusionQueueTrace(int index, int base, int offset) {
 #ifndef EVAN_RUNTIME_TEST
@@ -165,6 +166,13 @@ const DWORD illusionQueueReturn = Native(0x0066B101);
 __declspec(naked) void IllusionQueue() {
     __asm {
         pushfd
+        push ecx
+        mov ecx, [ebp+24h]
+        cmp ecx, 4
+        ja nativeOffset
+        imul eax, ecx, 42
+    nativeOffset:
+        pop ecx
         pushad
         push eax
         push dword ptr [ebp+10h]

@@ -410,10 +410,12 @@ int main(int argc,char** argv) {
     const BYTE returnTime[]={0x8b,0xc1,0xc3};
     memcpy(reinterpret_cast<void*>(0x1066b101),returnTime,sizeof(returnTime));
     memcpy(reinterpret_cast<void*>(0x1066b13c),returnTime,sizeof(returnTime));
-    const int offsets[]={0,24,72,168,0};
+    const int offsets[]={0,42,84,126,168,0};
     for(int base:{0,948,100000}) {
-        for(int hit=0;hit<5;++hit) {
+        for(int hit=0;hit<6;++hit) {
             if(QueuedAt(22171002,hit,base)!=base+offsets[hit])return 16;
+            if(hit>0 && hit<5 &&
+               QueuedAt(22171002,hit,base)-QueuedAt(22171002,hit-1,base)!=42)return 51;
             if(QueuedAt(2121006,hit,base)!=base+120*hit)return 17;
             if(QueuedAt(3111006,hit,base)!=base+60*hit)return 18;
         }
