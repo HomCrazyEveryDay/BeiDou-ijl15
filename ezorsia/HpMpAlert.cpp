@@ -7,6 +7,7 @@
 #include "ClientDiagnostics.h"
 #include "EvanAttackDiagnostics.h"
 #include "EvanMountDiagnostics.h"
+#include "EvanSpDiagnostics.h"
 #include "DisconnectDiagnostics.h"
 #include "IntegratedFinalAttack.h"
 #include "SnipeDamageSync.h"
@@ -775,6 +776,8 @@ static void TraceIncomingPacket(CInPacket* packet) {
 }
 static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
     TraceIncomingPacket(packet);
+    if (packet) EvanSpDiagnostics::Observe("received",
+        reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen);
     if(packet) EvanMountDiagnostics::Log("received", reinterpret_cast<const unsigned char*>(packet->Data),packet->DataLen);
     if (packet) EvanAttackDiagnostics::Observe(
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen, true);
@@ -812,6 +815,8 @@ static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
         FlushQueuedMobDamageBeforeRemoval(packet);
         if(packet) EvanMountDiagnostics::Log("native_enter", reinterpret_cast<const unsigned char*>(packet->Data),packet->DataLen);
         s_ProcessPacket(pThis, edx, packet);
+        if (packet) EvanSpDiagnostics::Observe("native_return",
+            reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen);
         if(packet) EvanMountDiagnostics::Log("native_return", reinterpret_cast<const unsigned char*>(packet->Data),packet->DataLen);
     } __finally {
         HurricaneDamageSync::EndIncomingPacket();
@@ -861,6 +866,9 @@ void HookHpMpAlertRecv(bool enable) {
     Memory::SetHook(enable, reinterpret_cast<void**>(&g_ShowMobDamage), ShowMobDamage_Hook);
     const bool receiveReady = Memory::SetHook(enable, reinterpret_cast<void**>(&s_ProcessPacket), ProcessPacket_Hook);
     if (enable) ClientDiagnostics::SetAckConsumerReady(receiveReady);
+    if (enable) ClientLog::Append(ClientLog::Component::Trace,
+        "event=evan_sp_diagnostics version=2 enabled=%d receiveHook=%d maxRecords=256",
+        EvanSpDiagnostics::Enabled(), receiveReady);
     if (enable) ClientLog::Append(ClientLog::Component::Trace,
         "event=evan_attack_diagnostics version=1 enabled=%d receiveHook=%d maxSkills=32 maxCastsPerSkill=8 maxRecords=8192",
         EvanAttackDiagnostics::Enabled(), receiveReady);
