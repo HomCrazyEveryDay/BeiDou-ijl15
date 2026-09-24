@@ -484,6 +484,63 @@ struct Patch {
     unsigned char after[8];
     size_t size;
 };
+// GMS084 CField_Afrien (5789CA) adds no storage or custom rendering to CField;
+// its only behavior override is GetFieldType() == 28 (5789F1). Keep the native
+// base constructor/Init and original map user/look data, including all pixels.
+DWORD memoryFieldVtable[15]{};
+int __fastcall MemoryFieldType(void*, void*) { return 28; }
+void __cdecl SetMemoryFieldType(void* field, int type) {
+    if (!field || type != 28) return;
+    auto original = *reinterpret_cast<DWORD**>(field);
+    if (!memoryFieldVtable[1]) {
+        std::memcpy(memoryFieldVtable, original - 1, sizeof(memoryFieldVtable));
+        memoryFieldVtable[8] = reinterpret_cast<DWORD>(&MemoryFieldType);
+    }
+    *reinterpret_cast<DWORD**>(field) = memoryFieldVtable + 1;
+}
+const DWORD baseFieldConstructor = Native(0x00528DBC);
+const DWORD baseFieldConstructorReturn = Native(0x00527ECA);
+__declspec(naked) void MemoryFieldConstructorGate() {
+    __asm {
+        call dword ptr [baseFieldConstructor]
+        pushfd
+        pushad
+        push esi
+        push eax
+        call SetMemoryFieldType
+        add esp, 8
+        popad
+        popfd
+        jmp dword ptr [baseFieldConstructorReturn]
+    }
+}
+int __cdecl MemoryBlocksSkill(void* field, void* user) {
+    if (!field || !user) return 0;
+    using GetInt = int (__thiscall*)(void*);
+    auto fieldMethods = *reinterpret_cast<DWORD**>(field);
+    if (reinterpret_cast<GetInt>(fieldMethods[7])(field) != 28) return 0;
+    auto userMethods = *reinterpret_cast<DWORD**>(user);
+    int job = reinterpret_cast<GetInt>(userMethods[16])(user);
+    return job == 2001 || job / 100 == 22;
+}
+const DWORD nativeFieldSkillCheck = Native(0x00537C7F);
+const DWORD nativeFieldSkillReturn = Native(0x0096700E);
+__declspec(naked) void MemorySkillGate() {
+    __asm {
+        call dword ptr [nativeFieldSkillCheck]
+        test eax, eax
+        jnz done
+        pushad
+        push edi
+        push dword ptr [ebp-5ch]
+        call MemoryBlocksSkill
+        add esp, 8
+        mov [esp+1ch], eax
+        popad
+    done:
+        jmp dword ptr [nativeFieldSkillReturn]
+    }
+}
 Patch patches[] = {
     {Native(0x00761717), {0x0f,0x84,0xd7,0,0,0}, {0x90,0x90,0x90,0x90,0x90,0x90}, 6},
     {Native(0x00761723), {0x0f,0x84,0xcb,0,0,0}, {0x90,0x90,0x90,0x90,0x90,0x90}, 6},
@@ -523,12 +580,23 @@ Patch patches[] = {
     {Native(0x004F0CE2), {0xff,0x50,0x48,0x85,0xc0}, {0xe9,0,0,0,0}, 5},
     {Native(0x00968BA0), {0x83,0xb8,0x7b,0x01,0,0,0}, {0xe9,0,0,0,0,0x90,0x90}, 7},
     {Native(0x004FF025), {0xe8,0x6a,0x07,0,0}, {0xe9,0,0,0,0}, 5},
-    {Native(0x004079FE), {0xe8,0x29,0xad,0,0}, {0xe9,0,0,0,0}, 5}
+    {Native(0x004079FE), {0xe8,0x29,0xad,0,0}, {0xe9,0,0,0,0}, 5},
+    {Native(0x00527EC5), {0xe8,0xf2,0x0e,0,0}, {0xe9,0,0,0,0}, 5},
+    {Native(0x00967009), {0xe8,0x71,0x0c,0xbd,0xff}, {0xe9,0,0,0,0}, 5}
 };
 }
 
+#ifdef EVAN_RUNTIME_TEST
+extern "C" void TestSetMemoryFieldType(void* field, int type) { SetMemoryFieldType(field, type); }
+extern "C" int TestMemoryBlocksSkill(void* field, void* user) { return MemoryBlocksSkill(field, user); }
+#endif
 bool EvanRuntime::Install() {
     if (!EvanKillingWing::Validate()) return false;
+    const DWORD memoryTargets[] = {reinterpret_cast<DWORD>(&MemoryFieldConstructorGate), reinterpret_cast<DWORD>(&MemorySkillGate)};
+    for (size_t i = 0; i < 2; ++i) {
+        const DWORD displacement = memoryTargets[i] - (patches[31+i].address + 5);
+        std::memcpy(patches[31+i].after+1, &displacement, sizeof(displacement));
+    }
     const DWORD visibilityDisplacement = reinterpret_cast<DWORD>(&DragonVisibilityGate) - (patches[29].address + 5);
     std::memcpy(patches[29].after+1, &visibilityDisplacement, sizeof(visibilityDisplacement));
     const DWORD bodyDisplacement = reinterpret_cast<DWORD>(&MountBodyTraceGate) - (patches[30].address + 5);

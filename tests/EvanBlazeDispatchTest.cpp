@@ -6,6 +6,10 @@
 #include <iterator>
 #include <vector>
 #include <cstdio>
+extern "C" void TestSetMemoryFieldType(void*, int);
+extern "C" int TestMemoryBlocksSkill(void*, void*);
+int __fastcall TestFieldType(void*, void*) { return 0; }
+int __fastcall TestMemoryJob(void* user, void*) { return reinterpret_cast<int*>(user)[1]; }
 
 // Execute the actual patched comparison gates in an isolated executable.
 // Map original image bytes for signature validation; never run game startup.
@@ -372,7 +376,7 @@ int main(int argc,char** argv) {
     puts("PASS Evan render appearance: three stages, source unchanged, wrong/missing saddle and ordinary mount excluded");
     if(argc!=2)return 1;
     // Reserve native addresses before loading the large PE file into a heap buffer.
-    for(DWORD page:{0x10400000,0x10410000,0x10450000,0x104a0000,0x104e0000,0x104f0000,0x10640000,0x10660000,0x10750000,0x10760000,0x10920000,0x10950000,0x10960000,0x10970000,0x10980000,0x10a00000})
+    for(DWORD page:{0x10400000,0x10410000,0x10450000,0x104a0000,0x104e0000,0x104f0000,0x10520000,0x10640000,0x10660000,0x10750000,0x10760000,0x10920000,0x10950000,0x10960000,0x10970000,0x10980000,0x10a00000})
         if(VirtualAlloc(reinterpret_cast<void*>(page),0x10000,MEM_RESERVE|MEM_COMMIT,
                 PAGE_EXECUTE_READWRITE)!=reinterpret_cast<void*>(page)) { printf("Mapping failed at %08lx error %lu\n",page,GetLastError()); return 3; }
 
@@ -382,7 +386,7 @@ int main(int argc,char** argv) {
     auto dos=reinterpret_cast<IMAGE_DOS_HEADER*>(bytes.data());
     auto nt=reinterpret_cast<IMAGE_NT_HEADERS*>(bytes.data()+dos->e_lfanew);
     auto section=IMAGE_FIRST_SECTION(nt);
-    for(DWORD page:{0x10400000,0x10410000,0x10450000,0x104a0000,0x104e0000,0x104f0000,0x10640000,0x10660000,0x10750000,0x10760000,0x10920000,0x10950000,0x10960000,0x10970000,0x10980000,0x10a00000}) {
+    for(DWORD page:{0x10400000,0x10410000,0x10450000,0x104a0000,0x104e0000,0x104f0000,0x10520000,0x10640000,0x10660000,0x10750000,0x10760000,0x10920000,0x10950000,0x10960000,0x10970000,0x10980000,0x10a00000}) {
         BYTE* image=reinterpret_cast<BYTE*>(page);
         for(unsigned i=0;i<nt->FileHeader.NumberOfSections;++i) {
             const DWORD rva=page-0x10400000;
@@ -728,7 +732,22 @@ int main(int argc,char** argv) {
             *reinterpret_cast<void**>(mountData+0x17b)=nullptr;
         }
     }
-    puts("PASS Evan saddle gate/ABI, level boundaries, missing/wrong saddle, ordinary mounts, native signatures, atomic rejection, dragon equipment double-click/ABI, dragon follow facing/ABI, Dark Fog area gate, critical footer trampoline, Illusion timing, Blaze/Flame Wheel gates, mastery and cash books");
+    DWORD fieldTable[15]{}, userTable[17]{};
+    fieldTable[8] = reinterpret_cast<DWORD>(&TestFieldType);
+    DWORD field[1]{reinterpret_cast<DWORD>(fieldTable+1)};
+    userTable[16] = reinterpret_cast<DWORD>(&TestMemoryJob);
+    DWORD user[2]{reinterpret_cast<DWORD>(userTable), 2215};
+    TestSetMemoryFieldType(field, 0);
+    if(field[0] != reinterpret_cast<DWORD>(fieldTable+1) || TestMemoryBlocksSkill(field,user)) return 63;
+    TestSetMemoryFieldType(field, 28);
+    if(field[0] == reinterpret_cast<DWORD>(fieldTable+1)) return 64;
+    for(int job : {2001,2200,2210,2215,2218,100,1000,2000,2112}) {
+        user[1]=job;
+        if(TestMemoryBlocksSkill(field,user) != (job==2001 || job/100==22)) return 65;
+    }
+    auto memoryTable=reinterpret_cast<DWORD*>(field[0]);
+    for(int i=0;i<14;++i) if(i!=7 && memoryTable[i]!=fieldTable[i+1]) return 66;
+    puts("PASS Afrien memory field type/unchanged virtual methods/Evan skill restriction; native signatures and runtime gates");
     for(DWORD page:{0x104e0000,0x104f0000,0x10750000,0x10760000,0x10950000,0x10960000,0x10a00000}) VirtualFree(reinterpret_cast<void*>(page),0,MEM_RELEASE);
     return 0;
 }
