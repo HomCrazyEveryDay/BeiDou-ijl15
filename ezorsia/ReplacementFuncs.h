@@ -2329,6 +2329,17 @@ bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //t
 				if (ret && static_cast<const char*>(*ret) &&
 					!strcmp(static_cast<const char*>(*ret), "dragonSkin")) *ret = "OnixBlessing";
 				break;
+			// Native Maple Life purchase and creation confirmations (GMS083).
+			case 5043:
+				if (Client::SwitchChinese && ret && static_cast<const char*>(*ret) &&
+					!strcmp(static_cast<const char*>(*ret), "You do not have any empty character slots\r\nThe Maple life(B-Type) will create\r\na new character slot upon purchase."))
+					*ret = "\xB5\xB1\xC7\xB0\xC3\xBB\xD3\xD0\xBF\xD5\xCF\xD0\xBD\xC7\xC9\xAB\xC0\xB8\xCE\xBB\xA1\xA3\x0D\x0A\xB9\xBA\xC2\xF2\x20\x42\x20\xD0\xCD\xBD\xC7\xC9\xAB\xBF\xA8\xCA\xB1\x0D\x0A\xBD\xAB\xD0\xC2\xD4\xF6\xD2\xBB\xB8\xF6\xBD\xC7\xC9\xAB\xC0\xB8\xCE\xBB\xA1\xA3";
+				break;
+			case 5048:
+				if (Client::SwitchChinese && ret && static_cast<const char*>(*ret) &&
+					!strcmp(static_cast<const char*>(*ret), "Creation has completed successfully."))
+					*ret = "\xBD\xC7\xC9\xAB\xB4\xB4\xBD\xA8\xB3\xC9\xB9\xA6\xA1\xA3";
+				break;
 			// Native Soul Stone revival confirmation (GMS083 StringPool).
 			case 5460:
 				if (ret && static_cast<const char*>(*ret) &&
