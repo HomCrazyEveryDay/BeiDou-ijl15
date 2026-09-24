@@ -461,20 +461,20 @@ int main(int argc,char** argv) {
     const DWORD avatarTable=*reinterpret_cast<DWORD*>(0x10406c1c);
     const DWORD dragonTable=*reinterpret_cast<DWORD*>(0x10411494);
     if(!avatarTable || !dragonTable || avatarTable==0xbec620 || dragonTable==0xbec3f8)return 21;
-    if(*reinterpret_cast<DWORD*>(0x104a8d33)!=avatarTable+166*24)return 22;
-    if(*reinterpret_cast<DWORD*>(0x104a8dc5)!=dragonTable+25*4)return 23;
-    if(*reinterpret_cast<BYTE*>(0x10453b2d)!=166 || *reinterpret_cast<BYTE*>(0x104fec49)!=25)return 24;
+    if(*reinterpret_cast<DWORD*>(0x104a8d33)!=avatarTable+167*24)return 22;
+    if(*reinterpret_cast<DWORD*>(0x104a8dc5)!=dragonTable+26*4)return 23;
+    if(*reinterpret_cast<BYTE*>(0x10453b2d)!=167 || *reinterpret_cast<BYTE*>(0x104fec49)!=26)return 24;
 
     // Regression for the 2026-09-21 null-frame crash at native 00455F53:
-    // both loader loops must reach every appended action and stop at 166.
+    // both loader loops must reach every appended action and stop at 167.
     *reinterpret_cast<BYTE*>(0x104073a8)=0xc3;
     *reinterpret_cast<BYTE*>(0x1040b2a9)=0xc3;
-    for(int index:{0,161,162,163,164,165,166}) {
-        if(LoadsAction(index)!=(index<166))return 35;
-        if(LoadsResource(index*48)!=(index<166))return 36;
+    for(int index:{0,161,162,163,164,165,166,167}) {
+        if(LoadsAction(index)!=(index<167))return 35;
+        if(LoadsResource(index*48)!=(index<167))return 36;
     }
-    if(*reinterpret_cast<DWORD*>(0x1040acdb)!=166 ||
-       *reinterpret_cast<DWORD*>(0x1040acff)!=166*16)return 37;
+    if(*reinterpret_cast<DWORD*>(0x1040acdb)!=167 ||
+       *reinterpret_cast<DWORD*>(0x1040acff)!=167*16)return 37;
 
     // Exercise the installed cache trampolines, both banks and destruction.
     *reinterpret_cast<BYTE*>(0x1045456f)=0xc3;
@@ -492,7 +492,7 @@ int main(int argc,char** argv) {
     if(!normal || cell!=reinterpret_cast<DWORD>(normal)+4)return 26;
     if(UpdateCells(owner+0x4f0,162,&updated)!=cell || normal!=updated)return 27;
     void* first=normal;
-    for(int action:{163,164,165}) {
+    for(int action:{163,164,165,166}) {
         DWORD extra=PrepareCells(owner+0x4f0,action,&normal);
         if(normal==first || UpdateCells(owner+0x4f0,action,&updated)!=extra || normal!=updated)return 49;
         first=normal;
@@ -506,11 +506,11 @@ int main(int argc,char** argv) {
         if(UpdateCells(owner+0x4f0,index,&updated)!=reinterpret_cast<DWORD>(owner+0x4f0+0x298+index*4) || normal!=updated)return 31;
     }
     ResetCells(owner,0);
-    if(destroyed!=8)return 32;
+    if(destroyed!=10)return 32;
     ResetCells(owner,0);
-    if(destroyed!=8)return 33;
+    if(destroyed!=10)return 33;
     reinterpret_cast<void(__thiscall*)(void*)>(0x10450093)(owner+0x4f0+0x5dc);
-    if(destroyed!=16)return 34;
+    if(destroyed!=20)return 34;
     // Execute the new gate, including the predecessor comparison flags.
     const BYTE yes[]={0xb8,1,0,0,0,0xc3},no[]={0x31,0xc0,0xc3};
     // Run the predecessor Breath checks and actual JZ after the trampoline.
