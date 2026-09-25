@@ -5,6 +5,7 @@
 #include <cstring>
 #include <cwchar>
 #include "EvanCreationOptions.h"
+#include "CrashReporter.h"
 
 // GMS 83 CRaceSelect uses a 700x460 window. Keep its camera/stage geometry and
 // render GMS 84's four original 286x216 cards inside it. The existing name and
@@ -77,6 +78,21 @@ void __fastcall OnCreate(void* self,void*,void*) {
             ready=ready&&*targets[j]!=0;
         }
     }
+    // Mirror only CRaceSelect::OnSetFocus's remembered login target. Do not
+    // call SetFocus here: CreateWnd registers this window AFTER OnCreate at
+    // 9DE78D. Activating it early inserts a duplicate into the native list,
+    // leaving a layerless entry after Destroy removes only one occurrence.
+    *reinterpret_cast<unsigned char**>(login+0x188)=window+4;
+    CrashReporter::RecordEvent("creation.focus", "race target bound ready=%d",ready?1:0);
+}
+void __fastcall OnDestroy(void* self,void*) {
+    auto dying=static_cast<unsigned char*>(self);
+    auto owner=*reinterpret_cast<unsigned char**>(dying+0x6c);
+    if(owner && *reinterpret_cast<unsigned char**>(owner+0x188)==dying+4)
+        *reinterpret_cast<unsigned char**>(owner+0x188)=nullptr;
+    if(window==dying){window=nullptr;ready=false;}
+    reinterpret_cast<void(__thiscall*)(void*)>(0x00461BA1)(self);
+    CrashReporter::RecordEvent("creation.focus", "race destroyed");
 }
 void __fastcall Draw(void* self,void*,const RECT* rect) {
     reinterpret_cast<void(__fastcall*)(void*,void*,const RECT*)>(0x009E0502)(self,nullptr,rect);
@@ -101,7 +117,13 @@ int __fastcall MouseMove(void*,void*,int x,int y) {int n=Hit(x,y);if(n!=hovered)
 void __fastcall MouseEnter(void*,void*,int enter) {if(!enter){hovered=pressed=-1;Invalidate();}}
 void __fastcall Key(void*,void*,unsigned int key,unsigned int flags) {
     if(flags&0x80000000U || !CanSelect())return;
-    if(key==VK_ESCAPE){evan=false;changeStage(login,nullptr,2);return;}
+    if(key==VK_ESCAPE){
+        evan=false;
+        // Native CancelRaceSelect recreates character-selection windows before
+        // changing stage; directly setting stage 2 leaves the old focus alive.
+        reinterpret_cast<void(__fastcall*)(void*,void*)>(0x005F9805)(login,nullptr);
+        return;
+    }
     if(key==VK_RETURN){Choose(selected);return;}
     if(key==VK_LEFT||key==VK_RIGHT)selected^=1;
     else if(key==VK_UP||key==VK_DOWN)selected^=2;
@@ -114,9 +136,12 @@ void __fastcall DoubleClick(void*,void*,unsigned int) {}
 void __fastcall Stage(void* self,void*,int stage) {
     int old=*reinterpret_cast<int*>(static_cast<unsigned char*>(self)+0x168);
     int next=stage<0?(old+1)%6:stage;
+    if(old!=next){window=nullptr;ready=false;}
     if(next!=4&&next!=5){evan=false;selected=1;hovered=pressed=-1;}
     changeStage(self,nullptr,stage);
-    if(next==3)Invalidate();
+    // Native stage changes animate first and recreate windows later. OnCreate
+    // owns the new pointer; never invalidate the outgoing cached window here.
+    CrashReporter::RecordEvent("creation.stage", "old=%d next=%d",old,next);
 }
 void __fastcall ResetChoices(void* self,void*) {
     resetChoices(self,nullptr);
@@ -166,6 +191,7 @@ bool EvanCreation::Install() {
     const Patch patches[]={
         {0x00AF7360,0x006173B3,reinterpret_cast<void*>(&Update)},
         {0x00AF736C,0x006157C9,reinterpret_cast<void*>(&OnCreate)},
+        {0x00AF7370,0x00461BA1,reinterpret_cast<void*>(&OnDestroy)},
         {0x00AF7380,0x0061747F,reinterpret_cast<void*>(&Button)},
         {0x00AF738C,0x009E0502,reinterpret_cast<void*>(&Draw)},
         {0x00AF7394,0x006174CF,reinterpret_cast<void*>(&DoubleClick)},
