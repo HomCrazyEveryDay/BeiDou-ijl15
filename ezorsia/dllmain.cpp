@@ -1118,6 +1118,9 @@ namespace
 		if (!EvanCreation::Install()) {
 			MessageBoxA(nullptr, "Evan creation hooks do not match this v83 client.", "BeiDou", MB_OK | MB_ICONERROR);
 		}
+		// ChairCompatibility validates the native CUser::Update prologue.
+		// Install it before Evan timing diagnostics chain a detour on that entry.
+		ChairCompatibility::Install();
 		const bool evanRuntimeReady = EvanRuntime::Install();
 		ClientLog::Append(ClientLog::Component::Lifecycle, "event=evan_runtime_install success=%d mountDiagnostics=packet-v1", evanRuntimeReady);
 		if (!evanRuntimeReady) {
@@ -1154,7 +1157,6 @@ namespace
 		InstallRushWithoutTargetRequirement();
 		InstallScriptedResetItemRedirect();
 		InstallApResetStatLimits();
-		ChairCompatibility::Install();
 		if (Client::enableMovementKeyRebind) {
 			MovementKeyHook::Hook(true);
 			Client::MovementKeyRebind();
