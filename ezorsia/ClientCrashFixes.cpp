@@ -6,10 +6,55 @@
 #include <cstring>
 #include <cwchar>
 #include "DreamCanvas.h"
+#include "IncubationCanvas.h"
 
 namespace {
 
+// v83 task-dialog continuation: 00959F4D -> 00A26E31 -> 00716FE1.
+// The latter unconditionally dereferences CUserLocal (00BEBF98) + 4.
+// Cash shop has no CUserLocal, but a dialog opened in the field can survive
+// the transition. Guard before allocating the continuation's task object.
+using ContinueQuest = void(__thiscall*)(void*, unsigned int, int, int);
+ContinueQuest g_continueQuest = reinterpret_cast<ContinueQuest>(0x00A26E31);
+
+void __fastcall ContinueQuestInField(void* self, void*, unsigned int quest, int npc, int flags)
+{
+    if (*reinterpret_cast<void**>(0x00BEBF98) == nullptr) {
+        CrashReporter::RecordEvent("quest.context", "skip continuation without local user quest=%u", quest & 0xFFFF);
+        return;
+    }
+    g_continueQuest(self, quest, npc, flags);
+}
+
+bool InstallQuestContextGuard()
+{
+    const BYTE expected[] = {0xB8, 0x72, 0xCC, 0xAE, 0x00};
+    if (std::memcmp(reinterpret_cast<void*>(0x00A26E31), expected, sizeof(expected)) != 0)
+        return false;
+    return Memory::SetHook(true, reinterpret_cast<void**>(&g_continueQuest), ContinueQuestInField);
+}
+
 thread_local bool g_dreamFrame = false;
+thread_local IncubationCanvas::Part g_incubationPart = IncubationCanvas::Part::None;
+// v83 scene cue Update: type at +0, ZXString<wchar_t> visual at +4,
+// x/y at +10/+14. Type=0 resolves the property and synchronously creates
+// the animation through 004398F6 -> 0043EA3E -> InsertCanvas.
+using SceneCueUpdate = int(__thiscall*)(void*, int);
+auto g_updateSceneCue = reinterpret_cast<SceneCueUpdate>(0x0043A8C4);
+
+int __fastcall UpdateIncubationCue(void* self, void*, int tick) {
+    struct Restore {
+        IncubationCanvas::Part previous;
+        ~Restore() { g_incubationPart = previous; }
+    } restore{g_incubationPart};
+    const auto cue = static_cast<const unsigned char*>(self);
+    g_incubationPart = *reinterpret_cast<const int*>(cue) == 0
+        && *reinterpret_cast<const int*>(cue + 0x10) == 0
+        && *reinterpret_cast<const int*>(cue + 0x14) == 0
+        ? IncubationCanvas::Identify(*reinterpret_cast<const wchar_t* const*>(cue + 4))
+        : IncubationCanvas::Part::None;
+    return g_updateSceneCue(self, tick);
+}
 using LayerFn = DWORD*(__cdecl*)(DWORD*,DWORD,int,DWORD,int,int,DWORD,int,int,int);
 auto g_createBackgroundLayer = reinterpret_cast<LayerFn>(0x0043EA3E);
 using InsertFn = void*(__fastcall*)(void*,void*,void*,void*,void*,void*,void*,void*,void*);
@@ -48,6 +93,9 @@ void* __fastcall InsertDreamCanvas(void* self,void*,void* result,void* canvas,
     if(g_dreamFrame) {
         auto factory=*reinterpret_cast<DreamCanvas::Factory*>(0x00BF0CC0);
         scaled=DreamCanvas::Scale(canvas,Client::m_nGameWidth,Client::m_nGameHeight,factory);
+    } else if(g_incubationPart != IncubationCanvas::Part::None) {
+        auto factory=*reinterpret_cast<DreamCanvas::Factory*>(0x00BF0CC0);
+        scaled=IncubationCanvas::Scale(canvas,Client::m_nGameWidth,Client::m_nGameHeight,g_incubationPart,factory);
     }
     struct Release { void* value; ~Release(){DreamCanvas::Release(value);} } release{scaled};
     return g_insertCanvas(self,nullptr,result,scaled ? scaled : canvas,delay,alpha0,alpha1,zoom0,zoom1);
@@ -62,6 +110,12 @@ bool InstallDreamFrameScaling() {
     Memory::WriteInt(0x0063D9D2,reinterpret_cast<DWORD>(&DreamLayerCall)-0x0063D9D6);
     FlushInstructionCache(GetCurrentProcess(),reinterpret_cast<void*>(0x0063D9D1),5);
     return true;
+}
+
+bool InstallIncubationScaling() {
+    const BYTE expected[] = {0xb8,0x09,0xa0,0xa7,0x00,0xe8,0xca,0x62,0x62,0x00};
+    if (std::memcmp(reinterpret_cast<void*>(0x0043A8C4), expected, sizeof(expected))) return false;
+    return Memory::SetHook(true, reinterpret_cast<void**>(&g_updateSceneCue), UpdateIncubationCue);
 }
 
 // Effect_Catch's success branch already plays a WzProperty frame sequence.
@@ -128,7 +182,11 @@ void __fastcall HookInitializeCharacterList(void* self, void*, void* records)
 
 void ClientCrashFixes::Install()
 {
-    CrashReporter::RecordEvent("dream.frame", "install result=%d", InstallDreamFrameScaling() ? 1 : 0);
+    CrashReporter::RecordEvent("quest.context", "install result=%d", InstallQuestContextGuard() ? 1 : 0);
+    const bool canvasScaling = InstallDreamFrameScaling();
+    CrashReporter::RecordEvent("dream.frame", "install result=%d", canvasScaling ? 1 : 0);
+    CrashReporter::RecordEvent("incubation.frame", "install result=%d",
+        canvasScaling && InstallIncubationScaling() ? 1 : 0);
 	CrashReporter::RecordEvent("magnet.animation", "install result=%d",
 		InstallAnimatedCatchFailure() ? 1 : 0);
 	const bool installed = Memory::SetHook(
