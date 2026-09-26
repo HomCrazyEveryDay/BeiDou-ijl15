@@ -16,17 +16,17 @@ function Get-Block([string]$start, [string]$end) {
     if ($last -le $first) { throw "Cannot locate production block end: $end" }
     return $source.Substring($first, $last - $first)
 }
-$types = Get-Block 'constexpr DWORD kOpcodeUpdateStackedBuffIcons' 'struct OverlayVertex'
+$types = Get-Block 'constexpr DWORD kOpcodeUpdateStackedBuffIcons' 'bool WriteCodeBytes('
 [IO.File]::WriteAllText((Join-Path $outputDir 'BuffIconTypes.h'), $types)
 $implementation = Get-Block 'int NativeTypeForIcon(' 'void __fastcall NativeAddIconHook('
 $implementation += Get-Block 'void __fastcall NativeDrawHook(' 'void DebugLog(const char* format, ...)'
-$implementation += Get-Block 'unsigned short ReadUInt16LE(' 'int EstimateNativeIconX('
+$implementation += Get-Block 'unsigned short ReadUInt16LE(' 'std::unordered_map<unsigned long long, int> CountNativeIconsByKey('
 $implementation += Get-Block 'std::unordered_map<unsigned long long, int> CountNativeIconsByKey(' 'bool TryCallNativeAddIcon('
 $implementation += Get-Block 'int PruneStackedNativeIcons(' 'void DrawNativeTemporaryStatView('
 $sync = Get-Block 'int ReadNativeIconCount(' 'namespace StackedBuffIcons'
 $implementation += [regex]::Replace($sync, '\}\s*\z', '')
 $implementation += "`nnamespace StackedBuffIcons {`n"
-$implementation += Get-Block 'bool HandlePacket(' 'void DrawCountdownOverlay('
+$implementation += Get-Block 'bool HandlePacket(' 'void OnFieldUpdate()'
 $first = $source.IndexOf('void OnFieldUpdate()')
 if ($first -lt 0) { throw 'Cannot locate field lifecycle callbacks.' }
 $implementation += $source.Substring($first)
@@ -36,7 +36,7 @@ if ($WithoutContextRecovery) {
 }
 [IO.File]::WriteAllText((Join-Path $outputDir 'BuffIconsUnderTest.h'), $implementation)
 $output = Join-Path $outputDir 'StackedBuffIconsTest.exe'
-& cl.exe /nologo /std:c++17 /O2 /EHsc "/I$outputDir" (Join-Path $PSScriptRoot 'StackedBuffIconsTest.cpp') "/Fo:$outputDir\" "/Fe:$output"
+& cl.exe /nologo /std:c++17 /O2 /EHsc "/I$outputDir" (Join-Path $PSScriptRoot 'StackedBuffIconsTest.cpp') "/Fo:$outputDir\" "/Fe:$output" /link /DYNAMICBASE:NO /BASE:0x400000
 if ($LASTEXITCODE -ne 0) { throw 'StackedBuffIconsTest compilation failed.' }
 & $output
 if ($LASTEXITCODE -ne 0) { throw 'StackedBuffIconsTest failed.' }

@@ -8,6 +8,12 @@
 #include <unordered_set>
 #include <vector>
 
+namespace BuffCountdown {
+void Reset() {}
+unsigned updates = 0, payloadSize = 0;
+bool UpdateCoupons(const unsigned char*, unsigned size) { ++updates; payloadSize = size; return true; }
+}
+
 namespace {
 #include "BuffIconTypes.h"
 
@@ -120,11 +126,11 @@ void TestMapTransition() {
     Require(CountIcon(kBowExpert) == 1, "focus appears after a map change without another native buff");
     for (BYTE stacks = 2; stacks <= 5; ++stacks) SendFocus(stacks);
     Require(CountIcon(kBowExpert) == 1 && g_hurricaneFocusStacks == 5,
-        "stack updates reuse one icon and expose the latest overlay value");
-    Require(g_lastNativeDrawView == TestView(), "synthetic draws retain the number-overlay view");
+        "stack updates reuse one icon and expose the latest stack value");
+    Require(g_currentTemporaryStatView == TestView(), "synthetic draws retain the native view");
     StackedBuffIcons::OnFieldInit();
     StackedBuffIcons::OnFieldDispose();
-    Require(!g_countdownFieldActive && !g_lastNativeDrawView, "map transition suspends the overlay");
+    Require(!g_fieldActive && !g_currentTemporaryStatView, "map transition clears the native view");
     StackedBuffIcons::OnFieldUpdate();
     Require(CountIcon(kBowExpert) == 0 && CountIcon(3121002) == 1,
         "map reset removes owned focus while preserving an ordinary native buff");
@@ -174,6 +180,44 @@ void TestFirstLoginAndDeferredSync() {
     StackedBuffIcons::OnFieldUpdate();
     Require(g_draws == draws, "steady state does not rebuild the buff bar every frame");
 }
+
+void TestRelogSnapshotAndCouponDispatch() {
+    ResetCase();
+    StackedBuffIcons::OnFieldUpdate();
+    StackedBuffIcon old{};
+    old.sourceId = old.iconId = 3121002;
+    old.skill = true;
+    old.leftDuration = old.duration = 60000;
+    old.receivedAt = g_now;
+    ReplaceIcons({old});
+    Require(CountIcon(old.iconId) == 1, "previous session has a supplemental icon");
+    StackedBuffIcons::OnFieldDispose();
+    StackedBuffIcons::OnFieldInit();
+
+    BYTE data[] = {0, 0, 0, 0, BYTE(kOpcodeUpdateStackedBuffIcons),
+        BYTE(kOpcodeUpdateStackedBuffIcons >> 8), BYTE(kStackedBuffIconPacketMagic), BYTE(kStackedBuffIconPacketMagic >> 8), 0, 0};
+    CInPacket packet{};
+    packet.Data = data;
+    packet.DataLen = sizeof(data);
+    Require(StackedBuffIcons::HandlePacket(&packet), "empty login snapshot is consumed");
+    StackedBuffIcons::OnFieldUpdate();
+    Require(g_icons.empty() && CountIcon(old.iconId) == 0,
+        "empty login snapshot removes previous session supplemental icons");
+
+    ReplaceIcons({old});
+    BYTE coupon[] = {0, 0, 0, 0, 0x0a, 0x10, 0, 0};
+    packet.Data = coupon;
+    packet.DataLen = sizeof(coupon);
+    BuffCountdown::updates = 0;
+    Require(StackedBuffIcons::HandlePacket(&packet), "coupon packet must not reach native unknown-opcode handler");
+    Require(BuffCountdown::updates == 1 && BuffCountdown::payloadSize == 2,
+        "coupon decoder receives just the payload");
+    Require(g_icons.size() == 1 && CountIcon(old.iconId) == 1,
+        "coupon metadata must not overwrite ordinary supplemental icons");
+    packet.DataLen = 2;
+    Require(!StackedBuffIcons::HandlePacket(&packet), "short unrelated packet is ignored");
+    Require(BuffCountdown::updates == 1, "short packet never reads coupon opcode past its end");
+}
 } // namespace
 
 int main() {
@@ -185,6 +229,7 @@ int main() {
     g_nativeDraw = TestNativeDraw;
     TestMapTransition();
     TestFirstLoginAndDeferredSync();
+    TestRelogSnapshotAndCouponDispatch();
     ResetCase();
     DeleteCriticalSection(&g_iconLock);
     VirtualFree(reinterpret_cast<void*>(page), 0, MEM_RELEASE);

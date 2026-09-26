@@ -1,5 +1,4 @@
 #pragma once
-#include "StackedBuffIcons.h"
 #include "ClientLog.h"
 #include <strsafe.h>
 
@@ -47,7 +46,6 @@ typedef HRESULT(WINAPI* CreateDevice_t)(
 	DWORD behaviorFlags,
 	PresentParameters* presentationParameters,
 	void** returnedDeviceInterface);
-typedef HRESULT(WINAPI* EndScene_t)(void* self);
 
 static Direct3DCreate8_t s_direct3DCreate8 = nullptr;
 static GetAdapterModeCount_t s_getAdapterModeCount = nullptr;
@@ -57,10 +55,8 @@ static CheckDeviceType_t s_checkDeviceType = nullptr;
 static CheckDeviceFormat_t s_checkDeviceFormat = nullptr;
 static GetDeviceCaps_t s_getDeviceCaps = nullptr;
 static CreateDevice_t s_createDevice = nullptr;
-static EndScene_t s_endScene = nullptr;
 static bool s_createDeviceStarted = false;
 
-static HRESULT WINAPI EndScene_Hook(void* self);
 
 // Startup logging is disabled by default; enable [debug] enableStartupLog=true
 // when diagnosing a remote machine without leaving noisy logs in normal clients.
@@ -288,19 +284,7 @@ static HRESULT WINAPI CreateDevice_Hook(
 		"d3d8.CreateDevice end hr=0x%08lX device=0x%08lX\r\n",
 		static_cast<unsigned long>(hr),
 		returnedDeviceInterface ? reinterpret_cast<unsigned long>(*returnedDeviceInterface) : 0);
-	if (hr >= 0 && returnedDeviceInterface && *returnedDeviceInterface) {
-		void** deviceVtable = *reinterpret_cast<void***>(*returnedDeviceInterface);
-		if (deviceVtable && !s_endScene) {
-			s_endScene = reinterpret_cast<EndScene_t>(deviceVtable[35]);
-			Memory::SetHook(true, reinterpret_cast<void**>(&s_endScene), EndScene_Hook);
-		}
-	}
 	return hr;
-}
-
-static HRESULT WINAPI EndScene_Hook(void* self) {
-	StackedBuffIcons::DrawCountdownOverlay(self);
-	return s_endScene(self);
 }
 
 static void InstallInterfaceHooks(void* d3d8) {

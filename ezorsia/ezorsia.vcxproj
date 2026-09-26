@@ -192,6 +192,8 @@
     <ClInclude Include="ShadowPartnerDamageSync.h" />
     <ClInclude Include="SkillTooltipLayout.h" />
     <ClInclude Include="StackedBuffIcons.h" />
+    <ClInclude Include="BuffCountdown.h" />
+    <ClInclude Include="BuffCountdownCanvas.h" />
     <ClInclude Include="MovementKeyHook.h" />
     <ClInclude Include="NpcShopCurrency.h" />
     <ClInclude Include="MineralBagWnd.h" />
@@ -258,6 +260,7 @@
     <ClCompile Include="ShadowPartnerDamageSync.cpp" />
     <ClCompile Include="SkillTooltipLayout.cpp" />
     <ClCompile Include="StackedBuffIcons.cpp" />
+    <ClCompile Include="BuffCountdown.cpp" />
     <ClCompile Include="NpcShopCurrency.cpp" />
     <ClCompile Include="MineralBagWnd.cpp" />
     <ClCompile Include="EvanCreation.cpp" />
