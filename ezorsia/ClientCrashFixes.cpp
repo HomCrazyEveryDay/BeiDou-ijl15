@@ -10,6 +10,38 @@
 
 namespace {
 
+// CLogin leaves its deferred appearance-window request uninitialized. A new
+// login after leaving the field can inherit request=1/pending!=0 and draw the
+// Knight editor before its choice arrays exist (0061828B -> 004181D8).
+using ConstructLogin = void*(__thiscall*)(void*);
+ConstructLogin g_constructLogin = reinterpret_cast<ConstructLogin>(0x005F3C59);
+
+void* __fastcall ConstructLoginWithCleanRequest(void* self, void*)
+{
+    void* result = g_constructLogin(self);
+    auto login = static_cast<unsigned char*>(self);
+    *reinterpret_cast<DWORD*>(login + 0x238) = 0;
+    *reinterpret_cast<DWORD*>(login + 0x23C) = 0;
+    return result;
+}
+
+bool InstallLoginRequestInitialization()
+{
+    const auto base = reinterpret_cast<const BYTE*>(GetModuleHandleW(nullptr));
+    if (reinterpret_cast<ULONG_PTR>(base) != 0x00400000) return false;
+    const auto dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
+    const auto nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE
+        || nt->FileHeader.TimeDateStamp != 0x4B7C15C9
+        || nt->OptionalHeader.SizeOfImage != 0xA94000) return false;
+    const BYTE expected[] = {0xB8,0xB9,0x73,0xA9,0x00,0xE8,0x35,0xCF,0x46,0x00};
+    if (std::memcmp(reinterpret_cast<void*>(0x005F3C59), expected, sizeof(expected)))
+        return false;
+    return Memory::SetHook(true, reinterpret_cast<void**>(&g_constructLogin),
+        ConstructLoginWithCleanRequest);
+}
+
 // v83 task-dialog continuation: 00959F4D -> 00A26E31 -> 00716FE1.
 // The latter unconditionally dereferences CUserLocal (00BEBF98) + 4.
 // Cash shop has no CUserLocal, but a dialog opened in the field can survive
@@ -182,6 +214,8 @@ void __fastcall HookInitializeCharacterList(void* self, void*, void* records)
 
 void ClientCrashFixes::Install()
 {
+    CrashReporter::RecordEvent("login.request", "initialization install result=%d",
+        InstallLoginRequestInitialization() ? 1 : 0);
     CrashReporter::RecordEvent("quest.context", "install result=%d", InstallQuestContextGuard() ? 1 : 0);
     const bool canvasScaling = InstallDreamFrameScaling();
     CrashReporter::RecordEvent("dream.frame", "install result=%d", canvasScaling ? 1 : 0);
