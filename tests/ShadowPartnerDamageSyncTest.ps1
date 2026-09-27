@@ -9,7 +9,9 @@ New-Item -ItemType Directory -Path $outputDir | Out-Null
 $output = Join-Path $outputDir 'ShadowPartnerDamageSyncTest.exe'
 $sourceDir = Join-Path $PSScriptRoot '..\ezorsia'
 $source = [IO.File]::ReadAllText((Join-Path $sourceDir 'ShadowPartnerDamageSync.cpp'))
-$source = $source.Replace('0x00BEBFA4', '0x30BEBFA4').Replace('0x00441AE8', '0x30441AE8')
+foreach ($address in @('00BEBFA4', '00441AE8', '00403CB7', '00403CDE', '00BEBF6C', '00438A21', '00437D0F')) {
+    $source = $source.Replace("0x$address", ('0x30' + $address.Substring(2)))
+}
 [IO.File]::WriteAllText((Join-Path $outputDir 'DamageSyncUnderTest.h'), $source)
 $hooks = [IO.File]::ReadAllText((Join-Path $sourceDir 'HpMpAlert.cpp'))
 $first = $hooks.IndexOf('static bool HandleShowMobDamagePacket(')
@@ -18,5 +20,5 @@ if ($first -lt 0 -or $last -le $first) { throw 'Cannot locate production damage 
 [IO.File]::WriteAllText((Join-Path $outputDir 'DamageHooksUnderTest.h'), $hooks.Substring($first, $last - $first))
 & cl.exe /nologo /std:c++17 /O2 /EHsc "/I$outputDir" "/I$sourceDir" (Join-Path $PSScriptRoot 'ShadowPartnerDamageSyncTest.cpp') "/Fo:$outputDir\" "/Fe:$output" /link /BASE:0x20000000 /DYNAMICBASE:NO
 if ($LASTEXITCODE -ne 0) { throw 'ShadowPartnerDamageSyncTest compilation failed.' }
-& $output
+& $output (Join-Path $PSScriptRoot '..\..\BeiDou-Client\BeiDou.exe')
 if ($LASTEXITCODE -ne 0) { throw 'ShadowPartnerDamageSyncTest failed.' }

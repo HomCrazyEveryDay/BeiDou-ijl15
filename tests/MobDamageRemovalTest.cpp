@@ -85,6 +85,17 @@ namespace ShadowPartnerDamageSync {
 static void TrackIncomingAttackPacket(const unsigned char*, unsigned long) {}
 static void BeginIncomingPacket() {}
 static void EndIncomingPacket() {}
+static void Update() {}
+}
+namespace EvanSpDiagnostics { static void Observe(const char*, const unsigned char*, unsigned long) {} }
+namespace EvanMountDiagnostics { static void Log(const char*, const unsigned char*, unsigned long) {} }
+namespace EvanAttackDiagnostics { static void Observe(const unsigned char*, unsigned long, bool) {} }
+namespace ReactorTimingDiagnostics {
+static bool Receive(const unsigned char*, unsigned long) { return false; }
+static void Log(const char*, DWORD) {}
+}
+namespace DisconnectDiagnostics {
+static int PacketException(EXCEPTION_POINTERS*) { return EXCEPTION_CONTINUE_SEARCH; }
 }
 static void TraceIncomingPacket(CInPacket*) {}
 static void ObserveBossVenomStatusPacket(CInPacket*) {}

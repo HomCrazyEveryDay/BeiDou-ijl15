@@ -24,7 +24,7 @@ $types += Get-Block 'static bool g_renderingServerMobDamage' 'static BossVenomVi
 
 $implementation = Get-Block 'static bool IsQueuedMobDamageExpired(' 'static bool ReadDamageResources('
 $implementation += Get-Block 'static bool IsCurrentMobDamageField(' 'static unsigned char ClampAlert('
-$implementation += Get-Block 'static void __fastcall ProcessPacket_Hook(' '} // namespace'
+$implementation += Get-Block 'static void ProcessPacketBody(' '} // namespace'
 $implementation += Get-Block 'void UpdateQueuedMobDamageDisplay()' 'void OnMobDamageFieldInit()'
 if ($WithoutRemovalFlush) {
     $implementation = $implementation.Replace('        FlushQueuedMobDamageBeforeRemoval(packet);', '')

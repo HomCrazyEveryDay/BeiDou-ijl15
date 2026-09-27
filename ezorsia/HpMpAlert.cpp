@@ -642,9 +642,8 @@ static bool HandleShowMobDamagePacket(CInPacket* packet) {
         int pursuitLine = 0;
         if (packet->DataLen >= 17 && data[16] == ShadowPartnerDamageSync::kNativeImpactMarker) {
             if (packet->DataLen >= 18 && data[17] > lineIndex && data[17] <= 8) pursuitLine = data[17];
-            if (!ShadowPartnerDamageSync::TrackServerDamage(objectId, damage, critical, lineIndex, pursuitLine)) {
-                return true;
-            }
+            ShadowPartnerDamageSync::TrackServerDamage(objectId, damage, critical, lineIndex, pursuitLine);
+            return true;
         } else if (SnipeDamageSync::TrackServerDamage(objectId, damage, critical)) {
             return true;
         }
@@ -656,11 +655,6 @@ static bool HandleShowMobDamagePacket(CInPacket* packet) {
         queued.critical = critical;
         queued.lineIndex = lineIndex;
         queued.sequence = sequence;
-        if (pursuitLine > 0) {
-            QueuedMobDamage pursuit = queued;
-            pursuit.lineIndex = pursuitLine;
-            QueueMobDamage(pursuit);
-        }
         if (!QueueMobDamage(queued)) {
             CrashReporter::RecordRecentEvent(
                 "showMobDamage.queue",
@@ -694,21 +688,14 @@ static void __fastcall ShowMobDamage_Hook(void* pThis, void* edx, int damage, in
         }
         int synchronizedDamage = 0;
         bool synchronizedCritical = false;
-        int pursuitLine = 0;
         const auto shadow = ShadowPartnerDamageSync::ResolveAtNativeImpact(
-            pThis, damage, lineIndex, synchronizedDamage, synchronizedCritical, pursuitLine);
-        if (shadow == ShadowPartnerDamageSync::LocalResult::WaitForServer) {
+            pThis, damage, lineIndex, compact, synchronizedDamage, synchronizedCritical);
+        if (shadow == ShadowPartnerDamageSync::LocalResult::Deferred) {
             return;
         }
         if (shadow == ShadowPartnerDamageSync::LocalResult::Resolved) {
             g_ShowMobDamage(pThis, edx, synchronizedDamage, lineIndex, synchronizedCritical ? 1 : 0, compact);
-            if (pursuitLine > 0) {
-                g_ShowMobDamage(pThis, edx, synchronizedDamage, pursuitLine, synchronizedCritical ? 1 : 0, compact);
-            }
             return;
-        }
-        if (shadow == ShadowPartnerDamageSync::LocalResult::RemotePursuit) {
-            g_ShowMobDamage(pThis, edx, synchronizedDamage, pursuitLine, synchronizedCritical ? 1 : 0, compact);
         }
         if (SnipeDamageSync::TryResolveLocalDamage(
                 pThis,
@@ -875,6 +862,7 @@ void HookHpMpAlertRecv(bool enable) {
 }
 
 void UpdateQueuedMobDamageDisplay() {
+    ShadowPartnerDamageSync::Update();
     if (!g_mobDamageQueueLockInitialized) {
         return;
     }
