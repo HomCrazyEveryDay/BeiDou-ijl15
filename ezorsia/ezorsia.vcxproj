@@ -177,6 +177,7 @@
     <ClInclude Include="AranComboUi.h" />
     <ClInclude Include="BossHP.h" />
     <ClInclude Include="ClientCrashFixes.h" />
+    <ClInclude Include="ResourceReadGuards.h" />
     <ClInclude Include="FlashRendererFix.h" />
     <ClInclude Include="ClientLog.h" />
     <ClInclude Include="ClientDiagnostics.h" />
