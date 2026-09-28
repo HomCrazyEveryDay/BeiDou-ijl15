@@ -13,6 +13,7 @@
 #include "HpMpAlert.h"
 #include "StackedBuffIcons.h"
 #include "SkillTooltipLayout.h"
+#include "SkillPointSync.h"
 #include "SelectCharMacFix.h"
 #include "MovementKeyHook.h"
 #include "NpcShopCurrency.h"
@@ -1153,6 +1154,7 @@ namespace
 		InstallAntidoteDuringDarkSight();
 		InstallHurricaneMovement();
 		SkillTooltipLayout::Install();
+		SkillPointSync::Install();
 		InstallSuperOctopusAttackCadence();
 		InstallBattleshipMovementSpeed();
 		InstallProgressiveBerserkDamage();

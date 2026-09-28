@@ -195,6 +195,8 @@
     <ClInclude Include="ShadowPartnerAttack.h" />
     <ClInclude Include="ShadowPartnerDamageSync.h" />
     <ClInclude Include="SkillTooltipLayout.h" />
+    <ClInclude Include="SkillPointSync.h" />
+    <ClInclude Include="SkillPointSyncState.h" />
     <ClInclude Include="StackedBuffIcons.h" />
     <ClInclude Include="BuffCountdown.h" />
     <ClInclude Include="BuffCountdownCanvas.h" />
@@ -267,6 +269,7 @@
     <ClCompile Include="HurricaneDamageSync.cpp" />
     <ClCompile Include="ShadowPartnerDamageSync.cpp" />
     <ClCompile Include="SkillTooltipLayout.cpp" />
+    <ClCompile Include="SkillPointSync.cpp" />
     <ClCompile Include="StackedBuffIcons.cpp" />
     <ClCompile Include="BuffCountdown.cpp" />
     <ClCompile Include="NpcShopCurrency.cpp" />

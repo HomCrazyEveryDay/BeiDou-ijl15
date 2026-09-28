@@ -8,6 +8,7 @@
 #include "EvanAttackDiagnostics.h"
 #include "EvanMountDiagnostics.h"
 #include "EvanSpDiagnostics.h"
+#include "SkillPointSync.h"
 #include "EvanPursuit.h"
 #include "DisconnectDiagnostics.h"
 #include "IntegratedFinalAttack.h"
@@ -768,6 +769,8 @@ static void TraceIncomingPacket(CInPacket* packet) {
 }
 static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
     TraceIncomingPacket(packet);
+    if (packet && SkillPointSync::HandlePacket(
+        reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet && EvanPursuit::HandlePacket(
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet) EvanSpDiagnostics::Observe("received",
@@ -854,6 +857,7 @@ void HookHpMpAlertRecv(bool enable) {
     if (!enable) {
         ComboTempestDamage::Reset();
         EvanPursuit::Reset();
+        SkillPointSync::Reset();
         ShadowPartnerDamageSync::Reset();
         AbsoluteDefenseSync::Reset();
         ResetBossVenomVisualTargets();
