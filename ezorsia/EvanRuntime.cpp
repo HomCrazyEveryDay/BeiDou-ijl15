@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "EvanRuntime.h"
+#include "EvanPursuit.h"
 #include <cstring>
 #include "EvanKillingWing.h"
 #include "EvanDragonVisibility.h"
@@ -16,6 +17,111 @@ constexpr DWORD Native(DWORD address) { return address + 0x10000000; }
 #else
 constexpr DWORD Native(DWORD address) { return address; }
 #endif
+struct PursuitState {
+    unsigned oid = 0, receivedAt = 0, duration = 0;
+    int horizontal = 0, vertical = 0;
+};
+SRWLOCK pursuitLock = SRWLOCK_INIT;
+PursuitState pursuit;
+unsigned ReadPursuitU32(const unsigned char* p) {
+    return unsigned(p[0]) | (unsigned(p[1]) << 8) | (unsigned(p[2]) << 16) | (unsigned(p[3]) << 24);
+}
+bool ReceivePursuit(const unsigned char* data, unsigned long size, unsigned now) {
+    if (!data || size < 6) return false;
+    const unsigned opcode = data[4] | (unsigned(data[5]) << 8);
+    if (opcode == 0xed && size >= 10) {
+        AcquireSRWLockExclusive(&pursuitLock);
+        if (pursuit.oid == ReadPursuitU32(data + 6)) pursuit = {};
+        ReleaseSRWLockExclusive(&pursuitLock);
+        return false; // Native monster removal must still run.
+    }
+    if (opcode != 0x100b) return false;
+    PursuitState next;
+    if (size == 23 && data[6] == 1) {
+        next.oid = ReadPursuitU32(data + 7);
+        next.receivedAt = now;
+        next.duration = ReadPursuitU32(data + 11);
+        next.horizontal = int(ReadPursuitU32(data + 15));
+        next.vertical = int(ReadPursuitU32(data + 19));
+        if (!next.oid || !next.duration || next.duration > 30000
+                || next.horizontal <= 0 || next.horizontal > 4096
+                || next.vertical <= 0 || next.vertical > 4096) next = {};
+    }
+    AcquireSRWLockExclusive(&pursuitLock);
+    pursuit = next;
+    ReleaseSRWLockExclusive(&pursuitLock);
+    return true; // Consume invalid custom packets as well; fail closed.
+}
+
+int SelectPursuit(int skill, void* position, RECT* attackRect, void** targets, unsigned now) {
+    if (skill != 22171002 || !position || !attackRect || !targets) return -1;
+    AcquireSRWLockShared(&pursuitLock);
+    const PursuitState state = pursuit;
+    ReleaseSRWLockShared(&pursuitLock);
+    if (!state.oid || now - state.receivedAt >= state.duration) return -1;
+    __try {
+        // The native position interface at caller EBP-70 supplies the player's
+        // coordinates. Keep the avatar's facing, action and attack scheduling.
+        auto vtable = *reinterpret_cast<void***>(position);
+        const POINT* point = reinterpret_cast<const POINT*(__thiscall*)(void*)>(vtable[4])(position);
+        if (!point || point->x < -1000000 || point->x > 1000000
+                || point->y < -1000000 || point->y > 1000000) return -1;
+        RECT range{point->x - state.horizontal, point->y - state.vertical,
+                point->x + state.horizontal, point->y + state.vertical};
+        void* pool = *reinterpret_cast<void**>(Native(0x00BEBFA4));
+        if (!pool) return -1;
+        // CMobPool::FindHitMobInRect: arg 5 filters the exact object ID.
+        // Retain native alive/hidden/invulnerable/body-rectangle checks.
+        using FindInRect = int(__thiscall*)(void*, const RECT*, void**, int, void*, unsigned, int, int, int);
+        void* selected = nullptr;
+        int count = reinterpret_cast<FindInRect>(Native(0x00678476))(
+                pool, &range, &selected, 1, nullptr, state.oid, 0, 0, 0);
+        if (count != 1 || !selected) return -1;
+        // PHANTOM_IMPRINT is a shared monster debuff; ownership is established
+        // only by the private server packet, never by seeing another caster's mark.
+        const auto mob = reinterpret_cast<unsigned char*>(selected);
+        if (*reinterpret_cast<int*>(mob + 0x370) <= 0
+                || *reinterpret_cast<int*>(mob + 0x374) != 22161002) return -1;
+        *attackRect = range; // Native hit-position calculation remains on the selected mob.
+        targets[0] = selected;
+        return 1;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return -1;
+    }
+}
+int __cdecl SelectPursuitNow(int skill, void* position, RECT* rect, void** targets) {
+    return SelectPursuit(skill, position, rect, targets, GetTickCount());
+}
+const DWORD pursuitPool = Native(0x00BEBFA4);
+const DWORD pursuitFallback = Native(0x009565A7), pursuitSelected = Native(0x009565C9);
+__declspec(naked) void PursuitSelectionGate() {
+    __asm {
+        pushfd
+        pushad
+        lea eax,[ebp-11ch]
+        push eax
+        lea eax,[ebp-58h]
+        push eax
+        push dword ptr [ebp-70h]
+        push dword ptr [ebp-14h]
+        call SelectPursuitNow
+        add esp,16
+        mov [esp+1ch],eax
+        popad
+        popfd
+        cmp eax,1
+        jne fallback
+        mov esi,eax
+        mov [ebp-2ch],eax
+        xor edi,edi
+        jmp dword ptr [pursuitSelected]
+    fallback:
+        mov ecx,dword ptr [pursuitPool]
+        mov ecx,[ecx]
+        jmp dword ptr [pursuitFallback]
+    }
+}
+
 // The existing server derives Mir from the equipped saddle (no inventory
 void __cdecl UpdateDragonVisibility(void* dragon) {
     DWORD model = 0;
@@ -582,16 +688,28 @@ Patch patches[] = {
     {Native(0x004FF025), {0xe8,0x6a,0x07,0,0}, {0xe9,0,0,0,0}, 5},
     {Native(0x004079FE), {0xe8,0x29,0xad,0,0}, {0xe9,0,0,0,0}, 5},
     {Native(0x00527EC5), {0xe8,0xf2,0x0e,0,0}, {0xe9,0,0,0,0}, 5},
-    {Native(0x00967009), {0xe8,0x71,0x0c,0xbd,0xff}, {0xe9,0,0,0,0}, 5}
+    {Native(0x00967009), {0xe8,0x71,0x0c,0xbd,0xff}, {0xe9,0,0,0,0}, 5},
+    {Native(0x009565A1), {0x8b,0x0d,0xa4,0xbf,0xbe,0}, {0xe9,0,0,0,0,0x90}, 6}
 };
 }
 
 #ifdef EVAN_RUNTIME_TEST
 extern "C" void TestSetMemoryFieldType(void* field, int type) { SetMemoryFieldType(field, type); }
 extern "C" int TestMemoryBlocksSkill(void* field, void* user) { return MemoryBlocksSkill(field, user); }
+extern "C" bool TestPursuitReceive(const unsigned char* data, unsigned long size, unsigned now) { return ReceivePursuit(data, size, now); }
+extern "C" int TestPursuitSelect(int skill, void* position, RECT* rect, void** targets, unsigned now) { return SelectPursuit(skill, position, rect, targets, now); }
 #endif
+bool EvanPursuit::HandlePacket(const unsigned char* data, unsigned long size) { return ReceivePursuit(data, size, GetTickCount()); }
+void EvanPursuit::Reset() {
+    AcquireSRWLockExclusive(&pursuitLock);
+    pursuit = {};
+    ReleaseSRWLockExclusive(&pursuitLock);
+}
 bool EvanRuntime::Install() {
     if (!EvanKillingWing::Validate()) return false;
+    auto& pursuitPatch = patches[sizeof(patches) / sizeof(patches[0]) - 1];
+    const DWORD pursuitDisplacement = reinterpret_cast<DWORD>(&PursuitSelectionGate) - (pursuitPatch.address + 5);
+    std::memcpy(pursuitPatch.after + 1, &pursuitDisplacement, sizeof(pursuitDisplacement));
     const DWORD memoryTargets[] = {reinterpret_cast<DWORD>(&MemoryFieldConstructorGate), reinterpret_cast<DWORD>(&MemorySkillGate)};
     for (size_t i = 0; i < 2; ++i) {
         const DWORD displacement = memoryTargets[i] - (patches[31+i].address + 5);

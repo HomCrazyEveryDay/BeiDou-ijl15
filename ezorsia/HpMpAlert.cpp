@@ -8,6 +8,7 @@
 #include "EvanAttackDiagnostics.h"
 #include "EvanMountDiagnostics.h"
 #include "EvanSpDiagnostics.h"
+#include "EvanPursuit.h"
 #include "DisconnectDiagnostics.h"
 #include "IntegratedFinalAttack.h"
 #include "SnipeDamageSync.h"
@@ -767,6 +768,8 @@ static void TraceIncomingPacket(CInPacket* packet) {
 }
 static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
     TraceIncomingPacket(packet);
+    if (packet && EvanPursuit::HandlePacket(
+        reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet) EvanSpDiagnostics::Observe("received",
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen);
     if(packet) EvanMountDiagnostics::Log("received", reinterpret_cast<const unsigned char*>(packet->Data),packet->DataLen);
@@ -850,6 +853,7 @@ void HookHpMpAlertRecv(bool enable) {
     }
     if (!enable) {
         ComboTempestDamage::Reset();
+        EvanPursuit::Reset();
         ShadowPartnerDamageSync::Reset();
         AbsoluteDefenseSync::Reset();
         ResetBossVenomVisualTargets();
@@ -937,6 +941,7 @@ void UpdateQueuedMobDamageDisplay() {
 }
 
 void OnMobDamageFieldInit() {
+    EvanPursuit::Reset();
     ComboTempestDamage::Reset();
     HurricaneDamageSync::Reset();
     ShadowPartnerDamageSync::Reset();
@@ -958,6 +963,7 @@ void OnMobDamageFieldInit() {
 }
 
 void OnMobDamageFieldDispose() {
+    EvanPursuit::Reset();
     ComboTempestDamage::Reset();
     HurricaneDamageSync::Reset();
     ShadowPartnerDamageSync::Reset();
