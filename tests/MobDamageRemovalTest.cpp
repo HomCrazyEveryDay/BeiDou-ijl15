@@ -87,6 +87,7 @@ static void BeginIncomingPacket() {}
 static void EndIncomingPacket() {}
 static void Update() {}
 }
+namespace ComboTempestDamage { static void Update() {} }
 namespace EvanSpDiagnostics { static void Observe(const char*, const unsigned char*, unsigned long) {} }
 namespace EvanMountDiagnostics { static void Log(const char*, const unsigned char*, unsigned long) {} }
 namespace EvanAttackDiagnostics { static void Observe(const unsigned char*, unsigned long, bool) {} }

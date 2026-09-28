@@ -1,0 +1,24 @@
+$ErrorActionPreference = 'Stop'
+$vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+$installationPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+if (-not $installationPath) { throw 'Visual Studio C++ build tools were not found.' }
+Import-Module (Join-Path $installationPath 'Common7\Tools\Microsoft.VisualStudio.DevShell.dll')
+Enter-VsDevShell -VsInstallPath $installationPath -SkipAutomaticLocation -DevCmdArguments '-arch=x86 -host_arch=x64' | Out-Null
+$outputDir = Join-Path $env:TEMP ('beidou-tempest-test-' + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $outputDir | Out-Null
+$output = Join-Path $outputDir 'ComboTempestDamageTest.exe'
+$sourceDir = Join-Path $PSScriptRoot '..\ezorsia'
+$source = [IO.File]::ReadAllText((Join-Path $sourceDir 'ComboTempestDamage.cpp'))
+foreach ($address in @('00BEBFA4', '00441AE8', '00403CB7', '00403CDE', '00BEBF6C', '00438A21', '00437D0F')) {
+    $source = $source.Replace("0x$address", ('0x30' + $address.Substring(2)))
+}
+[IO.File]::WriteAllText((Join-Path $outputDir 'DamageSyncUnderTest.h'), $source)
+$hooks = [IO.File]::ReadAllText((Join-Path $sourceDir 'HpMpAlert.cpp'))
+$first = $hooks.IndexOf('static bool HandleShowMobDamagePacket(')
+$last = $hooks.IndexOf('using SaveGlobal_t', $first)
+if ($first -lt 0 -or $last -le $first) { throw 'Cannot locate production damage receive/display hooks.' }
+[IO.File]::WriteAllText((Join-Path $outputDir 'DamageHooksUnderTest.h'), $hooks.Substring($first, $last - $first))
+& cl.exe /nologo /std:c++17 /O2 /EHsc "/I$outputDir" "/I$sourceDir" (Join-Path $PSScriptRoot 'ComboTempestDamageTest.cpp') "/Fo:$outputDir\" "/Fe:$output" /link /BASE:0x20000000 /DYNAMICBASE:NO
+if ($LASTEXITCODE -ne 0) { throw 'ComboTempestDamageTest compilation failed.' }
+& $output (Join-Path $PSScriptRoot '..\..\BeiDou-Client\BeiDou.exe')
+if ($LASTEXITCODE -ne 0) { throw 'ComboTempestDamageTest failed.' }

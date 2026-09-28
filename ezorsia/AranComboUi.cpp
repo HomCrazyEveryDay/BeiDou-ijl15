@@ -10,6 +10,7 @@ namespace
 
 	constexpr DWORD kShowComboBuildCall = 0x009602EA;
 	constexpr DWORD kTimedClearCall = 0x0094BDD4;
+	constexpr DWORD kSkillClearCall = 0x009693BE;
 	constexpr DWORD kComboDigitLayerTtlPatch = 0x00960708 + 1;
 	constexpr DWORD kComboTextLayerTtlPatch = 0x0096095B + 1;
 
@@ -82,6 +83,15 @@ namespace
 		ClearLayerRef(userLocal + kComboCommandRightLayerOffset, nullptr);
 	}
 
+	void __fastcall ClearComboUiAfterSkill(void* pThis, void* edx)
+	{
+		ClearComboUi(pThis, edx);
+		// The native skill path clears the layers. The next SHOW_COMBO must rebuild
+		// command hints even when the remaining count is still in the same tier.
+		g_lastCommandTier = 0;
+		g_lastDigitCount = 0;
+	}
+
 	void __fastcall BuildComboUiFromShowCombo(void* pThis, void* edx)
 	{
 		unsigned char* userLocal = reinterpret_cast<unsigned char*>(pThis);
@@ -90,6 +100,12 @@ namespace
 		}
 
 		const DWORD combo = ReadDword(userLocal, kComboCountOffset);
+		if (combo == 0) {
+			// The native builder returns immediately for zero and leaves old layers behind.
+			WriteDword(userLocal, kComboCommandVisibleOffset, 0);
+			ClearComboUiAfterSkill(pThis, edx);
+			return;
+		}
 		const DWORD digitCount = ComboDigitCount(combo);
 		// The native builder does not immediately remove now-unused high digit layers when 105 -> 95 or 15 -> 5.
 		// Clear only the excess layers so same-width combo changes still use the original animation path.
@@ -149,6 +165,9 @@ void AranComboUi::Install()
 
 	const DWORD showComboBuildCall = reinterpret_cast<DWORD>(&BuildComboUiFromShowCombo) - (kShowComboBuildCall + 5);
 	Memory::WriteInt(kShowComboBuildCall + 1, showComboBuildCall);
+
+	const DWORD skillClearCall = reinterpret_cast<DWORD>(&ClearComboUiAfterSkill) - (kSkillClearCall + 5);
+	Memory::WriteInt(kSkillClearCall + 1, skillClearCall);
 
 	const DWORD relativeCall = reinterpret_cast<DWORD>(&TimedClearComboUi) - (kTimedClearCall + 5);
 	Memory::WriteInt(kTimedClearCall + 1, relativeCall);

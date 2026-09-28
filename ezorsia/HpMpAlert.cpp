@@ -13,6 +13,7 @@
 #include "SnipeDamageSync.h"
 #include "HurricaneDamageSync.h"
 #include "ShadowPartnerDamageSync.h"
+#include "ComboTempestDamage.h"
 #include "StackedBuffIcons.h"
 
 #include <cstddef>
@@ -597,6 +598,9 @@ static bool HandleShowMobDamagePacket(CInPacket* packet) {
         if (opcode != kOpcodeShowMobDamage) {
             return false;
         }
+        if (ComboTempestDamage::HandlePacket(data, packet->DataLen)) {
+            return true;
+        }
         if (packet->DataLen < 16) {
             CrashReporter::RecordEvent(
                 "showMobDamage.packet",
@@ -845,6 +849,7 @@ void HookHpMpAlertRecv(bool enable) {
         LeaveCriticalSection(&g_mobDamageQueueLock);
     }
     if (!enable) {
+        ComboTempestDamage::Reset();
         ShadowPartnerDamageSync::Reset();
         AbsoluteDefenseSync::Reset();
         ResetBossVenomVisualTargets();
@@ -862,6 +867,7 @@ void HookHpMpAlertRecv(bool enable) {
 }
 
 void UpdateQueuedMobDamageDisplay() {
+    ComboTempestDamage::Update();
     ShadowPartnerDamageSync::Update();
     if (!g_mobDamageQueueLockInitialized) {
         return;
@@ -931,6 +937,7 @@ void UpdateQueuedMobDamageDisplay() {
 }
 
 void OnMobDamageFieldInit() {
+    ComboTempestDamage::Reset();
     HurricaneDamageSync::Reset();
     ShadowPartnerDamageSync::Reset();
     AbsoluteDefenseSync::Reset();
@@ -951,6 +958,7 @@ void OnMobDamageFieldInit() {
 }
 
 void OnMobDamageFieldDispose() {
+    ComboTempestDamage::Reset();
     HurricaneDamageSync::Reset();
     ShadowPartnerDamageSync::Reset();
     AbsoluteDefenseSync::Reset();

@@ -175,6 +175,7 @@
       <FileType>CppHeader</FileType>
     </ClInclude>
     <ClInclude Include="AranComboUi.h" />
+    <ClInclude Include="ComboTempestDamage.h" />
     <ClInclude Include="BossHP.h" />
     <ClInclude Include="ClientCrashFixes.h" />
     <ClInclude Include="ResourceReadGuards.h" />
@@ -244,6 +245,7 @@
   <ItemGroup>
     <ClCompile Include="AbsoluteDefenseSync.cpp" />
     <ClCompile Include="AranComboUi.cpp" />
+    <ClCompile Include="ComboTempestDamage.cpp" />
     <ClCompile Include="BossHP.cpp" />
     <ClCompile Include="ClientCrashFixes.cpp" />
     <ClCompile Include="FlashRendererFix.cpp" />

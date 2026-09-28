@@ -7,6 +7,7 @@ static DWORD g_time = 0;
 static DWORD TestTickCount() { return g_time; }
 #define GetTickCount TestTickCount
 #include "DamageSyncUnderTest.h"
+namespace ComboTempestDamage { static bool HandlePacket(const unsigned char*, unsigned long) { return false; } }
 
 static void Require(bool condition, const char* message) {
     if (!condition) { std::fprintf(stderr, "FAIL: %s\n", message); std::exit(1); }
