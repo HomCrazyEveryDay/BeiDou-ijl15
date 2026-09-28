@@ -8,6 +8,7 @@
 #include <comutil.h>
 #include "BossHP.h"
 #include "AranComboUi.h"
+#include "AranFirstAttack.h"
 #include "ComboTempestCritical.h"
 #include "HpMpAlert.h"
 #include "StackedBuffIcons.h"
@@ -1173,6 +1174,9 @@ namespace
 		SecondPendantSlot::Install(enableEquipmentSlotLog);
 		Client::MoreHook();
 		AranComboUi::Install();
+		if (!AranFirstAttack::Install()) {
+			ClientLog::Append(ClientLog::Component::Lifecycle, "aran_first_attack_install_failed");
+		}
 		if (!ComboTempestCritical::Install()) {
 			ClientLog::Append(ClientLog::Component::Lifecycle, "combo_tempest_critical_install_failed");
 		}
