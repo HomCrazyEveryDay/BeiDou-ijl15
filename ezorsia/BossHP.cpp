@@ -91,9 +91,13 @@ void BossHP::HookDisposeField() {
 
 void BossHP::DrawBossHpNumberIfNeed() {
 	if (dBossHpPercentage > 0) {
+		int miniMapWidth;
+		if (!TryGetMiniMapWidth(miniMapWidth)) {
+			return;
+		}
 		char sToolTip[20];
 		sprintf_s(sToolTip, "%.2f%%", dBossHpPercentage);
-		BossHP::SetToolTip_String((int)&aBossHpUIToolTip, GetMiniMapWidth(), 37, sToolTip);
+		BossHP::SetToolTip_String((int)&aBossHpUIToolTip, miniMapWidth, 37, sToolTip);
 	}
 }
 
@@ -144,15 +148,13 @@ void BossHP::CreateToolTip(int instance)
 	_UIToolTip__CreateToolTip(instance, 0);
 }
 
-int ReadInt(const DWORD dwAddress) {
-	int nResult = -1;
-	DWORD dwOldProtect;
-	VirtualProtect((void*)dwAddress, sizeof(int), PAGE_EXECUTE_READ, &dwOldProtect);
-	nResult = *reinterpret_cast<unsigned int*>(dwAddress);
-	VirtualProtect((void*)dwAddress, sizeof(int), dwOldProtect, &dwOldProtect);
-	return nResult;
-}
-
-int BossHP::GetMiniMapWidth() {
-	return ReadInt(ReadInt(dw_TSingleton_CUIMiniMap___ms_pInstance) + 0x24); // 
+bool BossHP::TryGetMiniMapWidth(int& width) {
+	const auto miniMap = *reinterpret_cast<const BYTE* const*>(dw_TSingleton_CUIMiniMap___ms_pInstance);
+	if (!miniMap) {
+		return false;
+	}
+	// Reads need no protection change. This heap page can also hold objects
+	// written by the audio thread; PAGE_EXECUTE_READ would make those writes fault.
+	width = *reinterpret_cast<const int*>(miniMap + 0x24);
+	return true;
 }

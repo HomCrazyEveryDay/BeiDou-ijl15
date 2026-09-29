@@ -23,6 +23,6 @@ private:
 	static void DrawBossHpNumber(int nHP, int nMaxHP);
 	static void DisposeBossHpNumber();
 	//
-	static int GetMiniMapWidth();
+	static bool TryGetMiniMapWidth(int& width);
 
 };
