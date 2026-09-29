@@ -180,6 +180,7 @@
     <ClInclude Include="ComboTempestDamage.h" />
     <ClInclude Include="ComboTempestCritical.h" />
     <ClInclude Include="BossHP.h" />
+    <ClInclude Include="CharacterSlots.h" />
     <ClInclude Include="ClientCrashFixes.h" />
     <ClInclude Include="ResourceReadGuards.h" />
     <ClInclude Include="FlashRendererFix.h" />
@@ -256,6 +257,7 @@
     <ClCompile Include="ComboTempestDamage.cpp" />
     <ClCompile Include="ComboTempestCritical.cpp" />
     <ClCompile Include="BossHP.cpp" />
+    <ClCompile Include="CharacterSlots.cpp" />
     <ClCompile Include="ClientCrashFixes.cpp" />
     <ClCompile Include="FlashRendererFix.cpp" />
     <ClCompile Include="ClientLog.cpp" />

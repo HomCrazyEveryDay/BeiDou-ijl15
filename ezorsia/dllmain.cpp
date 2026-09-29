@@ -28,6 +28,7 @@
 #include "DisconnectDiagnostics.h"
 #include "ProcessExitMonitor.h"
 #include "ClientCrashFixes.h"
+#include "CharacterSlots.h"
 #include "ChairCompatibility.h"
 #include "RefreshRateTrace.h"
 #include "PetLootTiming.h"
@@ -1101,6 +1102,10 @@ namespace
 			configParseError, enableCrashDump, enableCrashTrace, Client::enableStartupLog,
 			enableEquipmentSlotLog, enableStackedBuffIconLog);
 		ClientCrashFixes::Install();
+		if (!CharacterSlots::Install()) {
+			MessageBoxA(nullptr, "Character slot patches do not match this v83 client.", "BeiDou", MB_OK | MB_ICONERROR);
+			ExitProcess(ERROR_BAD_EXE_FORMAT);
+		}
 		WriteStartupLog(configParseError, requestedWidth, requestedHeight, resolutionEnvironment);
 
 		Hook_CreateMutexA(true); //multiclient //ty darter, angel, and alias!
