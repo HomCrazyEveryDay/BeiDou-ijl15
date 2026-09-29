@@ -1355,7 +1355,7 @@ KeyValuePair newKeyValuePairs[] = {
     {3495, "因手续费不足，\r\n未能领取金币与道具。"},
     {3496, "因背包位不足，\r\n未能领取金币与道具。"},
     {3497, "请通过弗兰德里领取物品。"},
-    {3498, "您好~我是雇用商人委员会的代表弗兰德里。雇用商人的使用方法与一般商店大致相同，只需注意几点注意事项，我把相关内容整理出来了，请确认一下的同意书后，再使用雇用商人功能。\r\n\r\n雇用商人同意书\r\n1) 在下列情况下，雇用商人会将金币与道具寄托到商店银行后消失。\r\n  - 雇用商人 #r已达有效期限#k\r\n  -在同一地点开设雇用商人 #r超过24小时#k \r\n  - 雇用商人撤销时，#r背包空间不足#k(将提醒1次)\r\n2)并且雇用商人消失时，需透过自由市场入口处的#r弗兰德里#k领取金币与道具\r\n3)在回收金币与道具前，无法再使用雇用商人的服务\r\n4)将金币与物品交托给商店银行后，经过#r24小时#k便开始征收每日销售金额与物品原价 1%的手续费\r\n5)当手续费超过100%时，便将此充公用作商店街发展委员会的经费\r\n6)若开设的商店内，包含脏话与不雅文字时，管理者可在无预警的情况下变更商店名称。"},
+    {3498, "您好~我是雇用商人委员会的代表弗兰德里。雇用商人的使用方法与一般商店大致相同，只需注意几点注意事项，我把相关内容整理出来了，请确认一下的同意书后，再使用雇用商人功能。\r\n\r\n雇用商人同意书\r\n1) 在下列情况下，雇用商人会将金币与道具寄托到商店银行后消失。\r\n  - 雇用商人 #r已达有效期限#k\r\n  -在同一地点开设雇用商人 #r达到规定营业时限（以店内倒计时为准）#k \r\n  - 雇用商人撤销时，#r背包空间不足#k(将提醒1次)\r\n2)并且雇用商人消失时，需透过自由市场入口处的#r弗兰德里#k领取金币与道具\r\n3)在回收金币与道具前，无法再使用雇用商人的服务\r\n4)将金币与物品交托给商店银行后，经过#r24小时#k便开始征收每日销售金额与物品原价 1%的手续费\r\n5)当手续费超过100%时，便将此充公用作商店街发展委员会的经费\r\n6)若开设的商店内，包含脏话与不雅文字时，管理者可在无预警的情况下变更商店名称。"},
     {3499, "雇佣商店售出%s %d个。"},
     {3506, "没有宠物就无法完成任务\r\n请你召唤宠物后再来."},
     {3507, "宠物亲密度太低，或当前召唤的宠物\r\n无法完成任务。"},
@@ -2339,6 +2339,21 @@ bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //t
 				if (Client::SwitchChinese && ret && static_cast<const char*>(*ret) &&
 					!strcmp(static_cast<const char*>(*ret), "Creation has completed successfully."))
 					*ret = "\xBD\xC7\xC9\xAB\xB4\xB4\xBD\xA8\xB3\xC9\xB9\xA6\xA1\xA3";
+				break;
+			// Hired merchant contract: duration is configured by the server.
+			case 3498:
+				if (Client::SwitchChinese) {
+					for (const auto& pair : newKeyValuePairs)
+						if (pair.key == nIdx) { *ret = pair.value.c_str(); break; }
+				} else if (ret && static_cast<const char*>(*ret)) {
+					std::string contract = static_cast<const char*>(*ret);
+					const std::string oldRule = "more than #r24 Hours#k straight";
+					const auto at = contract.find(oldRule);
+					if (at != std::string::npos) {
+						contract.replace(at, oldRule.size(), "the #rallowed working period#k (see the shop countdown)");
+						*ret = contract.c_str();
+					}
+				}
 				break;
 			// Native Soul Stone revival confirmation (GMS083 StringPool).
 			case 5460:

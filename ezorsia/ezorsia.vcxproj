@@ -198,6 +198,7 @@
     <ClInclude Include="ShadowPartnerDamageSync.h" />
     <ClInclude Include="SkillTooltipLayout.h" />
     <ClInclude Include="SkillPointSync.h" />
+    <ClInclude Include="HiredMerchantClock.h" />
     <ClInclude Include="SkillPointSyncState.h" />
     <ClInclude Include="StackedBuffIcons.h" />
     <ClInclude Include="BuffCountdown.h" />
@@ -274,6 +275,7 @@
     <ClCompile Include="ShadowPartnerDamageSync.cpp" />
     <ClCompile Include="SkillTooltipLayout.cpp" />
     <ClCompile Include="SkillPointSync.cpp" />
+    <ClCompile Include="HiredMerchantClock.cpp" />
     <ClCompile Include="StackedBuffIcons.cpp" />
     <ClCompile Include="BuffCountdown.cpp" />
     <ClCompile Include="NpcShopCurrency.cpp" />

@@ -9,6 +9,7 @@
 #include "EvanMountDiagnostics.h"
 #include "EvanSpDiagnostics.h"
 #include "SkillPointSync.h"
+#include "HiredMerchantClock.h"
 #include "EvanPursuit.h"
 #include "DisconnectDiagnostics.h"
 #include "IntegratedFinalAttack.h"
@@ -769,6 +770,8 @@ static void TraceIncomingPacket(CInPacket* packet) {
 }
 static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
     TraceIncomingPacket(packet);
+    if (packet && HiredMerchantClock::HandlePacket(
+        reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet && SkillPointSync::HandlePacket(
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet && EvanPursuit::HandlePacket(

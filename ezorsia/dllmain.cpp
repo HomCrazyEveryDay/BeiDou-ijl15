@@ -15,6 +15,7 @@
 #include "StackedBuffIcons.h"
 #include "SkillTooltipLayout.h"
 #include "SkillPointSync.h"
+#include "HiredMerchantClock.h"
 #include "SelectCharMacFix.h"
 #include "MovementKeyHook.h"
 #include "NpcShopCurrency.h"
@@ -1161,6 +1162,7 @@ namespace
 		InstallHurricaneMovement();
 		SkillTooltipLayout::Install();
 		SkillPointSync::Install();
+		HiredMerchantClock::Install();
 		InstallSuperOctopusAttackCadence();
 		InstallBattleshipMovementSpeed();
 		InstallProgressiveBerserkDamage();
