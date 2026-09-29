@@ -63,16 +63,36 @@ class NativeSlotsTest(unittest.TestCase):
         self.assertEqual(len(hit), 1, "native block did not reach its continuation")
         return hit[0]
 
-    def bind_records(self):
-        self.put(FRAME + 8, RECORDS)
-        self.uc.reg_write(UC_X86_REG_ECX, RECORDS)
+    def bind_records(self, records=RECORDS):
+        self.put(FRAME + 8, records)
+        self.uc.reg_write(UC_X86_REG_ECX, records)
         self.uc.reg_write(UC_X86_REG_ESI, UI)
         self.uc.mem_write(UI + 0x70, b'\xA5' * 0x60)
         self.run_to(0x604647, [0x60465B])
         self.assertEqual(self.uc.mem_read(UI + 0x70, 0x60), b'\xA5' * 0x60,
                          "pointer initialization overwrote native buttons")
         for index in range(21):
-            self.assertEqual(self.get(META["records"] + index * 4), RECORDS + index * STRIDE)
+            self.assertEqual(self.get(META["records"] + index * 4), records + index * STRIDE)
+
+    def decode_records(self, count, records=RECORDS):
+        self.put(LOGIN + 0x194, records)
+        self.uc.reg_write(UC_X86_REG_ESI, LOGIN)
+        self.uc.reg_write(UC_X86_REG_EDI, 0)
+        self.uc.reg_write(UC_X86_REG_EBX, count)
+        for offset in (-0x10, -0x14, -0x18):
+            self.put(FRAME + offset, 0)
+        visited = []
+
+        def decode(address):
+            if address == 0x5F9A80:  # opaque character payload decoder
+                index = self.get(FRAME - 0x10)
+                visited.append(index)
+                self.put(records + index * STRIDE, 1000 + index)
+                self.uc.reg_write(UC_X86_REG_EIP, 0x5F9B0F + DELTA)
+
+        self.run_to(0x5F9A77, [0x5F9B29], decode)
+        self.assertEqual(visited, list(range(count)))
+        self.assertEqual(self.get(FRAME - 0x10), 20)
 
     def test_shop_purchase_and_expansion_receipt(self):
         for count in (14, 15, 16, 19, 20, 21):
@@ -107,24 +127,56 @@ class NativeSlotsTest(unittest.TestCase):
 
     def test_character_list_decode_visits_twenty_records(self):
         for count in (0, 3, 15, 16, 20):
-            self.uc.mem_write(RECORDS, b'\0' * (STRIDE * 21))
-            self.uc.reg_write(UC_X86_REG_ESI, LOGIN)
-            self.uc.reg_write(UC_X86_REG_EBX, count)
-            for offset in (-0x10, -0x14, -0x18):
-                self.put(FRAME + offset, 0)
-            visited = []
-
-            def decode(address):
-                if address == 0x5F9A80:  # opaque character payload decoder
-                    index = self.get(FRAME - 0x10)
-                    visited.append(index)
-                    self.put(RECORDS + index * STRIDE, 1000 + index)
-                    self.uc.reg_write(UC_X86_REG_EIP, 0x5F9B0F + DELTA)
-
-            self.run_to(0x5F9A77, [0x5F9B29], decode)
-            self.assertEqual(visited, list(range(count)))
-            self.assertEqual(self.get(FRAME - 0x10), 20)
+            self.uc.mem_write(RECORDS, b'\xA5' * (STRIDE * 21))
+            self.decode_records(count)
+            self.assertEqual([self.get(RECORDS + i * STRIDE) for i in range(20)],
+                             [1000 + i if i < count else 0 for i in range(20)])
+            # The packet has only 20 logical slots. UI binding must empty the
+            # extra drawing record; decoding alone cannot initialize it.
+            self.assertEqual(self.get(RECORDS + 20 * STRIDE), 0xA5A5A5A5)
+            self.bind_records()
             self.assertEqual(self.get(RECORDS + 20 * STRIDE), 0)
+
+    def test_last_page_after_reused_heap_and_stage_reentry(self):
+        def helpers(address):
+            if address not in (0xA61040, 0x5FD9E2, 0x428712):
+                return
+            esp = self.uc.reg_read(UC_X86_REG_ESP)
+            if address == 0xA61040:  # CRT memset used by the real constructor
+                dst, value, count = (self.get(esp + n) for n in (4, 8, 12))
+                self.uc.mem_write(dst, bytes([value & 255]) * count)
+                self.uc.reg_write(UC_X86_REG_EAX, dst)
+            # Empty-cell UI cleanup is opaque; the actual renderer's character
+            # ID branch and purchased-slot/page checks execute unchanged.
+            self.uc.reg_write(UC_X86_REG_EIP, self.get(esp))
+            self.uc.reg_write(UC_X86_REG_ESP, esp + (8 if address == 0x428712 else 4))
+
+        for iteration, (fill, count) in enumerate(((0, 15), (0xA5, 15), (0x3B, 20))):
+            with self.subTest(heap_fill=fill, character_count=count):
+                records = RECORDS + (iteration % 2) * 0x4000
+                self.uc.mem_write(records, bytes([fill]) * (STRIDE * 21))
+                for index in range(21):
+                    self.uc.reg_write(UC_X86_REG_ECX, records + index * STRIDE)
+                    self.run_to(0x601103, [0x60112B], helpers)
+                # Native construction initializes owned subobjects, NOT IDs.
+                self.assertEqual(self.get(records + 20 * STRIDE), fill * 0x01010101)
+                self.decode_records(count, records)
+                before = bytes(self.uc.mem_read(records, STRIDE * 21))
+                self.bind_records(records)
+                after = bytes(self.uc.mem_read(records, STRIDE * 21))
+                self.assertEqual(after[:20 * STRIDE], before[:20 * STRIDE])
+                self.assertEqual(after[20 * STRIDE + 4:], before[20 * STRIDE + 4:],
+                                 "padding clear damaged constructed subobjects")
+                self.put(UI + 0x12C, 20)
+                self.put(UI + 0x130, 6)
+                for cell in range(3):
+                    self.put(FRAME + 8, cell)
+                    self.uc.reg_write(UC_X86_REG_EAX, records + (18 + cell) * STRIDE)
+                    self.uc.reg_write(UC_X86_REG_ECX, UI)
+                    branch = self.run_to(0x606BBC, [0x606E99, 0x606C08, 0x606E93], helpers)
+                    expected = 0x606E93 if cell == 2 else (0x606E99 if count == 20 else 0x606C08)
+                    self.assertEqual(branch, expected,
+                                     "renderer treated padding as a character instead of hiding it")
 
     def test_create_full_list_and_insert_search(self):
         self.uc.reg_write(UC_X86_REG_ESI, LOGIN)

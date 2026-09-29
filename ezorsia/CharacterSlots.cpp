@@ -15,6 +15,8 @@ constexpr DWORD Native(DWORD address) { return address; }
 // so allocate one empty padding record without granting a 21st character slot.
 constexpr DWORD kMaxSlots = 20;
 constexpr DWORD kRecordCount = ((kMaxSlots + 2) / 3) * 3;
+// An enum is an assembly displacement, not the address of a const object.
+enum { kPaddingRecord = kMaxSlots * 0x2AC };
 constexpr DWORD kLastRecord = (kMaxSlots - 1) * 0x2AC;
 constexpr DWORD kLastRank = (kMaxSlots - 1) * 0x10;
 
@@ -34,6 +36,10 @@ bool g_installed = false;
 
 __declspec(naked) void InitializePointers() {
     __asm {
+        // Native construction leaves IDs uninitialized; packet decoding only
+        // clears the 20 logical slots. Hide the padding even on reused heaps.
+        // Clear only its ID, preserving the native record's owned subobjects.
+        mov dword ptr [ecx + kPaddingRecord], 0
         mov eax, offset g_records
         mov edx, kRecordCount
         jmp dword ptr [g_initReturn]
