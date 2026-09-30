@@ -26,6 +26,12 @@ static std::vector<unsigned char> Snapshot(int id=59, int job=2112) {
     for(unsigned i=0;i<4;++i)Put(p,13+i*2,points[i],2);
     return p;
 }
+static std::vector<unsigned char> EvanSnapshot(unsigned value) {
+    std::vector<unsigned char> p(53);
+    Put(p,4,0x100c,2);p[6]=2;Put(p,7,936,4);Put(p,11,2216,2);
+    for (unsigned i=0;i<8;i++) Put(p,13+i*4,value,4);
+    return p;
+}
 static constexpr DWORD Native(DWORD address) { return address + 0x20000000; }
 static void* Map(DWORD address, unsigned size) {
     address=Native(address);
@@ -66,6 +72,33 @@ static int InvokeClick(void* skill) {
     }
     return result;
 }
+static int InvokeEvan(DWORD address,void* window,bool draw) {
+    address=Native(address);
+    int result;
+    __asm {
+        push esi
+        push edi
+        mov esi,window
+        mov edi,window
+        mov eax,255
+        cmp draw,0
+        je withBook
+        call address
+        mov result,edi
+        jmp finished
+    withBook:
+        lea eax,resumed
+        push eax
+        push 1
+        jmp address
+    resumed:
+        mov result,eax
+    finished:
+        pop edi
+        pop esi
+    }
+    return result;
+}
 int main() {
     _set_error_mode(_OUT_TO_STDERR);
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
@@ -92,13 +125,20 @@ int main() {
 
     // Execute the actual x86 caves against fixed-address native stubs. This checks
     // stack cleanup, ESI/EBX preservation, fallback and all branch continuations.
-    Map(0x008a0000,0x10000);Map(0x00470000,0x10000);Map(0x00bf0000,0x2000);
+    Map(0x008a0000,0x20000);Map(0x00470000,0x10000);Map(0x00bf0000,0x2000);
+    Map(0x004e0000,0x10000);Map(0x00420000,0x10000);
     const unsigned char draw[]={0xe8,0xc6,0x82,0xbc,0xff};
     const unsigned char button[]={0xe8,0x72,0x6e,0xbc,0xff};
     const unsigned char click[]={0x83,0x7b,0x2c,0,0x0f,0x85,0x2b,0x02,0,0};
     std::memcpy(reinterpret_cast<void*>(Native(0x8ac412)),draw,5);
     std::memcpy(reinterpret_cast<void*>(Native(0x8ad866)),button,5);
     std::memcpy(reinterpret_cast<void*>(Native(0x8acffc)),click,10);
+    const unsigned char evanDraw[]={0x0f,0xb6,0xf8,0xe8,0xd7,0xcb,0xb6,0xff};
+    const unsigned char evanButton[]={0xe8,0xa9,0x5a,0xc2,0xff,0x0f,0xb6,0xc0};
+    const unsigned char evanClick[]={0xe8,0x26,0x60,0xc2,0xff,0x84,0xc0};
+    std::memcpy(reinterpret_cast<void*>(Native(0x8bbdd8)),evanDraw,8);
+    std::memcpy(reinterpret_cast<void*>(Native(0x8bcc07)),evanButton,8);
+    std::memcpy(reinterpret_cast<void*>(Native(0x8bc68a)),evanClick,7);
     *reinterpret_cast<unsigned char*>(Native(0x8ac412))=0xcc;
     assert(!Install());assert(*reinterpret_cast<unsigned char*>(Native(0x8ad866))==0xe8);
     *reinterpret_cast<unsigned char*>(Native(0x8ac412))=0xe8;
@@ -106,6 +146,15 @@ int main() {
     std::memcpy(reinterpret_cast<void*>(Native(0x8ac417)),cleanup,4);
     std::memcpy(reinterpret_cast<void*>(Native(0x8ad86b)),cleanup,4);
     ReturnAt(0x4746dd,576);ReturnAt(0x8ad006,100);ReturnAt(0x8ad227,200);ReturnAt(0x8ad231,300);
+    ReturnAt(0x4289b7,0);
+    *reinterpret_cast<unsigned char*>(Native(0x8bbde0))=0xc3;
+    *reinterpret_cast<unsigned char*>(Native(0x8bcc0f))=0xc3;
+    // Capture the zero flag at the native click continuation.
+    const unsigned char checkZero[]={0x0f,0x95,0xc0,0x0f,0xb6,0xc0,0xc3};
+    std::memcpy(reinterpret_cast<void*>(Native(0x8bc691)),checkZero,sizeof(checkZero));
+    ReturnAt(0x4e26b5,255);
+    const unsigned char popBook[]={0xc2,4,0};
+    std::memcpy(reinterpret_cast<void*>(Native(0x4e26ba)),popBook,3);
     DWORD oldProtection;
     assert(VirtualProtect(reinterpret_cast<void*>(Native(0x8ac000)),0x2000,PAGE_EXECUTE_READ,&oldProtection));
     assert(Install());
@@ -132,5 +181,25 @@ int main() {
     *reinterpret_cast<int*>(skill)=21000000;assert(InvokeClick(skill)==200);
     Reset();*reinterpret_cast<int*>(skill)=21120004;assert(InvokeClick(skill)==100);
     assert(InvokeDisplay(0x8ac412,window)==576);
+    auto evanLogin=Login(936,2216);
+    HandlePacket(evanLogin.data(),static_cast<unsigned long>(evanLogin.size()));
+    for (unsigned value : {0u,1u,255u,256u,285u,550u,65536u}) {
+        auto sp=EvanSnapshot(value);
+        HandlePacket(sp.data(),static_cast<unsigned long>(sp.size()));
+        for (int stage=1;stage<=8;stage++) {
+            *reinterpret_cast<int*>(tab+0x3c)=stage;
+            assert(InvokeEvan(0x8bbdd8,window,true)==value);
+            assert(InvokeEvan(0x8bcc07,window,false)==value);
+            assert(InvokeEvan(0x8bc68a,window,false)==(value>0));
+        }
+    }
+    auto future=EvanSnapshot(285);Put(future,13+8*4,1,4);
+    State evanState;evanState.Observe(evanLogin.data(),evanLogin.size());
+    assert(evanState.Receive(future.data(),future.size()) && !evanState.ready);
+    for(unsigned n=6;n<53;n++) {
+        auto sp=EvanSnapshot(285);
+        assert(evanState.Receive(sp.data(),n) && !evanState.ready);
+    }
+    Reset();assert(InvokeEvan(0x8bcc07,window,false)==255);
     puts("PASS SP wire validation, identity reset, ordinary/Evan isolation, native x86 display/button/click caves");
 }

@@ -6,6 +6,8 @@ namespace SkillPointSync {
 inline unsigned Read16(const unsigned char* p) { return p[0] | (unsigned(p[1]) << 8); }
 inline unsigned Read32(const unsigned char* p) { return Read16(p) | (Read16(p + 2) << 16); }
 inline int Stage(int job) {
+    if (job == 2200) return 1;
+    if (job >= 2210 && job <= 2218) return job - 2208;
     const int family = job / 100;
     if (!((family >= 1 && family <= 5) || (family >= 11 && family <= 15) || family == 21)) return 0;
     if (job % 100 == 0) return 1;
@@ -16,7 +18,7 @@ struct State {
     unsigned character = 0;
     int job = 0;
     bool ready = false;
-    unsigned available[4]{};
+    unsigned available[10]{};
 
     // Observe only verified native identity fields; never change the packet cursor.
     void Observe(const unsigned char* data, std::size_t size) {
@@ -45,11 +47,13 @@ struct State {
         if (!data || size < 6 || Read16(data + 4) != 0x100c) return false;
         // Consume even an invalid extension, so it cannot reach the native dispatcher.
         ready = false;
-        if (size != 21 || data[6] != 1 || !character || Read32(data + 7) != character
+        const bool evan = job == 2200 || (job >= 2210 && job <= 2218);
+        const unsigned count = evan ? 10 : 4, width = evan ? 4 : 2;
+        if (size != 13 + count * width || data[6] != (evan ? 2 : 1) || !character || Read32(data + 7) != character
                 || Read16(data + 11) != job || !Stage(job)) return true;
-        unsigned previous = 0x7fff;
-        for (unsigned i = 0; i < 4; ++i) {
-            const unsigned value = Read16(data + 13 + i * 2);
+        unsigned previous = evan ? 0x7fffffff : 0x7fff;
+        for (unsigned i = 0; i < count; ++i) {
+            const unsigned value = evan ? Read32(data + 13 + i * width) : Read16(data + 13 + i * width);
             if (value > previous || (i >= unsigned(Stage(job)) && value)) return true;
             available[i] = value;
             previous = value;
