@@ -33,6 +33,7 @@
 #include "ChairCompatibility.h"
 #include "RefreshRateTrace.h"
 #include "PetLootTiming.h"
+#include "DeathDialogDiagnostics.h"
 #include "LauncherGate.h"
 #include <wincrypt.h>
 
@@ -1103,6 +1104,7 @@ namespace
 			configParseError, enableCrashDump, enableCrashTrace, Client::enableStartupLog,
 			enableEquipmentSlotLog, enableStackedBuffIconLog);
 		ClientCrashFixes::Install();
+		DeathDialogDiagnostics::Install();
 		if (!CharacterSlots::Install()) {
 			MessageBoxA(nullptr, "Character slot patches do not match this v83 client.", "BeiDou", MB_OK | MB_ICONERROR);
 			ExitProcess(ERROR_BAD_EXE_FORMAT);
