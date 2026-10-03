@@ -14,6 +14,12 @@ static void Jump(DWORD address, void* target) {
     *reinterpret_cast<DWORD*>(p+1)=reinterpret_cast<DWORD>(target)-address-5;
 }
 static int __cdecl ReadSecure(int* value, int) { return *value; }
+static unsigned char* mobA=nullptr;
+static unsigned char* mobB=nullptr;
+static void* __fastcall FindMob(void*,void*,unsigned oid) {
+    for(auto mob:{mobA,mobB}) if(mob && *reinterpret_cast<unsigned*>(mob+0x17c)==oid)return mob;
+    return nullptr;
+}
 static int __fastcall IsBlocked(unsigned char* mob, void*) { return *reinterpret_cast<int*>(mob+0x600); }
 static RECT* __fastcall GetMobRect(unsigned char* mob, void*, RECT* out, int) {
     *out = *reinterpret_cast<RECT*>(mob+0x610); return out;
@@ -83,6 +89,7 @@ int main(int argc,char** argv) {
     // Keep the real CMobPool selection/filter instructions; stub only runtime
     // dependencies (secure scalar decoding, geometry, and Win32 imports).
     Jump(0x10508a95,reinterpret_cast<void*>(&ReadSecure));
+    Jump(0x10441ae8,reinterpret_cast<void*>(&FindMob));
     Jump(0x104e8152,reinterpret_cast<void*>(&ReadSecure));
     Jump(0x10670c06,reinterpret_cast<void*>(&IsBlocked));
     Jump(0x10664559,reinterpret_cast<void*>(&GetMobRect));
@@ -92,6 +99,7 @@ int main(int argc,char** argv) {
     *reinterpret_cast<void**>(0x10bf04ac)=reinterpret_cast<void*>(&IsRectEmpty);
     *reinterpret_cast<void**>(0x10bf04a8)=reinterpret_cast<void*>(&IntersectRect);
     unsigned char pool[64]{}, nodeA[32]{}, nodeB[32]{}, a[0x640]{}, b[0x640]{}, info[0x220]{};
+    mobA=a;mobB=b;
     *reinterpret_cast<void**>(pool+0x28)=nodeA+16;
     *reinterpret_cast<void**>(nodeA+4)=nodeB;
     *reinterpret_cast<void**>(nodeA+20)=a;
@@ -105,6 +113,8 @@ int main(int argc,char** argv) {
     *reinterpret_cast<RECT*>(a+0x610)={-500,-150,-450,-100};
     *reinterpret_cast<RECT*>(b+0x610)={500,-650,600,-550};
     void* vtable[5]{};vtable[4]=reinterpret_cast<void*>(&GetPosition);
+    *reinterpret_cast<void***>(a+4)=vtable;*reinterpret_cast<POINT*>(a+8)={-475,-100};
+    *reinterpret_cast<void***>(b+4)=vtable;*reinterpret_cast<POINT*>(b+8)={550,-600};
     Position position{vtable,{-570,-95}};
     RECT rect{-970,-203,-555,-80};void* selected=nullptr;
     Check(TestPursuitSelect(22171002,&position,&rect,&selected,100)==-1,"no private mark, even with shared curse");
@@ -112,10 +122,28 @@ int main(int argc,char** argv) {
     Check(TestPursuitSelect(22171002,&position,&rect,&selected,101)==1 && selected==b,"diagonal remote target beats nearer decoy");
     Check(rect.left==-2170 && rect.top==-1095 && rect.right==1030 && rect.bottom==905,"bounded symmetric range");
     Check(TestPursuitSelect(22171003,&position,&rect,&selected,101)==-1,"other skills unchanged");
+    // A small marked enemy behind an unmarked enemy, including overlapping
+    // hitboxes and either facing. Execute the real native OID filter each time.
+    const RECT oldA=*reinterpret_cast<RECT*>(a+0x610),oldB=*reinterpret_cast<RECT*>(b+0x610);
+    for(int facing:{-1,1}) for(int width:{8,24,50,200}) for(int distance:{0,40,200,1000}) {
+        const int x=position.value.x+facing*distance;
+        *reinterpret_cast<RECT*>(a+0x610)={position.value.x-30,-150,position.value.x+30,-90};
+        *reinterpret_cast<RECT*>(b+0x610)={x-width/2,-140,x+width/2,-95};
+        Put(a+0x370,0);
+        Check(TestPursuitSelect(22171002,&position,&rect,&selected,101)==1 && selected==b,
+            "small marked target wins over preceding unmarked/overlapping decoy");
+    }
+    *reinterpret_cast<RECT*>(a+0x610)=oldA;*reinterpret_cast<RECT*>(b+0x610)=oldB;Put(a+0x370,10);
     Check(TestPursuitSelect(22171002,&position,&rect,&selected,30100)==-1,"expiry");
     for(unsigned offset:{0x450,0x328,0x600}) {
-        Put(b+offset,1);Check(TestPursuitSelect(22171002,&position,&rect,&selected,101)==-1,"native hidden/invulnerable/blocked checks");Put(b+offset,0);
+        Put(b+offset,1);Check(TestPursuitSelect(22171002,&position,&rect,&selected,101)==0 && !selected,
+            "temporary hidden/invulnerable/blocked mark suppresses decoy fallback without bypassing immunity");Put(b+offset,0);
     }
+    *reinterpret_cast<RECT*>(b+0x610)={};
+    Check(TestPursuitSelect(22171002,&position,&rect,&selected,101)==0 && !selected,"empty action hitbox retains in-range mark without a hit");
+    *reinterpret_cast<RECT*>(b+0x610)=oldB;
+    Check(TestPursuitSelect(22171002,&position,&rect,&selected,101)==1 && selected==b,"target becomes hittable again without re-marking");
+    mobB=nullptr;Check(TestPursuitSelect(22171002,&position,&rect,&selected,101)==-1,"removed object restores ordinary targeting");mobB=b;
     Put(b+0x124,0);Check(TestPursuitSelect(22171002,&position,&rect,&selected,101)==-1,"native dead target excluded");Put(b+0x124,1);
     Put(b+0x370,0);Check(TestPursuitSelect(22171002,&position,&rect,&selected,101)==-1,"lost curse");Put(b+0x370,10);
     position.value.x=-2000;Check(TestPursuitSelect(22171002,&position,&rect,&selected,101)==-1,"maximum range");position.value.x=-570;
@@ -129,11 +157,15 @@ int main(int argc,char** argv) {
     Check(TestPursuitSelect(22171002,&position,&rect,&selected,102)==-1,"malformed packet fails closed");
     Receive(70002,30000,GetTickCount());
     // Endpoints expose the actual gate's selected/fallback path and stack ABI.
-    const unsigned char success[]={0x8b,0xc6,0xc3},fallback[]={0x33,0xc0,0xc3};
+    const unsigned char success[]={0x8b,0xc6,0xc3},fallback[]={0xb8,0xf6,0xff,0xff,0xff,0xc3};
     std::memcpy(reinterpret_cast<void*>(0x109565c9),success,sizeof(success));
     std::memcpy(reinterpret_cast<void*>(0x109565a7),fallback,sizeof(fallback));
     for(int facing:{0,1}) Check(Gate(22171002,&position,&rect,&selected,facing)==1 && selected==b,"installed gate in both facings");
-    Check(Gate(22171003,&position,&rect,&selected,0)==0,"installed gate fallback for other skill");
-    EvanPursuit::Reset();Check(Gate(22171002,&position,&rect,&selected,0)==0,"field/death reset fallback");
-    puts("PASS pursuit: actual native target filtering, diagonal/back-facing gate, bounded range, independent mark, lifecycle, malformed packet and x86 ABI");
+    Put(b+0x600,1);
+    for(int facing:{0,1}) Check(Gate(22171002,&position,&rect,&selected,facing)==0 && !selected,"installed no-hit gate never enters decoy fallback");
+    Put(b+0x600,0);
+    Check(Gate(22171002,&position,&rect,&selected,0)==1 && selected==b,"installed gate resumes marked target after temporary block");
+    Check(Gate(22171003,&position,&rect,&selected,0)==-10,"installed gate fallback for other skill");
+    EvanPursuit::Reset();Check(Gate(22171002,&position,&rect,&selected,0)==-10,"field/death reset fallback");
+    puts("PASS pursuit: native OID selection over small/overlapping decoys, temporary unhittable no-hit path, recovery, bounded range, expiry, removal and x86 ABI");
 }

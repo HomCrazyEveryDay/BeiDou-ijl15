@@ -70,18 +70,42 @@ int SelectPursuit(int skill, void* position, RECT* attackRect, void** targets, u
                 point->x + state.horizontal, point->y + state.vertical};
         void* pool = *reinterpret_cast<void**>(Native(0x00BEBFA4));
         if (!pool) return -1;
+        using FindMob = void*(__thiscall*)(void*, unsigned);
+        auto mob = static_cast<unsigned char*>(reinterpret_cast<FindMob>(Native(0x00441AE8))(pool, state.oid));
+        if (!mob || *reinterpret_cast<int*>(mob + 0x370) <= 0
+                || *reinterpret_cast<int*>(mob + 0x374) != 22161002) return -1;
+        using ReadSecure = int(__cdecl*)(void*, unsigned);
+        if (!reinterpret_cast<ReadSecure>(Native(0x00508A95))(
+                mob + 0x124, *reinterpret_cast<unsigned*>(mob + 0x12c))) return -1;
+        RECT bounds{};
+        using GetMobRect = int(__thiscall*)(void*, RECT*, int);
+        reinterpret_cast<GetMobRect>(Native(0x00664559))(mob, &bounds, 1);
+        if (!(bounds.left < bounds.right && bounds.top < bounds.bottom
+                && bounds.left < range.right && bounds.right > range.left
+                && bounds.top < range.bottom && bounds.bottom > range.top)) {
+            // Some actions temporarily have an empty hitbox. Keep a live mark
+            // at an in-range position without making that action hittable.
+            auto mobPosition = mob + 4;
+            auto mobVtable = *reinterpret_cast<void***>(mobPosition);
+            const POINT* mobPoint = reinterpret_cast<const POINT*(__thiscall*)(void*)>(mobVtable[4])(mobPosition);
+            if (!mobPoint || mobPoint->x < range.left || mobPoint->x >= range.right
+                    || mobPoint->y < range.top || mobPoint->y >= range.bottom) return -1;
+        }
         // CMobPool::FindHitMobInRect: arg 5 filters the exact object ID.
         // Retain native alive/hidden/invulnerable/body-rectangle checks.
         using FindInRect = int(__thiscall*)(void*, const RECT*, void**, int, void*, unsigned, int, int, int);
         void* selected = nullptr;
         int count = reinterpret_cast<FindInRect>(Native(0x00678476))(
                 pool, &range, &selected, 1, nullptr, state.oid, 0, 0, 0);
-        if (count != 1 || !selected) return -1;
+        if (count != 1 || selected != mob) {
+            // A valid marked mob can be temporarily unhittable (action frames,
+            // invulnerability, hiding). Do not redirect this cast to a decoy.
+            // Zero follows the native no-hit path; it never bypasses immunity.
+            targets[0] = nullptr;
+            return 0;
+        }
         // PHANTOM_IMPRINT is a shared monster debuff; ownership is established
         // only by the private server packet, never by seeing another caster's mark.
-        const auto mob = reinterpret_cast<unsigned char*>(selected);
-        if (*reinterpret_cast<int*>(mob + 0x370) <= 0
-                || *reinterpret_cast<int*>(mob + 0x374) != 22161002) return -1;
         *attackRect = range; // Native hit-position calculation remains on the selected mob.
         targets[0] = selected;
         return 1;
@@ -109,8 +133,8 @@ __declspec(naked) void PursuitSelectionGate() {
         mov [esp+1ch],eax
         popad
         popfd
-        cmp eax,1
-        jne fallback
+        test eax,eax
+        jl fallback
         mov esi,eax
         mov [ebp-2ch],eax
         xor edi,edi
