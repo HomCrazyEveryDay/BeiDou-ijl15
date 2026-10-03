@@ -51,7 +51,9 @@ Object TextCanvas(const std::wstring& text,unsigned color) {
     BITMAPINFO info{};info.bmiHeader.biSize=sizeof(BITMAPINFOHEADER);info.bmiHeader.biWidth=w;
     info.bmiHeader.biHeight=-h;info.bmiHeader.biPlanes=1;info.bmiHeader.biBitCount=32;info.bmiHeader.biCompression=BI_RGB;
     void* bits=nullptr;HBITMAP bitmap=CreateDIBSection(dc,&info,DIB_RGB_COLORS,&bits,nullptr,0);
-    HFONT font=CreateFontW(-12,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,GB2312_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,ANTIALIASED_QUALITY,DEFAULT_PITCH,L"SimSun");
+    // Match the original UI's 12-pixel bitmap labels; grayscale smoothing makes
+    // these dynamic lines look different from the adjacent resource text.
+    HFONT font=CreateFontW(-12,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,GB2312_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,NONANTIALIASED_QUALITY,DEFAULT_PITCH,L"SimSun");
     if(!bitmap || !font){if(bitmap)DeleteObject(bitmap);if(font)DeleteObject(font);DeleteDC(dc);throw E_OUTOFMEMORY;}
     auto oldBitmap=SelectObject(dc,bitmap),oldFont=SelectObject(dc,font);
     struct Cleanup { HDC dc; HBITMAP bitmap; HFONT font; HGDIOBJ oldBitmap,oldFont;
@@ -101,6 +103,20 @@ void ReleaseAvatars() {
         reinterpret_cast<void(__thiscall*)(DWORD*,int)>(0x00428C15)(avatar,0);avatar[0]=avatar[1]=0;
     }
 }
+void DestroyDyeWindow() {
+    // CWndMan::GetWndFromPoint still visits hidden CWnd rectangles. Closing must
+    // remove native registration, not just hide its three graphics layers.
+    state.shown=false;
+    Focus(false);
+    auto manager=*reinterpret_cast<unsigned char**>(0x00BEC20C);
+    if(manager && state.window && *reinterpret_cast<void**>(manager+0x90)==state.window+4)
+        reinterpret_cast<void(__thiscall*)(void*)>(0x009E3AC0)(manager);
+    ReleaseAvatars();
+    if(state.ready) {
+        state.ready=false; // Native teardown can call back into our UI handlers.
+        reinterpret_cast<void(__thiscall*)(void*)>(0x009E00AF)(state.window);
+    }
+}
 bool Send(int action) {
     if(!state.token)return false;
     unsigned char data[12]{};MixedDyeWindowModel::Action(data,action,state.token,state.primary,state.secondary);
@@ -109,18 +125,26 @@ bool Send(int action) {
     reinterpret_cast<void(__thiscall*)(void*,Packet*)>(0x0049637B)(socket,&packet);return true;
 }
 void Close(bool cancel=true) {
-    if(cancel && state.token)Send(0);
-    Show(false);Focus(false);ReleaseAvatars();state.token=0;state.pending=false;state.confirm=false;
+    state.shown=false;
+    if(cancel && state.token)try{Send(0);}catch(...){CrashReporter::RecordEvent("mixedDye.window","cancel_send_failed");}
+    state.token=0;state.pending=false;state.confirm=false;
     state.avatarDirty=false;state.hover=state.pressed=-1;state.texts.clear();
+    DestroyDyeWindow();
 }
 void Fail(const char* phase) {
     CrashReporter::RecordEvent("mixedDye.window", "failed stage=%s token=%d",phase,state.token);
     try{Close();}catch(...) {state.token=0;state.shown=false;}
 }
 bool Contains(int x,int y,int left,int top,int w,int h){return x>=left && x<left+w && y>=top && y<top+h;}
+int __fastcall WindowHitTest(void* window,void*,int x,int y,void** child) {
+    if(child)*child=nullptr;
+    if(!state.ready || !state.shown || !state.token)return 0;
+    return reinterpret_cast<int(__thiscall*)(void*,int,int,void**)>(0x00424461)(window,x,y,child);
+}
 int Hit(int x,int y) {
-    if(Contains(x,y,347,5,13,13))return 22;
-    if(Contains(x,y,315,232,37,19))return 21;
+    if(!state.ready || !state.shown || !state.token)return -1;
+    if(Contains(x,y,347,5,12,12))return 22;
+    if(Contains(x,y,315,232,40,16))return 21;
     if(state.pending)return -1;
     if(Contains(x,y,273,232,40,16))return 20;
     if(Contains(x,y,156,232,55,16))return 23;
@@ -166,8 +190,8 @@ void DrawBody(void* window,const RECT* rect) {
     }
     const bool ready=MixedDyeWindowModel::Ready(state.mask,state.primary,state.secondary);
     Image(dst,root+L"button:BtOK/"+ButtonState(20,ready&&!state.pending)+L"/0");
-    Image(dst,L"UI/Basic.img/BtCancel3/"+std::wstring(ButtonState(21))+L"/0",315,232,false);
-    Image(dst,L"UI/Basic.img/BtClose/"+std::wstring(ButtonState(22))+L"/0",347,5,false);
+    Image(dst,root+L"button:BtCancel/"+ButtonState(21)+L"/0",315,232,false);
+    Image(dst,root+L"button:BtClose/"+ButtonState(22)+L"/0",347,5,false);
     Image(dst,root+(state.hideHat?L"button:BtOff/":L"button:BtOn/")+ButtonState(23,!state.pending)+L"/0");
 }
 void __fastcall Draw(void* window,void*,const RECT* rect){try{DrawBody(window,rect);}catch(...){Fail("draw");}}
@@ -188,12 +212,13 @@ void Select(int id) {
     Invalidate();
 }
 void __fastcall Mouse(void*,void*,unsigned message,unsigned,int x,int y) {
+    if(!state.ready || !state.shown || !state.token)return;
     try {
         int hit=Hit(x,y);if(message==WM_LBUTTONDOWN){state.pressed=hit;Focus(true);Invalidate();}
         else if(message==WM_LBUTTONUP){int pressed=state.pressed;state.pressed=-1;if(pressed>=0 && pressed==hit)Select(hit);Invalidate();}
     }catch(...){Fail("mouse");}
 }
-int __fastcall MouseMove(void*,void*,int x,int y){try{int hit=Hit(x,y);if(hit!=state.hover){state.hover=hit;Invalidate();}}catch(...){Fail("hover");}return 0;}
+int __fastcall MouseMove(void*,void*,int x,int y){if(!state.ready || !state.shown || !state.token)return 0;try{int hit=Hit(x,y);if(hit!=state.hover){state.hover=hit;Invalidate();}}catch(...){Fail("hover");}return 0;}
 void __fastcall MouseEnter(void*,void*,int entered){if(!entered){state.hover=state.pressed=-1;Invalidate();}}
 void __fastcall Key(void*,void*,unsigned key,unsigned flags){
     if(!state.shown) {auto manager=*reinterpret_cast<unsigned char**>(0x00BEC20C);if(manager)reinterpret_cast<void(__thiscall*)(void*,unsigned,unsigned)>(0x009E2F05)(manager+4,key,flags);return;}
@@ -204,7 +229,7 @@ void __fastcall Update(void*,void*){}
 int __fastcall Noop4(void*,void*,int,int,int,int){return 0;}
 void __fastcall OnCreate(void*,void*,void*){}
 void __fastcall OnButton(void*,void*,unsigned){}
-int __fastcall OnFocus(void*,void*,int){return 1;}
+int __fastcall OnFocus(void*,void*,int focused){return !focused || (state.ready && state.shown && state.token)?1:0;}
 void __fastcall SetShow(void*,void*,int show){try{Show(show!=0);}catch(...){Fail("show");}}
 int __fastcall IsShown(void*,void*){return state.shown?1:0;}
 void __fastcall OnIME(void*,void*,const char*){}
@@ -217,13 +242,14 @@ void Tables() {
     std::memcpy(state.mainTable,main,sizeof(main));std::memcpy(state.uiTable,ui,sizeof(ui));
     state.mainTable[0]=(DWORD)&Update;state.mainTable[1]=(DWORD)&Noop4;state.mainTable[3]=(DWORD)&OnCreate;
     state.mainTable[8]=(DWORD)&OnButton;state.mainTable[11]=(DWORD)&Draw;
+    state.mainTable[9]=(DWORD)&WindowHitTest;
     state.uiTable[0]=(DWORD)&Key;state.uiTable[1]=(DWORD)&OnFocus;state.uiTable[2]=(DWORD)&Mouse;state.uiTable[3]=(DWORD)&MouseMove;
     state.uiTable[5]=(DWORD)&MouseEnter;state.uiTable[9]=(DWORD)&SetShow;state.uiTable[10]=(DWORD)&IsShown;
     state.uiTable[15]=(DWORD)&OnIME;state.uiTable[17]=(DWORD)&RTTI;state.uiTable[18]=(DWORD)&KindOf;state.refTable[0]=(DWORD)&RefDestructor;
 }
 void CreateDyeWindow() {
     // Reuse the CWnd object, but unregister old layers before changing hair/eye backgrounds.
-    if(state.ready){Show(false);Focus(false);ReleaseAvatars();reinterpret_cast<void(__thiscall*)(void*)>(0x009E00AF)(state.window);state.ready=false;}
+    if(state.ready)DestroyDyeWindow();
     if(!state.window){state.window=new unsigned char[0x100]{};reinterpret_cast<void*(__thiscall*)(void*)>(0x009DE383)(state.window);}
     *reinterpret_cast<DWORD*>(state.window)=(DWORD)state.mainTable;*reinterpret_cast<DWORD*>(state.window+4)=(DWORD)state.uiTable;*reinterpret_cast<DWORD*>(state.window+8)=(DWORD)state.refTable;
     DWORD path=0;auto name=Root()+L"backgrnd";reinterpret_cast<DWORD*(__thiscall*)(DWORD*,const wchar_t*)>(0x00403382)(&path,name.c_str());
@@ -279,8 +305,14 @@ bool MixedDyeWnd::Install() {
     // Signature-gate every native ABI dependency group before enabling the window.
     const unsigned char wnd[]={0xb8,0x4a,0x68,0xae,0,0xe8},init[]={0xb8,0x48,0xc0,0xa7,0,0xe8};
     const unsigned char copy[]={0x8b,0xc1,0x8b,0x4c,0x24,0x04};
+    const unsigned char destroy[]={0xb8,0x48,0x6c,0xae,0,0xe8},hit[]={0x56,0x8b,0x74,0x24,0x10,0x57};
+    const unsigned char releaseCapture[]={0x83,0xa1,0x90,0,0,0,0};
     if(std::memcmp(reinterpret_cast<void*>(0x009DE383),wnd,sizeof(wnd)) || std::memcmp(reinterpret_cast<void*>(0x0045149f),init,sizeof(init))
-        || std::memcmp(reinterpret_cast<void*>(0x00451541),copy,sizeof(copy)) || *reinterpret_cast<DWORD*>(0x00B404E4)!=0x009E067E)return false;
+        || std::memcmp(reinterpret_cast<void*>(0x00451541),copy,sizeof(copy))
+        || std::memcmp(reinterpret_cast<void*>(0x009E00AF),destroy,sizeof(destroy))
+        || std::memcmp(reinterpret_cast<void*>(0x00424461),hit,sizeof(hit))
+        || std::memcmp(reinterpret_cast<void*>(0x009E3AC0),releaseCapture,sizeof(releaseCapture))
+        || *reinterpret_cast<DWORD*>(0x00B404E4)!=0x009E067E)return false;
     Tables();state.installed=true;return true;
 }
 bool MixedDyeWnd::HandlePacket(const unsigned char* data,unsigned short length) {
