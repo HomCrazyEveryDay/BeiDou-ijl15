@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "MineralBagWnd.h"
+#include "MixedDyeWnd.h"
 #include "BossHP.h"
 #include "HpMpAlert.h"
 #include "StackedBuffIcons.h"
@@ -37,6 +38,7 @@ void BossHP::HookUpdate() {
 		_UserLocal__Update(pThis, edx);
 		StackedBuffIcons::OnFieldUpdate();
 		MineralBagWnd::OnFieldUpdate();
+		MixedDyeWnd::OnFieldUpdate(pThis);
 		UpdateQueuedMobDamageDisplay();
 		DrawBossHpNumberIfNeed();
 	};
@@ -83,6 +85,7 @@ void BossHP::HookDisposeField() {
 		OnMobDamageFieldDispose();
 		StackedBuffIcons::OnFieldDispose();
 		MineralBagWnd::OnFieldDispose();
+		MixedDyeWnd::OnFieldDispose();
 		DisposeBossHpNumber();
 		_Field__Dispose(pThis, edx);
 	};

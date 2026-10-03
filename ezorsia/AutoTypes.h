@@ -1,6 +1,8 @@
 #pragma once
 #include "ClientLog.h"
 #include "EvanMountRender.h"
+#include "MixedDye.h"
+#include "CrashReporter.h"
 #include "MapleClientCollectionTypes/ZXString.h"
 typedef void(__fastcall* _CWndCreateWnd_t)(void* pThis, void* edx, int nLeft, int nTop, int nWidth, int nHeight, int z, int bScreenCoord, void* esi, int bSetFocus);
 static auto _CWndCreateWnd = reinterpret_cast<_CWndCreateWnd_t>(0x009DE4D2); //thanks you teto for helping me on this learning journey
@@ -38,6 +40,8 @@ static auto _PcCreateObject_IWzResMan = reinterpret_cast<_PcCreateObject_IWzResM
 static _PcCreateObject_IWzResMan_t _PcCreateObject_IWzResMan_Hook = [](const wchar_t* sUOL, void* pObj, void* pUnkOuters) {
 //-> void {_PcCreateObject_IWzResMan(sUOL, pObj, pUnkOuter); //remove -> part and redefine to replace parts of execution code proper
 	_PcCreateObject_IWzResMan(sUOL, pObj, pUnkOuter);
+	if (!MixedDye::AttachResourceManager(*static_cast<void**>(pObj)))
+		CrashReporter::RecordEvent("appearance.mix", "resource_hook_install_failed");
 };
 
 typedef void(__cdecl* _PcCreateObject_IWzNameSpace_t)(const wchar_t* sUOL, void* pObj, void* pUnkOuter);
@@ -97,6 +101,8 @@ static bool SafeWritePreviewDword(DWORD address, DWORD value)
 
 static bool IsKnownFaceId(DWORD itemid)
 {
+	MixedDye::Style mixed;
+	if (MixedDye::Decode(itemid, mixed)) return mixed.face;
 	if (itemid >= 20000 && itemid < 30000) {
 		return true;
 	}
@@ -122,6 +128,8 @@ static bool IsHighFacePreviewTarget(DWORD itemid)
 
 static bool IsKnownHairId(DWORD itemid)
 {
+	MixedDye::Style mixed;
+	if (MixedDye::Decode(itemid, mixed)) return !mixed.face;
 	if (IsKnownFaceId(itemid)) {
 		return false;
 	}
@@ -130,6 +138,8 @@ static bool IsKnownHairId(DWORD itemid)
 
 static bool IsHighHairPreviewTarget(DWORD itemid)
 {
+	MixedDye::Style mixed;
+	if (MixedDye::Decode(itemid, mixed)) return !mixed.face;
 	if (IsKnownFaceId(itemid)) {
 		return false;
 	}

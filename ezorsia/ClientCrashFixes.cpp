@@ -8,6 +8,7 @@
 #include "DreamCanvas.h"
 #include "IncubationCanvas.h"
 #include "ResourceReadGuards.h"
+#include "ModernEquipmentCompatibility.h"
 
 namespace {
 
@@ -216,6 +217,7 @@ void __fastcall HookInitializeCharacterList(void* self, void*, void* records)
 void ClientCrashFixes::Install()
 {
     ResourceReadGuards::Install();
+    ModernEquipmentCompatibility::Install();
     CrashReporter::RecordEvent("login.request", "initialization install result=%d",
         InstallLoginRequestInitialization() ? 1 : 0);
     CrashReporter::RecordEvent("quest.context", "install result=%d", InstallQuestContextGuard() ? 1 : 0);

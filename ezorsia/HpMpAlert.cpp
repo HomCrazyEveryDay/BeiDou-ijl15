@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "ReactorTimingDiagnostics.h"
 #include "MineralBagWnd.h"
+#include "MixedDyeWnd.h"
 #include "AbsoluteDefenseSync.h"
 #include "HpMpAlert.h"
 #include "CrashReporter.h"
@@ -782,6 +783,8 @@ static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
     if (packet) EvanAttackDiagnostics::Observe(
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen, true);
     if (packet && MineralBagWnd::HandlePacket(
+        reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
+    if (packet && MixedDyeWnd::HandlePacket(
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet && ClientDiagnostics::HandleIncoming(
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;

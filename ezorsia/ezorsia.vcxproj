@@ -205,7 +205,10 @@
     <ClInclude Include="BuffCountdownCanvas.h" />
     <ClInclude Include="MovementKeyHook.h" />
     <ClInclude Include="NpcShopCurrency.h" />
+    <ClInclude Include="ModernEquipmentCompatibility.h" />
     <ClInclude Include="MineralBagWnd.h" />
+    <ClInclude Include="MixedDyeWnd.h" />
+    <ClInclude Include="MixedDyeWindowModel.h" />
     <ClInclude Include="EvanCreation.h" />
     <ClInclude Include="EvanRuntime.h" />
     <ClInclude Include="EvanPursuit.h" />
@@ -278,6 +281,8 @@
     <ClCompile Include="HiredMerchantClock.cpp" />
     <ClCompile Include="StackedBuffIcons.cpp" />
     <ClCompile Include="BuffCountdown.cpp" />
+    <ClCompile Include="MixedDye.cpp" />
+    <ClCompile Include="MixedDyeWnd.cpp" />
     <ClCompile Include="NpcShopCurrency.cpp" />
     <ClCompile Include="MineralBagWnd.cpp" />
     <ClCompile Include="EvanCreation.cpp" />

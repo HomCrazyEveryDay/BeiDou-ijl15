@@ -22,6 +22,7 @@
 #include "PrivateCleanSlateHook.h"
 #include "SecondPendantSlot.h"
 #include "MineralBagWnd.h"
+#include "MixedDyeWnd.h"
 #include "EvanCreation.h"
 #include "EvanRuntime.h"
 #include "CrashReporter.h"
@@ -111,6 +112,7 @@ using ScriptedResetSendPacket = void(__fastcall*)(void*, void*, ScriptedResetOut
 
 static void __stdcall SendScriptedResetItemPacket(int itemPosition, int itemId)
 {
+	if (MixedDye::IsCoupon(itemId)) { MixedDye::SendCoupon(itemPosition, itemId); return; }
 	if (itemId != kAllApResetItemId && itemId != kAllSpResetItemId) {
 		return;
 	}
@@ -144,6 +146,10 @@ __declspec(naked) void RedirectScriptedResetItemCave()
 		cmp esi, 5050100
 		je scriptedReset
 		cmp esi, 5051001
+		je scriptedReset
+		cmp esi, 5151040
+		je scriptedReset
+		cmp esi, 5152302
 		je scriptedReset
 
 		push esi
@@ -1123,6 +1129,7 @@ namespace
 		HookCWvsApp__Dir_upDir(true);
 		Hookbstr_ctor(true);
 		HookAvatarLayerBuild(true);
+		if (!MixedDye::Install()) CrashReporter::RecordEvent("appearance.mix", "resource_classification_install_failed");
 		HookIWzFileSystem__Init(true);
 		HookIWzNameSpace__Mount(true);
 		HookCWvsApp__InitializeResMan(false); //experimental //ty to all the contributors of the ragezone release: Client load .img instead of .wz v62~v92
@@ -1182,6 +1189,7 @@ namespace
 		Client::NoPassword();
 		NpcShopCurrency::Install();
 		MineralBagWnd::Install();
+		MixedDyeWnd::Install();
 		PrivateCleanSlateHook::Install();
 		SecondPendantSlot::Install(enableEquipmentSlotLog);
 		Client::MoreHook();
