@@ -11,6 +11,9 @@ bool Memory::SetHook(bool attach,void** target,void* detour) {
 }
 #include "MixedDyeUnderTest.cpp"
 #include "MixedDyeEntryUnderTest.h"
+static int g_facePreviewFaceId=0,g_facePreviewFaceId2=0,g_facePreviewFaceId3=0;
+#include "StyleClassificationUnderTest.h"
+#include "PreviewClassificationUnderTest.h"
 #define MIXED_DYE_HOOK_TEST
 #include "MixedDyeTest.cpp"
 #ifdef MIXED_DYE_WINDOW_TEST
@@ -28,6 +31,56 @@ static void MapClient() {
     for(unsigned i=0;i<nt->FileHeader.NumberOfSections;++i){fseek(file,section[i].PointerToRawData,SEEK_SET);Require(fread(base+section[i].VirtualAddress,1,section[i].SizeOfRawData,file)==section[i].SizeOfRawData,"map section");}fclose(file);
 }
 static DWORD classify=0x305C94B8;
+static DWORD inventoryQuantity=0x3081DEEE;
+__declspec(naked) int NativeInventoryQuantity(void* window,void* item,int id) {
+    __asm {
+        push ebp
+        mov ebp,esp
+        sub esp,14h
+        push ebx
+        push esi
+        mov ebx,window
+        mov esi,item
+        mov eax,id
+        mov [ebp-14h],eax
+        call dword ptr[inventoryQuantity]
+        pop esi
+        pop ebx
+        mov esp,ebp
+        pop ebp
+        ret
+    }
+}
+int __fastcall InventoryQuantity(void* item,void*) {return static_cast<int*>(item)[1];}
+void PrepareInventoryCountProbe() {
+    // Relocate only the native cash classifier's absolute jump-table operands.
+    for(DWORD address:{0x3048642c,0x30486483,0x3048648a}) {
+        auto operand=reinterpret_cast<DWORD*>(address);Require(*operand>=0x00486400 && *operand<0x00486900,"supported cash classifier tables");*operand+=0x30000000;
+    }
+    for(auto bounds:{std::make_pair(0x30486433u,0x3048645bu),std::make_pair(0x30486757u,0x30486807u)})
+        for(DWORD address=bounds.first;address<bounds.second;address+=4)*reinterpret_cast<DWORD*>(address)+=0x30000000;
+    // Stop after the real virtual GetQuantity call, before number drawing.
+    *reinterpret_cast<BYTE*>(0x3081DF24)=0xc3;
+    BYTE absent[]={0x33,0xc0,0xc3};std::memcpy(reinterpret_cast<void*>(0x3081DF5C),absent,sizeof(absent));
+}
+void CheckInventoryCount(bool patched) {
+    BYTE window[0x620]{};*reinterpret_cast<int*>(window+0x5e4)=5;
+    void* vtable[9]{};vtable[8]=reinterpret_cast<void*>(InventoryQuantity);
+    DWORD item[2]={reinterpret_cast<DWORD>(vtable),0};
+    using Predicate=int(__cdecl*)(int);
+    auto oldAllowed=reinterpret_cast<Predicate>(0x304863D5),oldCash=reinterpret_cast<Predicate>(0x30486845);
+    for(int id:{5151040,5152302,5151000,5152000,5152301,5152303,2000000,5000000,5072000})for(int count:{1,2,17,99}) {
+        item[1]=count;
+        const bool expected=(patched && MixedDye::IsCoupon(id)) || oldAllowed(id) || oldCash(id);
+        Require(NativeInventoryQuantity(window,item,id)==(expected?count:0),"native inventory reads real quantity only for admitted item IDs");
+        Require(item[1]==count,"quantity display never changes item data");
+    }
+    item[1]=17;
+    Require(NativeInventoryQuantity(window,item,5152302)==(patched?17:0),"lens count bug reproduced before patch and fixed afterwards");
+    *reinterpret_cast<int*>(window+0x5e4)=2;
+    Require(NativeInventoryQuantity(window,item,2000000)==17,"ordinary consumable count remains native");
+    std::printf("PASS native inventory count branch: patched=%d, counts 1/2/17/99, neighbors and consumables unchanged\n",patched);
+}
 __declspec(naked) int Classification(int dummy,int id){
     __asm{
         push ebp
@@ -36,6 +89,32 @@ __declspec(naked) int Classification(int dummy,int id){
         pop ebp
         ret
     }
+}
+__declspec(naked) int FaceResult(){__asm {mov eax,2} __asm {ret}}
+__declspec(naked) int HairResult(){__asm {mov eax,3} __asm {ret}}
+__declspec(naked) int OtherResult(){__asm {xor eax,eax} __asm {ret}}
+__declspec(naked) int FinalStyleClassification(int category,int id){
+    __asm {
+        push ebp
+        mov ebp,esp
+        mov eax,category
+        call faceHairCave
+        pop ebp
+        ret
+    }
+}
+void CheckSpecialHairClassification() {
+    faceRtn=reinterpret_cast<DWORD>(FaceResult);hairRtn=reinterpret_cast<DWORD>(HairResult);faceHairCaveRtn=reinterpret_cast<DWORD>(OtherResult);
+    for(int id:{40902,40991,42150,42151,42152,42153,42154,42155,42156,42157,42160,42161,42162,42163,42164,42165,42166,42167}) {
+        Require(FinalStyleClassification(id/10000,id)==3,"actual final cave routes special plain IDs to hair");
+        Require(IsKnownHairId(id) && IsHighHairPreviewTarget(id) && !IsKnownFaceId(id) && !IsHighFacePreviewTarget(id),"production avatar preview agrees with resource classifier");
+        auto encoded=MixedDye::Encode(id,(MixedDye::Color(id,false)+1)%8,false);
+        Require(FinalStyleClassification(Classification(0,encoded),encoded)==3,"both production caves route encoded hair correctly");
+        Require(IsKnownHairId(encoded) && IsHighHairPreviewTarget(encoded) && !IsKnownFaceId(encoded),"encoded avatar preview agrees with resource classifier");
+    }
+    for(int id:{20000,50000,80000})Require(FinalStyleClassification(id/10000,id)==2,"face categories retained");
+    g_facePreviewFaceId=53086;Require(FinalStyleClassification(5,53086)==2,"temporary face preview retained");g_facePreviewFaceId=0;
+    std::puts("PASS production final classification cave for 18 special hair IDs and encoded variants");
 }
 __declspec(naked) void UseCouponEntry(int position,int id){
     __asm{
@@ -63,6 +142,36 @@ void Jump(void* from,void* to){auto p=static_cast<BYTE*>(from);p[0]=0xe9;*reinte
 HRESULT __cdecl FailFactory(const wchar_t*,const GUID*,void**,void*){return E_OUTOFMEMORY;}
 static int previewReleases=0;
 void __fastcall PreviewRelease(void*,void*,int force){Require(force==0,"native preview reference cleanup ABI");++previewReleases;}
+void CheckOrdinaryClimbingHair(void* rm) {
+    for(int id:{40902,43206,44092}) {
+        wchar_t path[96];swprintf_s(path,L"Character/Hair/%08d.img",id);
+        auto hair=Load(rm,path),again=Load(rm,path);
+        Require(hair.p==again.p,"ordinary repaired hair uses bounded cache");
+        for(auto pose:{L"rope",L"ladder"})for(int frame:{0,1})for(auto layer:{L"backHair",L"backHairBelowCap"}) {
+            auto child=std::wstring(pose)+L"/"+std::to_wstring(frame)+L"/"+layer;
+            auto actual=Resolve(hair.p,child),source=Resolve(hair.p,L"backDefault/"+std::wstring(layer));
+            CheckCanvasPixels(Query(source.v,CanvasIID()).p,Query(source.v,CanvasIID()).p,Query(actual.v,CanvasIID()).p);
+        }
+        swprintf_s(path,L"Character/Hair/%08d.img/rope/1",id);auto frame=Load(rm,path);
+        Value actual;Get(frame.p,L"backHair",&actual.v);Require(Query(actual.v,CanvasIID()).p!=nullptr,"native suffix lookup also has the back hair");
+        for(bool reversed:{false,true}) {
+            auto other=MixedDye::WithColor(id,1,false);
+            auto mixed=MixedDye::Encode(reversed?other:id,reversed?MixedDye::Color(id,false):1,false);
+            swprintf_s(path,L"Character/Hair/%08u.img",mixed);auto image=Load(rm,path);
+            swprintf_s(path,L"Character/Hair/%08d.img",other);auto second=Load(rm,path);
+            for(auto pose:{L"rope",L"ladder"})for(int n:{0,1}) {
+                auto child=std::wstring(pose)+L"/"+std::to_wstring(n)+L"/backHair";
+                auto a=Resolve(hair.p,child),b=Resolve(second.p,child),m=Resolve(image.p,child);
+                CheckCanvasPixels(Query(a.v,CanvasIID()).p,Query(b.v,CanvasIID()).p,Query(m.v,CanvasIID()).p);
+            }
+        }
+        std::printf("PASS ordinary hair %d and both mixed orders: rope/ladder frames, back layers and suffix lookup\n",id);
+    }
+    std::uint32_t id=0;MixedDye::Style style;std::wstring suffix;
+    for(auto path:{L"Character/Face/00043206.img",L"Character/Hair/00043200.img",L"Character/Hair/00043206.imgx",L"Character/Hair/42949672960.img"}) {
+        auto key=SysAllocString(path);Require(!MixedDye::ParsePath(key,id,style,suffix),"unrelated or malformed plain resource paths are not intercepted");SysFreeString(key);
+    }
+}
 void CheckBeautySelection(){
     // Execute the real SetAvatar category branch and SetAvatarLook assignment.
     // Only stop after the resulting mode and isolate the native ZRef cleanup.
@@ -119,19 +228,25 @@ void CheckNativeFaceOrigin(void* rm){
     Require(frames>=30,"actual failing face covers default and animated expressions");
     std::printf("PASS native face origin assignment for crash ID, %u frames\n",frames);
 }
+#include "ChairImageLinksTest.h"
 void CheckHook(void* rm,Factory factory){
     SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX);
     SetUnhandledExceptionFilter([](EXCEPTION_POINTERS* e)->LONG {
         MEMORY_BASIC_INFORMATION m{};VirtualQuery(e->ExceptionRecord->ExceptionAddress,&m,sizeof(m));wchar_t module[MAX_PATH]{};GetModuleFileNameW(static_cast<HMODULE>(m.AllocationBase),module,MAX_PATH);
         std::printf("EXCEPTION %08x at %p module offset=%zx\n",e->ExceptionRecord->ExceptionCode,e->ExceptionRecord->ExceptionAddress,reinterpret_cast<std::size_t>(e->ExceptionRecord->ExceptionAddress)-reinterpret_cast<std::size_t>(m.AllocationBase));std::wprintf(L"module %s\n",module);return EXCEPTION_EXECUTE_HANDLER;
     });
-    MapClient();auto target=reinterpret_cast<BYTE*>(0x305C94B8);const BYTE first=*target;
+    MapClient();PrepareInventoryCountProbe();CheckInventoryCount(false);
+    auto target=reinterpret_cast<BYTE*>(0x305C94B8);const BYTE first=*target;
     *target=0xcc;Require(!MixedDye::Install(),"mismatched executable rejected");*target=first;
     auto beautyTarget=reinterpret_cast<BYTE*>(0x309ACA93);const BYTE beautyFirst=*beautyTarget;
     *beautyTarget=0xcc;Require(!MixedDye::Install() && *target==first,"beauty signature mismatch leaves resource hook intact");*beautyTarget=beautyFirst;
+    auto countTarget=reinterpret_cast<BYTE*>(0x3081DF06);const BYTE countFirst=*countTarget;
+    *countTarget=0xcc;Require(!MixedDye::Install() && *target==first,"count signature mismatch leaves all hooks intact");*countTarget=countFirst;
     Require(MixedDye::Install(),"production patch signatures and installation");
+    CheckInventoryCount(true);
     CheckBeautySelection();
     *reinterpret_cast<BYTE*>(0x305C94C3)=0xc3;
+    CheckSpecialHairClassification();
     for(int id:{30000,40590,63800,20000,53086,42150}){
         bool face=MixedDye::IsFace(id);int color=MixedDye::Color(id,face)==1?2:1;
         auto encoded=MixedDye::Encode(id,color,face);MixedDye::Style decoded;
@@ -152,7 +267,9 @@ void CheckHook(void* rm,Factory factory){
     UseCouponEntry(7,5151040);UseCouponEntry(7,5152302);
     Require(packets==4,"production cash dispatcher cave reaches coupon sender and restores stack");
     Require(MixedDye::AttachResourceManager(rm),"real PCOM GetObject detour installs");
+    CheckChairImageLinks(rm,factory);
     CheckNativeFaceOrigin(rm);
+    CheckOrdinaryClimbingHair(rm);
     for(int id:{30000,40590,63800,20000,53086}){
         bool face=MixedDye::IsFace(id);auto code=MixedDye::Encode(id,1,face);wchar_t encoded[100],base[100],second[100];
         swprintf_s(encoded,L"Character/%s/%08u.img",face?L"Face":L"Hair",code);

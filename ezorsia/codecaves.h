@@ -1673,19 +1673,6 @@ __declspec(naked) void faceHairCave()
 		cmp  eax, 3
 		jz label_hair
 		mov ecx, [ebp + 0Ch]
-		cmp ecx, 40902
-		jz label_face
-		cmp ecx, 40991
-		jz label_face
-		cmp ecx, 42150
-		jl label_after_known_4x_faces
-		cmp ecx, 42157
-		jle label_face
-		cmp ecx, 42160
-		jl label_after_known_4x_faces
-		cmp ecx, 42167
-		jle label_face
-		label_after_known_4x_faces:
 		mov edx, g_facePreviewFaceId
 		test edx, edx
 		jz label_check_face_preview_id2

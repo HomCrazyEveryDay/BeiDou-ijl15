@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "MixedDyeResources.h"
+#include "ChairImageLinks.h"
 #include "CrashReporter.h"
 #include <list>
 #include <mutex>
@@ -30,7 +31,14 @@ bool ParsePath(BSTR input,std::uint32_t& id,Style& style,std::wstring& suffix){
     else if(wcsncmp(p,L"Character/Face/",15)==0){p+=15;face=true;}else return false;
     if(*p<L'0' || *p>L'9')return false;
     wchar_t* end=nullptr;unsigned long parsed=wcstoul(p,&end,10);
-    if(!end || wcsncmp(end,L".img",4) || (end[4] && end[4]!=L'/') || !Decode(parsed,style) || style.face!=face)return false;
+    if(!end || wcsncmp(end,L".img",4) || (end[4] && end[4]!=L'/'))return false;
+    if(!Decode(parsed,style)) {
+        // GM !hair, ordinary hair and pre-mix previews use real IDs. Repair the
+        // same verified back-pose aliases here too; never mutate shared IMG data.
+        if(face || !NeedsRopeAlias(static_cast<int>(parsed)))return false;
+        style={static_cast<int>(parsed),static_cast<int>(parsed),false};
+    }
+    if(style.face!=face)return false;
     id=parsed;suffix=end+4;if(!suffix.empty())suffix.erase(0,1);return true;
 }
 Object LoadBase(void* rm,int id,bool face){
@@ -42,7 +50,7 @@ Object LoadBase(void* rm,int id,bool face){
 }
 HRESULT __stdcall GetMixedObject(void* rm,BSTR path,VARIANT a,VARIANT b,VARIANT* result){
     std::uint32_t id=0;Style style;std::wstring suffix;
-    if(!ParsePath(path,id,style,suffix))return originalGetObject(rm,path,a,b,result);
+    if(!ParsePath(path,id,style,suffix))return ChairImageLinks::GetObject(originalGetObject,factory,rm,path,a,b,result);
     if(!result)return E_POINTER;
     try{
         if(building)throw E_UNEXPECTED;
@@ -51,7 +59,7 @@ HRESULT __stdcall GetMixedObject(void* rm,BSTR path,VARIANT a,VARIANT b,VARIANT*
         if(found==cache.entries.end()){
             struct Building{Building(){building=true;}~Building(){building=false;}} guard;
             auto first=LoadBase(rm,style.primary,style.face),second=LoadBase(rm,style.secondary,style.face);Budget budget;
-            auto image=BlendProperty(first.p,second.p,factory,budget);if(!budget.canvases)throw E_INVALIDARG;
+            auto image=BlendProperty(first.p,second.p,factory,budget,style.primary,style.secondary);if(!budget.canvases)throw E_INVALIDARG;
             while(!cache.entries.empty() && (cache.entries.size()>=128 || cache.bytes+budget.bytes>32*1024*1024)){
                 cache.bytes-=cache.entries.back().bytes;cache.entries.pop_back();
             }
@@ -73,7 +81,7 @@ HRESULT __stdcall GetMixedObject(void* rm,BSTR path,VARIANT a,VARIANT b,VARIANT*
 }
 
 // Only normalize the classification. The native formatter still receives the
-// complete encoded ID, including for exceptional 421xx face families.
+// complete encoded ID, with hair and face using disjoint resource categories.
 int __stdcall OriginalStyle(int id){Style style;return Decode(id,style)?(style.face?20000:30000):id;}
 DWORD classifyResume=0x005C94C3;
 DWORD beautyClassifyResume=0x009ACA9B;
@@ -126,15 +134,22 @@ bool Install(){
     const BYTE beautyExpected[]={0x99,0xb9,0x10,0x27,0,0,0xf7,0xf9};
     auto beautyTarget=reinterpret_cast<BYTE*>(0x009ACA93);
     if(std::memcmp(beautyTarget,beautyExpected,sizeof(beautyExpected)))return false;
+    // CUIItem::Draw uses the same legacy cash predicate to decide whether to
+    // read GW_ItemSlotBase::GetQuantity and draw the native number sprites.
+    // Admit only these two coupons at this call site; item quantities are untouched.
+    const BYTE countExpected[]={0xe8,0xca,0x84,0xc6,0xff};
+    auto countTarget=reinterpret_cast<BYTE*>(0x0081DF06);
+    if(std::memcmp(countTarget,countExpected,sizeof(countExpected)))return false;
     BYTE patch[sizeof(expected)];std::memset(patch,0x90,sizeof(patch));patch[0]=0xe9;
     const DWORD relative=reinterpret_cast<DWORD>(ClassifyResource)-reinterpret_cast<DWORD>(target)-5;std::memcpy(patch+1,&relative,4);
     BYTE beautyPatch[sizeof(beautyExpected)];std::memset(beautyPatch,0x90,sizeof(beautyPatch));beautyPatch[0]=0xe9;
     const DWORD beautyJump=reinterpret_cast<DWORD>(ClassifyBeauty)-reinterpret_cast<DWORD>(beautyTarget)-5;std::memcpy(beautyPatch+1,&beautyJump,4);
     BYTE cashPatch[5]={0xe8};const DWORD cashCall=reinterpret_cast<DWORD>(CouponAllowed)-reinterpret_cast<DWORD>(cashTarget)-5;std::memcpy(cashPatch+1,&cashCall,4);
+    BYTE countPatch[5]={0xe8};const DWORD countCall=reinterpret_cast<DWORD>(CouponAllowed)-reinterpret_cast<DWORD>(countTarget)-5;std::memcpy(countPatch+1,&countCall,4);
     struct Patch {BYTE* site;const BYTE* before;const BYTE* after;SIZE_T size;DWORD protection=0;};
-    Patch patches[]={{target,expected,patch,sizeof(patch)}, {cashTarget,cashExpected,cashPatch,sizeof(cashPatch)}, {beautyTarget,beautyExpected,beautyPatch,sizeof(beautyPatch)}};
+    Patch patches[]={{target,expected,patch,sizeof(patch)}, {cashTarget,cashExpected,cashPatch,sizeof(cashPatch)}, {beautyTarget,beautyExpected,beautyPatch,sizeof(beautyPatch)}, {countTarget,countExpected,countPatch,sizeof(countPatch)}};
     DWORD ignored=0;unsigned prepared=0;
-    // Startup-only: acquire all pages before changing any of the three paths.
+    // Startup-only: acquire all pages before changing any of the four paths.
     for(auto& p:patches){
         if(!VirtualProtect(p.site,p.size,PAGE_EXECUTE_READWRITE,&p.protection)){
             for(unsigned i=0;i<prepared;++i)VirtualProtect(patches[i].site,patches[i].size,patches[i].protection,&ignored);

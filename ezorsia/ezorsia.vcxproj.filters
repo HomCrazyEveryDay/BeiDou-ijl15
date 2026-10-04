@@ -180,6 +180,9 @@
     <ClInclude Include="ChairCompatibility.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ChairImageLinks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="AbsoluteDefenseSync.h">
       <Filter>Header Files</Filter>
     </ClInclude>

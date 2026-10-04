@@ -1,5 +1,6 @@
 from pathlib import Path
 import argparse, subprocess, concurrent.futures, json
+from datetime import date
 parser=argparse.ArgumentParser(description='Audit local appearance families with the production native composer; never opens the game.')
 parser.add_argument('--probe',required=True,type=Path,help='Compiled MixedDyeTest.exe (build via MixedDyeTest.ps1)')
 parser.add_argument('--workspace',type=Path,default=Path(__file__).resolve().parents[2])
@@ -14,7 +15,7 @@ for kind in ['Hair','Face']:
   except ValueError: continue
   color=n//100%10 if kind=='Face' else n%10
   # Match the explicit v83/extended style classifier, not just a filename.
-  face=20000<=n<30000 or 50000<=n<60000 or 80000<=n<90000 or n in (40902,40991) or 42150<=n<=42157 or 42160<=n<=42167
+  face=20000<=n<30000 or 50000<=n<60000 or 80000<=n<90000
   hair=not face and (30000<=n<50000 or 60000<=n<80000)
   if color<=7 and (face if kind=='Face' else hair): groups.setdefault((kind,n-color*(100 if face else 1)),set()).add(n)
 batches=[];batch=[]
@@ -41,6 +42,9 @@ for ids in groups.values():
  passed=sorted(set(ids)&good)
  if len(passed)>=2:catalog+=passed
 catalog=sorted(catalog)
-(out/'verified-styles.txt').write_text('# Local BeiDou Data, audited with native PCOM and production 50:50 canvas composer.\n# 2026-10-03: each color was composed in BOTH directions against its family baseline.\n'+'\n'.join(map(str,catalog))+'\n',encoding='utf-8')
+(out/'verified-styles.txt').write_text('# Local BeiDou Data, audited with native PCOM and production 50:50 canvas composer.\n'
+ '# Sparse CMS frames use documented single-color fallback; see docs/mixed-dye-color-fix-20261004.md.\n'
+ f'# {date.today().isoformat()}: each color was composed in BOTH directions against its family baseline; info/islot checked.\n'
+ +'\n'.join(map(str,catalog))+'\n',encoding='utf-8')
 (out/'failures.txt').write_text('\n'.join(failed),encoding='utf-8')
 print(json.dumps(dict(checked=sum(map(len,batches)),supported=len(catalog),failed=len(failed))),flush=True)

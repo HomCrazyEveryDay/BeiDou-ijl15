@@ -64,7 +64,7 @@ inline unsigned MixPixel(unsigned a,unsigned b){
     for(unsigned shift:{0u,8u,16u})out|=((((a>>shift)&255)*aa+((b>>shift)&255)*ba+sum/2)/sum)<<shift;
     return out;
 }
-struct Budget {std::size_t bytes=0;unsigned nodes=0,canvases=0;std::wstring path;};
+struct Budget {std::size_t bytes=0;unsigned nodes=0,canvases=0,unmixedFrames=0;std::wstring path;};
 inline Object BlendCanvas(void* a,void* b,Factory factory,Budget& budget){
     if(!a && !b)throw E_INVALIDARG;
     // A legitimately absent optional layer contributes transparent pixels. Its
@@ -127,7 +127,7 @@ inline Value Resolve(void* root,const std::wstring& path,unsigned hops=0){
         auto end=path.find(L'/',begin);if(end==std::wstring::npos)end=path.size();auto key=path.substr(begin,end-begin);
         auto property=Query(current.v,PropertyIID());if(!property.p)throw E_INVALIDARG;
         Value next;Get(property.p,key,&next.v);
-        // CMS 53513/55549/56513 place the real default artwork under info.
+        // CMS 53513/56513 place the real default artwork under info.
         // Expose that existing node at the native path; never invent a color.
         if(parent.empty() && key==L"default" && (next.v.vt==VT_EMPTY || next.v.vt==VT_NULL)) {
             Value metadata;Get(property.p,L"info",&metadata.v);auto info=Query(metadata.v,PropertyIID());
@@ -146,7 +146,39 @@ inline Value Resolve(void* root,const std::wstring& path,unsigned hops=0){
     }
     return current;
 }
-struct CloneContext {void* rootA;void* rootB;std::map<std::pair<void*,void*>,Object> canvases;};
+// These aliases were checked against all available CMS 228.2 family colors.
+// Resolve only inside the SAME color. The original IMG is never modified.
+inline bool NeedsRopeAlias(int id){return id==40902 || id==43206 || id==44092;}
+inline Value ResolveColor(void* root,int id,const std::wstring& path) {
+    const wchar_t* from=nullptr;const wchar_t* to=nullptr;
+    if(id==30542){from=L"swingP2/2";to=L"swingP2/1";}
+    else if(NeedsRopeAlias(id)){from=L"rope";to=L"ladder";}
+    else if(id==55549){from=L"default";to=L"blink/0";}
+    if(from) {
+        std::wstring prefix=from;
+        if(path==prefix || (path.size()>prefix.size() && path.compare(0,prefix.size(),prefix)==0 && path[prefix.size()]==L'/')) {
+            auto original=Resolve(root,prefix);
+            if(original.v.vt==VT_EMPTY || original.v.vt==VT_NULL)return Resolve(root,to+path.substr(prefix.size()));
+        }
+    }
+    return Resolve(root,path);
+}
+inline void CheckCategory(void* root,int id) {
+    if(!id)return; // Legacy callers without an ID cannot enable compatibility rules.
+    auto slot=Resolve(root,L"info/islot");
+    const wchar_t* expected=MixedDye::IsFace(id)?L"Fc":MixedDye::IsHair(id)?L"Hr":L"";
+    if(!*expected || slot.v.vt!=VT_BSTR || !slot.v.bstrVal || wcscmp(slot.v.bstrVal,expected))throw E_INVALIDARG;
+}
+inline bool KnownMissingFace(int id,const std::wstring& path,const VARIANT& value) {
+    if((id==53116 && path==L"glitter/1/face") || (id==55763 && path==L"wink/0/face"))
+        return value.vt==VT_EMPTY || value.vt==VT_NULL;
+    if(id==56493 && path==L"glitter/1/face") {
+        auto prop=Query(value,PropertyIID());if(!prop.p || Query(value,CanvasIID()).p)return false;
+        auto keys=Names(prop.p);return keys.size()==1 && keys.front()==L"map";
+    }
+    return false;
+}
+struct CloneContext {void* rootA;void* rootB;int idA;int idB;std::map<std::pair<void*,void*>,Object> canvases;};
 inline void PutObject(void* parent,const std::wstring& key,void* object) {
     VARIANT value{};value.vt=VT_UNKNOWN;value.punkVal=static_cast<IUnknown*>(object);Put(parent,key,value);
 }
@@ -180,9 +212,9 @@ inline Object BlendShade(const VARIANT& a,const VARIANT& b,Factory factory,Budge
         if(key.empty() || key.find_first_not_of(L"0123456789")!=std::wstring::npos)continue;
         Value av,bv;
         if(ac.p)Check(VariantCopy(&av.v,const_cast<VARIANT*>(&a)));
-        else if(ap.p)av=Resolve(context.rootA,path+L"/"+key);
+        else if(ap.p)av=ResolveColor(context.rootA,context.idA,path+L"/"+key);
         if(bc.p)Check(VariantCopy(&bv.v,const_cast<VARIANT*>(&b)));
-        else if(bp.p)bv=Resolve(context.rootB,path+L"/"+key);
+        else if(bp.p)bv=ResolveColor(context.rootB,context.idB,path+L"/"+key);
         auto first=Query(av.v,CanvasIID()),second=Query(bv.v,CanvasIID());
         if((!first.p && !Empty(av.v)) || (!second.p && !Empty(bv.v)))throw E_INVALIDARG;
         if(first.p || second.p)PutObject(out.p,key,CachedBlend(first.p,second.p,factory,budget,context));
@@ -194,11 +226,14 @@ inline Object BlendTree(void* a,void* b,Factory factory,Budget& budget,CloneCont
     if(depth>24 || ++budget.nodes>8192)throw E_INVALIDARG;
     auto out=New(factory,L"Property",PropertyIID());
     std::set<std::wstring> keys;for(auto& key:Names(a))keys.insert(key);for(auto& key:Names(b))keys.insert(key);
-    if(path.empty()){auto first=Resolve(context.rootA,L"default"),second=Resolve(context.rootB,L"default");if(!Empty(first.v) || !Empty(second.v))keys.insert(L"default");}
+    // A plain repaired ID is composed with itself. Both raw trees lack rope,
+    // so enumerating their union alone cannot expose the verified alias.
+    if(path.empty() && (NeedsRopeAlias(context.idA) || NeedsRopeAlias(context.idB)))keys.insert(L"rope");
+    if(path.empty()){auto first=ResolveColor(context.rootA,context.idA,L"default"),second=ResolveColor(context.rootB,context.idB,L"default");if(!Empty(first.v) || !Empty(second.v))keys.insert(L"default");}
     for(auto& key:keys){
         const auto childPath=path.empty()?key:path+L"/"+key;
         budget.path=childPath;
-        Value first=Resolve(context.rootA,childPath),second=Resolve(context.rootB,childPath);
+        Value first=ResolveColor(context.rootA,context.idA,childPath),second=ResolveColor(context.rootB,context.idB,childPath);
         // Some original assets contain dangling editor aliases in BOTH colors.
         // Native lookup treats them as absent; they carry no canvas to blend.
         if(Empty(first.v) && Empty(second.v))continue;
@@ -211,11 +246,28 @@ inline Object BlendTree(void* a,void* b,Factory factory,Budget& budget,CloneCont
                 auto child=BlendShade(first.v,second.v,factory,budget,context,childPath);PutObject(out.p,key,child.p);continue;
             }
             if(ac.p && bc.p){PutObject(out.p,key,CachedBlend(ac.p,bc.p,factory,budget,context));continue;}
+            // These three source colors lack one expression canvas even in CMS.
+            // Keep the available expression at full opacity, without inventing
+            // pixels or fading half a face. This frame is explicitly NOT 50:50.
+            if(key==L"face" && ((ac.p && KnownMissingFace(context.idB,childPath,second.v)) ||
+                (bc.p && KnownMissingFace(context.idA,childPath,first.v)))) {
+                void* canvas=ac.p?ac.p:bc.p;
+                PutObject(out.p,key,CachedBlend(canvas,canvas,factory,budget,context));++budget.unmixedFrames;continue;
+            }
             if(HairLayer(key) && ((ac.p && Empty(second.v)) || (bc.p && Empty(first.v)))) {
                 PutObject(out.p,key,CachedBlend(ac.p,bc.p,factory,budget,context));continue;
             }
             if(ap.p && bp.p && !ac.p && !bc.p) {
                 auto child=BlendTree(ap.p,bp.p,factory,budget,context,childPath,depth+1);PutObject(out.p,key,child.p);continue;
+            }
+            // Red 41951 has an original fourth stand1/stand2 frame. Preserve its art;
+            // the other seven colors have no corresponding frame to mix.
+            if((childPath==L"stand1/3" || childPath==L"stand2/3") && ((context.idA==41951 && context.idB>=41950 && context.idB<=41957 && ap.p && Empty(second.v)) ||
+                (context.idB==41951 && context.idA>=41950 && context.idA<=41957 && bp.p && Empty(first.v)))) {
+                auto root=ap.p?context.rootA:context.rootB;auto prop=ap.p?ap.p:bp.p;
+                CloneContext single{root,root,41951,41951,{}};
+                auto child=BlendTree(prop,prop,factory,budget,single,childPath,depth+1);
+                PutObject(out.p,key,child.p);++budget.unmixedFrames;continue;
             }
             // Editor-only aliases and extra metadata do not participate in the
             // native pose. Keep primary values verbatim; never drop original art.
@@ -227,5 +279,10 @@ inline Object BlendTree(void* a,void* b,Factory factory,Budget& budget,CloneCont
     }
     return out;
 }
-inline Object BlendProperty(void* a,void* b,Factory factory,Budget& budget){CloneContext context{a,b,{}};return BlendTree(a,b,factory,budget,context,L"",0);}
+inline Object BlendProperty(void* a,void* b,Factory factory,Budget& budget,int idA=0,int idB=0){
+    CheckCategory(a,idA);CheckCategory(b,idB);
+    if((idA==0)!=(idB==0) || (idA && (MixedDye::IsFace(idA)!=MixedDye::IsFace(idB) ||
+        MixedDye::WithColor(idA,0,MixedDye::IsFace(idA))!=MixedDye::WithColor(idB,0,MixedDye::IsFace(idB)))))throw E_INVALIDARG;
+    CloneContext context{a,b,idA,idB,{}};return BlendTree(a,b,factory,budget,context,L"",0);
+}
 }

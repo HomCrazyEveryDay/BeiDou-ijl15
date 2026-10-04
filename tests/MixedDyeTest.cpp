@@ -12,6 +12,7 @@ void CheckHook(void* manager,Factory factory);
 #endif
 void Require(bool ok,const char* text){if(!ok){std::fprintf(stderr,"FAIL: %s\n",text);std::exit(1);}}
 void CheckCompatibility(void* rm,Factory factory);
+void CheckSparseColors(void* rm,Factory factory);
 Object Load(void* rm,const wchar_t* path){
     Value out;VARIANT missing{};missing.vt=VT_ERROR;missing.scode=DISP_E_PARAMNOTFOUND;BSTR s=SysAllocString(path);
     auto hr=Method<HRESULT(__stdcall*)(void*,BSTR,VARIANT,VARIANT,VARIANT*)>(rm,0x1c)(rm,s,missing,missing,&out.v);SysFreeString(s);Check(hr);
@@ -84,12 +85,12 @@ int wmain(int argc,wchar_t**argv){
             try{
                 wchar_t pa[96],pb[96];swprintf_s(pa,L"Character/%s/%08d.img",face?L"Face":L"Hair",id);swprintf_s(pb,L"Character/%s/%08d.img",face?L"Face":L"Hair",baseline);
                 auto a=Load(rm.p,pa),b=Load(rm.p,pb);
-                auto forward=BlendProperty(a.p,b.p,factory,first),backward=BlendProperty(b.p,a.p,factory,second);
+                auto forward=BlendProperty(a.p,b.p,factory,first,id,baseline),backward=BlendProperty(b.p,a.p,factory,second,baseline,id);
                 if(!first.canvases || !second.canvases)throw E_INVALIDARG;
                 if(allPairs)for(int color=0;color<8;++color) {
                     int candidate=MixedDye::WithColor(id,color,face);if(candidate==baseline || candidate==id || !ids.count(candidate))continue;
                     swprintf_s(pb,L"Character/%s/%08d.img",face?L"Face":L"Hair",candidate);auto other=Load(rm.p,pb);first={};second={};
-                    auto pair=BlendProperty(a.p,other.p,factory,first);
+                    auto pair=BlendProperty(a.p,other.p,factory,first,id,candidate);
                     if(!first.canvases)throw E_INVALIDARG;
                 }
                 output<<id<<" OK "<<first.canvases<<" "<<first.bytes<<"\n";
@@ -114,10 +115,64 @@ int wmain(int argc,wchar_t**argv){
         std::printf("PASS real style %d + %d: canvases=%u bytes=%zu time=%lldms\n",id,other,budget.canvases,budget.bytes,std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count());
     }
     CheckCompatibility(rm.p,factory);
+    CheckSparseColors(rm.p,factory);
 #ifdef MIXED_DYE_HOOK_TEST
     CheckHook(rm.p,factory);
 #endif
     return 0;
+}
+
+void CheckCanvasPixels(void* first,void* second,void* result) {
+    Require(first && second && result,"compatibility keeps real canvases");
+    int aw=Int(first,0x40),ah=Int(first,0x48),ax=Int(first,0x6c),ay=Int(first,0x74);
+    int bw=Int(second,0x40),bh=Int(second,0x48),bx=Int(second,0x6c),by=Int(second,0x74);
+    int w=Int(result,0x40),h=Int(result,0x48),ox=Int(result,0x6c),oy=Int(result,0x74);
+    unsigned visible=0;
+    for(int y=0;y<h;++y)for(int x=0;x<w;++x) {
+        unsigned expected=MixPixel(Pixel(first,x-ox+ax,y-oy+ay,aw,ah),Pixel(second,x-ox+bx,y-oy+by,bw,bh));
+        unsigned actual=Pixel(result,x,y,w,h);
+        Require(actual==expected || ((actual|expected)>>24)==0,"sparse frame pixels and alpha match declared source art");visible+=(actual>>24)!=0;
+    }
+    Require(visible>10,"sparse frame has visible original art");
+}
+void CheckSparseColors(void* rm,Factory factory) {
+    struct Case {int id,other;const wchar_t* output;const wchar_t* source;bool unmixed;};
+    const Case cases[]={
+        {30542,30540,L"swingP2/2/hair",L"swingP2/1/hair",false},
+        {43206,43200,L"rope/0/backHair",L"ladder/0/backHair",false},
+        {40902,40900,L"rope/1/backHair",L"ladder/1/backHair",false},
+        {44092,44090,L"rope/1/backHair",L"ladder/1/backHair",false},
+        {55549,55049,L"default/face",L"blink/0/face",false},
+        {41950,41951,L"stand1/3/hairOverHead",L"",true},
+        {53116,53016,L"glitter/1/face",L"",true},
+        {55763,55063,L"wink/0/face",L"",true},
+        {56493,56093,L"glitter/1/face",L"",true}};
+    for(auto& test:cases) {
+        const bool face=MixedDye::IsFace(test.id);wchar_t path[96];
+        swprintf_s(path,L"Character/%s/%08d.img",face?L"Face":L"Hair",test.id);auto a=Load(rm,path);
+        swprintf_s(path,L"Character/%s/%08d.img",face?L"Face":L"Hair",test.other);auto b=Load(rm,path);
+        for(bool reverse:{false,true}) {
+            Budget budget;auto mixed=BlendProperty(reverse?b.p:a.p,reverse?a.p:b.p,factory,budget,reverse?test.other:test.id,reverse?test.id:test.other);
+            auto av=Resolve(test.unmixed?b.p:a.p,test.unmixed?test.output:test.source),bv=Resolve(b.p,test.output),mv=Resolve(mixed.p,test.output);
+            auto ac=Query(av.v,CanvasIID()),bc=Query(bv.v,CanvasIID()),mc=Query(mv.v,CanvasIID());
+            CheckCanvasPixels(ac.p,bc.p,mc.p);
+            Require((budget.unmixedFrames!=0)==test.unmixed,"only documented incomplete frames retain a single color");
+            const auto normal=face?L"blink/0/face":L"default/hairOverHead";
+            auto na=Resolve(a.p,normal),nb=Resolve(b.p,normal),nm=Resolve(mixed.p,normal);
+            CheckCanvasPixels(Query(na.v,CanvasIID()).p,Query(nb.v,CanvasIID()).p,Query(nm.v,CanvasIID()).p);
+        }
+        // No generic 'ignore malformed resources' rule: unknown IDs/paths fail.
+        bool rejected=false;try{Budget budget;auto mixed=BlendProperty(a.p,b.p,factory,budget);}catch(HRESULT){rejected=true;}
+        Require(rejected,"unverified missing resource remains rejected");
+        std::printf("PASS sparse color %d: both orders, original pixels, unmixed=%d\n",test.id,test.unmixed);
+    }
+    for(int id:{40902,40991,42150,42151,42152,42153,42154,42155,42156,42157,42160,42161,42162,42163,42164,42165,42166,42167}) {
+        Require(MixedDye::IsHair(id) && !MixedDye::IsFace(id),"409xx/421xx Hr assets classify as hair");
+        MixedDye::Style style;Require(MixedDye::Decode(MixedDye::Encode(id,(id+1)%8,false),style) && !style.face,"special hair encoded category");
+        wchar_t path[96];swprintf_s(path,L"Character/Hair/%08d.img",id);auto hair=Load(rm,path);CheckCategory(hair.p,id);
+        bool rejected=false;try{CheckCategory(hair.p,20000);}catch(HRESULT){rejected=true;}Require(rejected,"hair content cannot masquerade as face");
+    }
+    std::puts("PASS all 18 special hair IDs and resource category guards");
 }
 
 void CheckCompatibility(void* rm,Factory factory) {

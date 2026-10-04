@@ -112,13 +112,7 @@ static bool IsKnownFaceId(DWORD itemid)
 	if (itemid >= 80000 && itemid < 90000) {
 		return true;
 	}
-	if (itemid == 40902 || itemid == 40991) {
-		return true;
-	}
-	if (itemid >= 42150 && itemid <= 42157) {
-		return true;
-	}
-	return itemid >= 42160 && itemid <= 42167;
+	return false;
 }
 
 static bool IsHighFacePreviewTarget(DWORD itemid)
