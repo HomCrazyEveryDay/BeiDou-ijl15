@@ -69,6 +69,8 @@ namespace
 	bool g_syncingNativeIcons = false;
 	bool g_nativeSyncPending = false;
 	DWORD g_lastNativeSyncAttempt = 0;
+	DWORD g_lastCouponPruneAttempt = 0;
+	bool g_couponPruneFailureLogged = false;
 	bool g_addIconStringDedupDisabled = false;
 	bool g_fieldActive = false;
 	std::vector<StackedBuffIcon> g_icons;
@@ -611,6 +613,36 @@ namespace
 		return removed;
 	}
 
+	int PruneCouponNativeIcons(DWORD temporaryStatView)
+	{
+		int removed = 0;
+		DWORD node = GetNativeListHead(temporaryStatView);
+		for (int guard = 0; node && guard < 256; guard++)
+		{
+			const DWORD next = GetNativeNodeNext(node);
+			const DWORD entry = GetNativeNodeEntry(node);
+			if (!entry) { node = next; continue; }
+			const int nativeType = static_cast<int>(ReadDwordOrZero(entry + 0x1C));
+			const int iconId = static_cast<int>(ReadDwordOrZero(entry + 0x20));
+			if (BuffCountdown::ShouldRemoveCouponIcon(nativeType, iconId))
+			{
+				if (TryRemoveNativeNode(temporaryStatView, node))
+				{
+					g_virtualNativeNodes.erase(node);
+					removed++;
+					DebugLog("coupon_prune view=%08X icon=%d expired_or_absent=1", temporaryStatView, iconId);
+				}
+				else if (!g_couponPruneFailureLogged)
+				{
+					g_couponPruneFailureLogged = true;
+					DebugLog("coupon_prune_exception view=%08X icon=%d", temporaryStatView, iconId);
+				}
+			}
+			node = next;
+		}
+		return removed;
+	}
+
 	bool AddNativeVirtualIcon(DWORD temporaryStatView, const StackedBuffIcon& icon)
 	{
 		if (!temporaryStatView || icon.iconId <= 0)
@@ -853,7 +885,9 @@ namespace StackedBuffIcons
 		if (packet && packet->Data && packet->DataLen >= 6) {
 			const unsigned char* data = reinterpret_cast<const unsigned char*>(packet->Data);
 			if ((data[4] | (data[5] << 8)) == kOpcodeUpdateCouponCountdowns) {
-				BuffCountdown::UpdateCoupons(data + 6, packet->DataLen - 6);
+				const bool accepted = BuffCountdown::UpdateCoupons(data + 6, packet->DataLen - 6);
+				DebugLog("coupon_snapshot accepted=%d count=%u", accepted ? 1 : 0,
+					accepted ? static_cast<unsigned>(ReadUInt16LE(data + 6)) : 0u);
 				return true;
 			}
 			if ((data[4] | (data[5] << 8)) == kOpcodeUpdateHurricaneFocus) {
@@ -909,11 +943,28 @@ namespace StackedBuffIcons
 				SyncNativeVirtualIcons(SnapshotIcons());
 			}
 		}
+		// CUserLocal::Update also runs while idle. Remove coupons outside native
+		// Draw/UpdateShadow iteration; their native countdown only starts blinking
+		// and cannot clear a node when the server has no registered buff to cancel.
+		const DWORD now = GetTickCount();
+		if (g_iconLockInitialized && !g_syncingNativeIcons
+			&& (activating || now - g_lastCouponPruneAttempt >= kNativeSyncRetryInterval))
+		{
+			g_lastCouponPruneAttempt = now;
+			const DWORD view = ResolveTemporaryStatView();
+			if (view)
+			{
+				g_syncingNativeIcons = true;
+				if (PruneCouponNativeIcons(view) > 0) DrawNativeTemporaryStatView(view);
+				g_syncingNativeIcons = false;
+			}
+		}
 	}
 
 	void OnFieldInit()
 	{
 		BuffCountdown::Reset();
+		g_couponPruneFailureLogged = false;
 		InterlockedExchange(&g_hurricaneFocusStacks, 0);
 		g_fieldActive = false;
 		g_currentTemporaryStatView = 0;
@@ -926,6 +977,7 @@ namespace StackedBuffIcons
 	void OnFieldDispose()
 	{
 		BuffCountdown::Reset();
+		g_couponPruneFailureLogged = false;
 		InterlockedExchange(&g_hurricaneFocusStacks, 0);
 		g_fieldActive = false;
 		g_currentTemporaryStatView = 0;

@@ -35,6 +35,11 @@ if ($WithoutContextRecovery) {
     $implementation = $implementation.Replace($resolver, "DWORD ResolveTemporaryStatView() { return g_observedTemporaryStatView; }`n")
 }
 [IO.File]::WriteAllText((Join-Path $outputDir 'BuffIconsUnderTest.h'), $implementation)
+$couponSource = [IO.File]::ReadAllText((Join-Path $PSScriptRoot '..\ezorsia\BuffCountdown.cpp'))
+$couponStart = $couponSource.IndexOf('struct CouponLifetime {')
+$couponEnd = $couponSource.IndexOf('struct Painted {', $couponStart)
+if ($couponStart -lt 0 -or $couponEnd -le $couponStart) { throw 'Cannot locate production coupon state.' }
+[IO.File]::WriteAllText((Join-Path $outputDir 'CouponStateUnderTest.h'), $couponSource.Substring($couponStart, $couponEnd - $couponStart))
 $output = Join-Path $outputDir 'StackedBuffIconsTest.exe'
 & cl.exe /nologo /std:c++17 /O2 /EHsc "/I$outputDir" (Join-Path $PSScriptRoot 'StackedBuffIconsTest.cpp') "/Fo:$outputDir\" "/Fe:$output" /link /DYNAMICBASE:NO /BASE:0x400000
 if ($LASTEXITCODE -ne 0) { throw 'StackedBuffIconsTest compilation failed.' }

@@ -214,7 +214,8 @@ int wmain(int argc, wchar_t** argv) {
     UpdateShadowWithCountdown(entry, nullptr);
     Check(layer.canvas != cleanShadow, "finite coupon gets countdown on its native layer");
     BuffCountdown::Reset();
-    Check(g_couponTimes.empty(), "field reset drops the prior character's coupon metadata");
+    Check(g_couponTimes.empty() && !BuffCountdown::ShouldRemoveCouponIcon(1, expId),
+        "field reset drops the prior character's coupon metadata and removal authority");
     Field<int>(entry, 0x38) -= 60000;
     UpdateShadowWithCountdown(entry, nullptr);
     Check(layer.canvas == cleanShadow, "coupon timer stays absent after field cache reset");

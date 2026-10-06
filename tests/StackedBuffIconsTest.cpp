@@ -8,10 +8,23 @@
 #include <unordered_set>
 #include <vector>
 
+ULONGLONG g_now = 5000;
+DWORD TestTickCount() { return static_cast<DWORD>(g_now); }
+#define GetTickCount TestTickCount
+
+namespace CouponState {
+#include "CouponStateUnderTest.h"
+}
 namespace BuffCountdown {
-void Reset() {}
+void Reset() { CouponState::g_couponTimes.clear(); CouponState::g_hasCouponSnapshot = false; }
 unsigned updates = 0, payloadSize = 0;
-bool UpdateCoupons(const unsigned char*, unsigned size) { ++updates; payloadSize = size; return true; }
+bool UpdateCoupons(const unsigned char* data, unsigned size) {
+    ++updates; payloadSize = size;
+    return CouponState::ReadCouponSnapshot(data, size, g_now);
+}
+bool ShouldRemoveCouponIcon(int nativeType, int iconId) {
+    return CouponState::CouponIconExpiredOrAbsent(nativeType, iconId, g_now);
+}
 }
 
 namespace {
@@ -24,10 +37,6 @@ void Require(bool condition, const char* message) {
     }
 }
 
-DWORD g_now = 5000;
-DWORD TestTickCount() { return g_now; }
-#define GetTickCount TestTickCount
-
 DWORD g_context[0x3000 / sizeof(DWORD)]{};
 DWORD TestView() { return reinterpret_cast<DWORD>(g_context) + kTemporaryStatViewContextOffset; }
 DWORD& Word(DWORD address) { return *reinterpret_cast<DWORD*>(address); }
@@ -37,6 +46,7 @@ struct TestNode {
 };
 std::vector<TestNode*> g_nodes;
 bool g_canAdd = true;
+bool g_canRemove = true;
 int g_draws = 0;
 
 void DebugLog(const char*, ...) {}
@@ -64,6 +74,7 @@ bool TryCallNativeAddIcon(DWORD view, int type, int id, int duration) {
     return true;
 }
 bool TryRemoveNativeNode(DWORD view, DWORD node) {
+    if (!g_canRemove) return false;
     DWORD* link = reinterpret_cast<DWORD*>(view + kTemporaryStatViewListHeadOffset);
     DWORD current = *link;
     while (current) {
@@ -84,9 +95,9 @@ bool TryRemoveNativeNode(DWORD view, DWORD node) {
 // draw interception and field lifecycle; only the native UI calls are substituted.
 #include "BuffIconsUnderTest.h"
 
-int CountIcon(int id) {
+int CountIcon(int id, int type = kNativeIconTypeSkill) {
     const auto counts = CountNativeIconsByKey(TestView());
-    const auto found = counts.find(NativeIconKey(kNativeIconTypeSkill, id));
+    const auto found = counts.find(NativeIconKey(type, id));
     return found == counts.end() ? 0 : found->second;
 }
 void SendFocus(BYTE stacks) {
@@ -106,10 +117,12 @@ void ResetCase() {
     g_virtualNativeNodes.clear();
     g_icons.clear();
     g_canAdd = true;
+    g_canRemove = true;
     g_draws = 0;
     g_now = 5000;
     g_syncingNativeIcons = false;
     g_lastNativeSyncAttempt = 0;
+    g_lastCouponPruneAttempt = 0;
     StackedBuffIcons::OnFieldInit();
 }
 
@@ -218,6 +231,123 @@ void TestRelogSnapshotAndCouponDispatch() {
     Require(!StackedBuffIcons::HandlePacket(&packet), "short unrelated packet is ignored");
     Require(BuffCountdown::updates == 1, "short packet never reads coupon opcode past its end");
 }
+
+void SendCoupons(std::initializer_list<std::pair<int, long long>> coupons) {
+    std::vector<BYTE> data(8 + 12 * coupons.size());
+    data[4] = 0x0a; data[5] = 0x10;
+    data[6] = static_cast<BYTE>(coupons.size());
+    size_t offset = 8;
+    for (const auto& coupon : coupons) {
+        std::memcpy(data.data() + offset, &coupon.first, 4);
+        std::memcpy(data.data() + offset + 4, &coupon.second, 8);
+        offset += 12;
+    }
+    CInPacket packet{};
+    packet.Data = data.data(); packet.DataLen = static_cast<unsigned>(data.size());
+    Require(StackedBuffIcons::HandlePacket(&packet), "coupon snapshot is consumed");
+}
+
+void TestIdleCouponExpiry() {
+    ResetCase();
+    StackedBuffIcons::OnFieldUpdate();
+    TryCallNativeAddIcon(TestView(), 1, 5211060, 1000);
+    TryCallNativeAddIcon(TestView(), 1, 5360042, 10000);
+    TryCallNativeAddIcon(TestView(), 2, 3121002, 1000);
+    TryCallNativeAddIcon(TestView(), 1, 2022450, 1000);
+    // No authoritative metadata: even a zero native timer is insufficient.
+    g_now += 10000;
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5211060, 1) == 1, "missing coupon snapshot never removes a native icon");
+    SendCoupons({{5211060, 1000}, {5360042, 10000}});
+    g_now += 999;
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5211060, 1) == 1, "coupon remains visible until its real expiry");
+    const int draws = g_draws;
+    g_now += 251;
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5211060, 1) == 0 && CountIcon(5360042, 1) == 1,
+        "idle expiry removes only EXP without another server packet or player action");
+    Require(CountIcon(3121002) == 1 && CountIcon(2022450, 1) == 1,
+        "coupon cleanup preserves ordinary native skills and consumables");
+    Require(g_draws == draws + 1, "removal redraws the remaining native buff bar once");
+    g_now += 3600000;
+    StackedBuffIcons::OnFieldUpdate();
+    const int expiredDraws = g_draws;
+    g_now += 3600000;
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5360042, 1) == 0 && g_draws == expiredDraws,
+        "hours of idle time cannot retain or repeatedly redraw expired coupons");
+}
+
+void TestCashShopCouponExpiry() {
+    ResetCase();
+    StackedBuffIcons::OnFieldUpdate();
+    SendCoupons({{5211060, 1000}, {5360042, 1000}});
+    TryCallNativeAddIcon(TestView(), 1, 5211060, 1000);
+    TryCallNativeAddIcon(TestView(), 1, 5360042, 1000);
+    TryCallNativeAddIcon(TestView(), 2, 5211060, 60000);
+    StackedBuffIcons::OnFieldDispose();
+    g_now += 3600000;
+    StackedBuffIcons::OnFieldInit();
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5211060, 1) == 1, "field reset cannot apply a previous session's expired snapshot");
+    SendCoupons({{5211060, 0}}); // Invalid lifetime is not an empty snapshot.
+    g_now += 250;
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5211060, 1) == 1, "malformed first snapshot cannot authorize removal");
+    SendCoupons({}); // Server no longer has a registered coupon to CANCEL_BUFF.
+    const int draws = g_draws;
+    g_now += 250;
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5211060, 1) == 0 && CountIcon(5360042, 1) == 0,
+        "empty cash shop return snapshot clears persistent native coupon nodes");
+    Require(CountIcon(5211060) == 1 && g_draws == draws + 1,
+        "batch coupon removal redraws once and does not match skill ids");
+
+    SendCoupons({{5211060, 7200000}});
+    TryCallNativeAddIcon(TestView(), 1, 5211060, 7200000);
+    g_now += 250;
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5211060, 1) == 1, "repurchase displays the new native coupon normally");
+}
+
+void TestCouponRenewalAndLongLifetimes() {
+    ResetCase();
+    g_now = 0xfffffff0ULL;
+    StackedBuffIcons::OnFieldUpdate();
+    SendCoupons({{5211060, 1000}, {5360042, -1}});
+    TryCallNativeAddIcon(TestView(), 1, 5211060, 1000);
+    TryCallNativeAddIcon(TestView(), 1, 5360042, 0x7fffffff);
+    g_now += 500;
+    SendCoupons({{5211060, 2000}, {5360042, -1}});
+    g_now += 750;
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5211060, 1) == 1, "renewal survives the old expiry and 32-bit tick rollover");
+    SendCoupons({{5211060, 3000}, {5211060, 3000}});
+    g_now += 1500;
+    g_canRemove = false;
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5211060, 1) == 1, "failed native removal is recoverable");
+    g_canRemove = true;
+    g_now += 250;
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5211060, 1) == 0 && CountIcon(5360042, 1) == 1,
+        "retry clears expired coupon; rejected duplicate snapshot preserves the original state");
+    const long long thirtyDays = 30LL * 24 * 60 * 60 * 1000;
+    SendCoupons({{5211060, thirtyDays}, {5360042, -1}});
+    TryCallNativeAddIcon(TestView(), 1, 5211060, 0x7fffffff);
+    g_now += 0x7fffffffULL;
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5211060, 1) == 1, "long coupon uses its 64-bit lifetime beyond native timer capacity");
+    g_now += thirtyDays - 0x7fffffffLL;
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5211060, 1) == 0 && CountIcon(5360042, 1) == 1,
+        "long coupon clears at real expiry while permanent coupon persists");
+    SendCoupons({});
+    g_now += 250;
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5360042, 1) == 0, "authoritative inventory removal also clears a permanent coupon");
+}
 } // namespace
 
 int main() {
@@ -230,8 +360,11 @@ int main() {
     TestMapTransition();
     TestFirstLoginAndDeferredSync();
     TestRelogSnapshotAndCouponDispatch();
+    TestIdleCouponExpiry();
+    TestCashShopCouponExpiry();
+    TestCouponRenewalAndLongLifetimes();
     ResetCase();
     DeleteCriticalSection(&g_iconLock);
     VirtualFree(reinterpret_cast<void*>(page), 0, MEM_RELEASE);
-    std::puts("PASS: focus icon map transitions, first login, cleanup, pointer validation and deferred recovery");
+    std::puts("PASS: focus transitions, coupon idle/cash-shop expiry, renewal, native cleanup recovery and 64-bit lifetimes");
 }

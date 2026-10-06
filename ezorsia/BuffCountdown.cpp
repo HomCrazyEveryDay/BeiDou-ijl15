@@ -34,6 +34,7 @@ struct CouponLifetime {
     ULONGLONG receivedAt;
 };
 std::unordered_map<int, CouponLifetime> g_couponTimes;
+bool g_hasCouponSnapshot = false;
 
 long long CouponRemaining(int iconId, ULONGLONG now) {
     if (iconId < 0) iconId = -iconId;
@@ -60,7 +61,17 @@ bool ReadCouponSnapshot(const unsigned char* data, unsigned size, ULONGLONG now)
         next.emplace(itemId, CouponLifetime{remaining, now});
     }
     g_couponTimes.swap(next);
+    g_hasCouponSnapshot = true;
     return true;
+}
+
+bool CouponIconExpiredOrAbsent(int nativeType, int iconId, ULONGLONG now) {
+    // An empty authoritative snapshot removes old native icons (notably after
+    // cash shop expiry). No snapshot after a field/session reset means unknown.
+    if (!g_hasCouponSnapshot || nativeType != 1
+        || (iconId / 1000 != 5211 && iconId / 1000 != 5360)) return false;
+    const long long remaining = CouponRemaining(iconId, now);
+    return remaining == -2 || remaining == 0;
 }
 
 struct Painted {
@@ -205,11 +216,15 @@ void Install(volatile LONG* focusStacks, bool enableLog) {
 void Reset() {
     g_painted.clear();
     g_couponTimes.clear();
+    g_hasCouponSnapshot = false;
     // Do not retain layer pointers across a field change. Digit resources are
     // immutable and cached independently of all buff entries and their layers.
     g_paintContext = {};
 }
 bool UpdateCoupons(const unsigned char* data, unsigned size) {
     return ReadCouponSnapshot(data, size, GetTickCount64());
+}
+bool ShouldRemoveCouponIcon(int nativeType, int iconId) {
+    return CouponIconExpiredOrAbsent(nativeType, iconId, GetTickCount64());
 }
 }
