@@ -9,6 +9,7 @@
 #include "IncubationCanvas.h"
 #include "ResourceReadGuards.h"
 #include "ModernEquipmentCompatibility.h"
+#include "NameTagOriginFix.h"
 
 namespace {
 
@@ -218,6 +219,7 @@ void ClientCrashFixes::Install()
 {
     ResourceReadGuards::Install();
     ModernEquipmentCompatibility::Install();
+    CrashReporter::RecordEvent("nametag.origin", "install result=%d", NameTagOriginFix::Install() ? 1 : 0);
     CrashReporter::RecordEvent("login.request", "initialization install result=%d",
         InstallLoginRequestInitialization() ? 1 : 0);
     CrashReporter::RecordEvent("quest.context", "install result=%d", InstallQuestContextGuard() ? 1 : 0);

@@ -207,6 +207,7 @@
     <ClInclude Include="MovementKeyHook.h" />
     <ClInclude Include="NpcShopCurrency.h" />
     <ClInclude Include="ModernEquipmentCompatibility.h" />
+    <ClInclude Include="NameTagOriginFix.h" />
     <ClInclude Include="MineralBagWnd.h" />
     <ClInclude Include="MixedDyeWnd.h" />
     <ClInclude Include="MixedDyeWindowModel.h" />

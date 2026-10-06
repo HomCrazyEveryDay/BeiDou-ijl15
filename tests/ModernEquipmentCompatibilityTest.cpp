@@ -30,7 +30,9 @@ static BOOL WINAPI TestVirtualProtect(void* address, SIZE_T size, DWORD protecti
 }
 #define VirtualProtect TestVirtualProtect
 #include "ModernEquipmentCompatibilityUnderTest.h"
+#include "NameTagOriginFixUnderTest.h"
 #undef VirtualProtect
+#include "NameTagOriginFixCases.h"
 bool Memory::SetHook(bool, void**, void*) { return false; }
 static void MapClient(const wchar_t* path) {
     FILE* file = nullptr;
@@ -452,7 +454,7 @@ static void CheckNativeResources(const wchar_t* exePath, const wchar_t* followup
     SysFreeString(path);
     *reinterpret_cast<void**>(0x00BF14E8) = rm;
     if (followupRoot) CheckFollowupResources();
-    else { CheckInstalledResources(); CheckPetEquipmentResources(); CheckPetRenderingTrace(); }
+    else { CheckInstalledResources(); CheckPetEquipmentResources(); CheckPetRenderingTrace(); CheckNameTagResources(create); }
     *reinterpret_cast<void**>(0x00BF14E8) = nullptr;
     static_cast<IUnknown*>(rm)->Release();
     static_cast<IUnknown*>(fs)->Release();
