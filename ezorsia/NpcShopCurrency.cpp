@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "NpcShopCurrency.h"
+#include "MonthlyShop.h"
 
 namespace
 {
@@ -163,6 +164,7 @@ DWORD CallCanvasCopyScaled(DWORD destCanvas, DWORD sourceCanvas, int x, int y, i
 
 DWORD __stdcall DrawListCostIcon(DWORD destCanvas, DWORD sourceCanvas, int x, int y, CanvasVariant* alpha)
 {
+    if (MonthlyShop::DrawPointCurrency(reinterpret_cast<void*>(destCanvas), x, y)) return S_OK;
 	CanvasVariant drawAlpha = {};
 	if (alpha)
 	{

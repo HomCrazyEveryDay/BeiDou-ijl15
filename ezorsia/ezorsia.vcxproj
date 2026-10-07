@@ -210,6 +210,11 @@
     <ClInclude Include="NameTagOriginFix.h" />
     <ClInclude Include="MineralBagWnd.h" />
     <ClInclude Include="MixedDyeWnd.h" />
+    <ClInclude Include="MonthlyShop.h" />
+    <ClInclude Include="MonthlyShopModel.h" />
+    <ClInclude Include="MonthlyShopText.h" />
+    <ClInclude Include="MonthlyShopTabs.h" />
+    <ClInclude Include="MonthlyShopTabCanvas.h" />
     <ClInclude Include="MixedDyeWindowModel.h" />
     <ClInclude Include="EvanCreation.h" />
     <ClInclude Include="EvanRuntime.h" />
@@ -285,6 +290,7 @@
     <ClCompile Include="BuffCountdown.cpp" />
     <ClCompile Include="MixedDye.cpp" />
     <ClCompile Include="MixedDyeWnd.cpp" />
+    <ClCompile Include="MonthlyShop.cpp" />
     <ClCompile Include="NpcShopCurrency.cpp" />
     <ClCompile Include="MineralBagWnd.cpp" />
     <ClCompile Include="EvanCreation.cpp" />

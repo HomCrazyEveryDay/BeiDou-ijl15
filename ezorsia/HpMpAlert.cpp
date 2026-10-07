@@ -2,6 +2,7 @@
 #include "ReactorTimingDiagnostics.h"
 #include "MineralBagWnd.h"
 #include "MixedDyeWnd.h"
+#include "MonthlyShop.h"
 #include "AbsoluteDefenseSync.h"
 #include "HpMpAlert.h"
 #include "CrashReporter.h"
@@ -771,6 +772,8 @@ static void TraceIncomingPacket(CInPacket* packet) {
 }
 static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
     TraceIncomingPacket(packet);
+    if (packet && MonthlyShop::HandlePacket(reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
+    if (packet && packet->DataLen >= 6) MonthlyShop::BeforeNativePacket(ReadUInt16LE(reinterpret_cast<const unsigned char*>(packet->Data) + 4));
     if (packet && HiredMerchantClock::HandlePacket(
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet && SkillPointSync::HandlePacket(

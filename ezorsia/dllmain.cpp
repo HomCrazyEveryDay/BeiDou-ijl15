@@ -23,6 +23,7 @@
 #include "SecondPendantSlot.h"
 #include "MineralBagWnd.h"
 #include "MixedDyeWnd.h"
+#include "MonthlyShop.h"
 #include "EvanCreation.h"
 #include "EvanRuntime.h"
 #include "CrashReporter.h"
@@ -1190,6 +1191,7 @@ namespace
 		NpcShopCurrency::Install();
 		MineralBagWnd::Install();
 		MixedDyeWnd::Install();
+		if (!MonthlyShop::Install()) CrashReporter::RecordEvent("monthly.shop", "install_failed");
 		PrivateCleanSlateHook::Install();
 		SecondPendantSlot::Install(enableEquipmentSlotLog);
 		Client::MoreHook();
