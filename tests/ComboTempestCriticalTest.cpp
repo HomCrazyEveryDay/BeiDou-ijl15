@@ -1,5 +1,6 @@
 #include "../ezorsia/stdafx.h"
 #include "../ezorsia/ComboTempestCritical.h"
+#include "../ezorsia/EquipmentCritical.h"
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
@@ -98,6 +99,16 @@ int main(int argc, char** argv) {
         encoded.clear(); Run(0x10955415, skill, 4, target);
         Require(encoded.back() == 0x12341234, "other skills retain original footer");
     }
+    EquipmentCritical::Snapshot().store(5);
+    for (int skill : {0, 21120006, 3121004, 5221004}) {
+        for (int count : {1,4,15}) {
+            for (int i=0;i<15;++i) target[0x54/4+i] = i%2;
+            encoded.clear(); Run(0x10955415, skill, count, target);
+            Require(encoded.size()==count+1 && encoded.back()==(0xcc010000|(0x2aaa&((1u<<count)-1))),
+                "equipment flags survive real ranged serialization, including rapid fire and tempest");
+        }
+    }
+    EquipmentCritical::Reset();
     *reinterpret_cast<unsigned char*>(0x1095543c) = 0xc3;
     FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(0x1095543c), 1);
     for (int count : {0, 16, -1})

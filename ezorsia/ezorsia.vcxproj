@@ -179,6 +179,7 @@
     <ClInclude Include="AranComboCommand.h" />
     <ClInclude Include="ComboTempestDamage.h" />
     <ClInclude Include="ComboTempestCritical.h" />
+    <ClInclude Include="EquipmentCritical.h" />
     <ClInclude Include="BossHP.h" />
     <ClInclude Include="CharacterSlots.h" />
     <ClInclude Include="ClientCrashFixes.h" />
@@ -267,6 +268,7 @@
     <ClCompile Include="AranComboCommand.cpp" />
     <ClCompile Include="ComboTempestDamage.cpp" />
     <ClCompile Include="ComboTempestCritical.cpp" />
+    <ClCompile Include="EquipmentCritical.cpp" />
     <ClCompile Include="BossHP.cpp" />
     <ClCompile Include="CharacterSlots.cpp" />
     <ClCompile Include="ClientCrashFixes.cpp" />

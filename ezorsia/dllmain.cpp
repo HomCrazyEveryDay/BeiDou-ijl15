@@ -11,6 +11,7 @@
 #include "AranFirstAttack.h"
 #include "AranComboCommand.h"
 #include "ComboTempestCritical.h"
+#include "EquipmentCritical.h"
 #include "HpMpAlert.h"
 #include "StackedBuffIcons.h"
 #include "SkillTooltipLayout.h"
@@ -1202,7 +1203,10 @@ namespace
 		if (!AranFirstAttack::Install()) {
 			ClientLog::Append(ClientLog::Component::Lifecycle, "aran_first_attack_install_failed");
 		}
-		if (!ComboTempestCritical::Install()) {
+        if (!EquipmentCritical::Install()) {
+            ClientLog::Append(ClientLog::Component::Lifecycle, "equipment_critical_install_failed");
+        }
+        if (!ComboTempestCritical::Install()) {
 			ClientLog::Append(ClientLog::Component::Lifecycle, "combo_tempest_critical_install_failed");
 		}
 		BossHP::Hook();

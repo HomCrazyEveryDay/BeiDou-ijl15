@@ -1,5 +1,6 @@
 #include "../ezorsia/stdafx.h"
 #include "../ezorsia/EvanRuntime.h"
+#include "../ezorsia/EquipmentCritical.h"
 #include "../ezorsia/EvanDragonVisibility.h"
 #include "../ezorsia/EvanMountRender.h"
 #include <fstream>
@@ -671,6 +672,12 @@ int main(int argc,char** argv) {
             }
         }
     }
+    EquipmentCritical::Snapshot().store(5);
+    for (int skill : {22181002, 2121006, 2001004}) for (int count : {1,4,15}) {
+        for (int i=0;i<15;++i) target[21+i]=i%2;
+        if(FooterAt(skill,count,target)!=(0xcc010000u|(0x2aaau&((1u<<count)-1))))return 67;
+    }
+    EquipmentCritical::Reset();
     // Execute the installed dragon entry hook and its displaced instructions.
     // Stub action decoding only; the original vx -> move/stand calculation runs.
     const BYTE dragonAction[]={0x33,0xc0,0xc2,0x04,0x00};

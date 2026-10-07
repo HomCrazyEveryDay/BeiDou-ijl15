@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "ComboTempestCritical.h"
+#include "EquipmentCritical.h"
 #include <cstring>
 
 namespace {
@@ -16,6 +17,7 @@ bool g_installed = false;
 // The ranged target footer was ignored by the server. Preserve packet length
 // and damage magnitudes; AC01 carries the native per-line critical decisions.
 unsigned __cdecl Footer(int skill, int count, const int* critical, unsigned original) {
+    if (EquipmentCritical::Active()) return EquipmentCritical::Footer(count, critical, original);
     if (skill != 21120006 || count < 1 || count > 15) return original;
     unsigned result = 0xac010000;
     for (int i = 0; i < count; ++i) if (critical[i]) result |= 1u << i;

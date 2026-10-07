@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "EvanRuntime.h"
+#include "EquipmentCritical.h"
 #include "EvanPursuit.h"
 #include <cstring>
 #include "EvanKillingWing.h"
@@ -473,6 +474,7 @@ __declspec(naked) void BlazeOrigin() {
 // The target footer is ignored by the server. Keep every damage integer and
 // packet length unchanged; EC01 identifies an authoritative 15-line crit mask.
 unsigned __cdecl CriticalFooter(int skill, int count, const int* critical, unsigned original) {
+    if (EquipmentCritical::Active()) return EquipmentCritical::Footer(count, critical, original);
     if (skill / 1000000 != 22 || count < 1 || count > 15) return original;
     unsigned result = 0xec010000;
     for (int i = 0; i < count; ++i) if (critical[i]) result |= 1u << i;
