@@ -28,6 +28,7 @@
 #include "EvanCreation.h"
 #include "EvanRuntime.h"
 #include "CrashReporter.h"
+#include "NativeExitDiagnostics.h"
 #include "ClientLog.h"
 #include "DisconnectDiagnostics.h"
 #include "ProcessExitMonitor.h"
@@ -1103,7 +1104,10 @@ namespace
 		const int requestedHeight = Client::m_nGameHeight;
 		const ResolutionEnvironment resolutionEnvironment = ReadResolutionEnvironment();
 		CrashReporter::Install(enableCrashDump, crashDumpType, enableCrashTrace);
-		// Opt in only: first-chance diagnostics can synchronously flush logs on the game thread.
+		if (enableCrashDump) ClientLog::Emergency("native_exit_diagnostics_config installed=%d",
+			NativeExitDiagnostics::Install(GetModuleHandleW(nullptr),CrashReporter::CaptureMainLoopException) ? 1 : 0);
+		// Verbose lifecycle observation remains opt-in. CrashReporter separately
+		// captures the five known AV sites once each under the crash-dump setting.
 		DisconnectDiagnostics::Install(settings.values[LifecycleDiagnostics] != 0);
 		CrashReporter::EnableConditionalDump(settings.values[ConditionalDump] != 0);
 		if (settings.values[ExitMonitor] != 0) ProcessExitMonitor::Start();

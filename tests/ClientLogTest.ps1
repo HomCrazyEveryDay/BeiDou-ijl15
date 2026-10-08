@@ -11,8 +11,9 @@ $output = Join-Path $outputDir 'ClientLogTest.exe'
 $source = Join-Path $PSScriptRoot 'ClientLogTest.cpp'
 $implementation = Join-Path $PSScriptRoot '..\ezorsia\ClientLog.cpp'
 $crashReporter = Join-Path $PSScriptRoot '..\ezorsia\CrashReporter.cpp'
+$targetedSnapshot = Join-Path $PSScriptRoot '..\ezorsia\TargetedCrashSnapshot.cpp'
 $diagnostics = Join-Path $PSScriptRoot '..\ezorsia\ClientDiagnostics.cpp'
-& cl.exe /nologo /std:c++17 /O2 /EHsc $source $implementation $crashReporter $diagnostics "/Fo:$outputDir\" "/Fe:$output" /link Dbghelp.lib Advapi32.lib
+& cl.exe /nologo /std:c++17 /O2 /EHsc $source $implementation $crashReporter $targetedSnapshot $diagnostics "/Fo:$outputDir\" "/Fe:$output" /link Dbghelp.lib Advapi32.lib
 if ($LASTEXITCODE -ne 0) { throw 'ClientLogTest compilation failed.' }
 $runOne = & $output '--run-id'
 if ($LASTEXITCODE -ne 0) { throw 'First run ID process failed.' }

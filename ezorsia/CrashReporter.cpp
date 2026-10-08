@@ -2,6 +2,7 @@
 #include "CrashReporter.h"
 #include "ClientLog.h"
 #include "ClientDiagnostics.h"
+#include "TargetedCrashSnapshot.h"
 
 #include <DbgHelp.h>
 #include <cstdarg>
@@ -313,7 +314,7 @@ void WriteModuleInfo(HANDLE file, const char* keyPrefix, void* address)
 	const ULONG_PTR moduleBase = reinterpret_cast<ULONG_PTR>(module);
 	const ULONG_PTR target = reinterpret_cast<ULONG_PTR>(address);
 	WriteLine(file, (std::string(keyPrefix) + "Module").c_str(), modulePathUtf8);
-	WriteHexLine(file, (std::string(keyPrefix) + "ModuleBase").c_str(), moduleBase);
+	WriteModuleBuildInfo(file, (std::string(keyPrefix) + "Module").c_str(), module);
 	WriteHexLine(file, (std::string(keyPrefix) + "ModuleOffset").c_str(), target >= moduleBase ? target - moduleBase : 0);
 }
 
@@ -539,12 +540,79 @@ void WriteFrameWalk(HANDLE file, const CONTEXT* context)
 	WriteText(file, "frameWalk=end\r\n");
 }
 
+const BYTE* SnapshotBytes(const TargetedCrashSnapshot::Snapshot& snapshot, DWORD address, DWORD size)
+{
+    for (DWORD i=0;i<snapshot.memoryCount && i<ARRAYSIZE(snapshot.memory);++i) {
+        const auto& block=snapshot.memory[i];
+        if (block.copied>sizeof(block.bytes) || address<block.address) continue;
+        const DWORD offset=address-block.address;
+        if (offset<=block.copied && size<=block.copied-offset) return block.bytes+offset;
+    }
+    return nullptr;
+}
+
+bool SnapshotWord(const TargetedCrashSnapshot::Snapshot& snapshot, DWORD address, DWORD& value)
+{
+    const auto bytes=SnapshotBytes(snapshot,address,sizeof(value));
+    if (!bytes) return false;
+    memcpy(&value,bytes,sizeof(value));
+    return true;
+}
+
+void WriteTargetedDetails(HANDLE file, const TargetedCrashSnapshot::Snapshot& snapshot)
+{
+    using TargetedCrashSnapshot::Family;
+    const DWORD fault=reinterpret_cast<DWORD>(snapshot.record.ExceptionAddress);
+    if (snapshot.context.Eip!=fault) {
+        WriteLine(file,"targetedDetails","unavailable_context_mismatch");
+        return;
+    }
+    // Derive only known call/skill metadata from the immutable first-chance
+    // copy. Do not scan arbitrary stack values or upload raw memory blocks.
+    DWORD caller=0;
+    if (snapshot.family==Family::NullVariant) {
+        const BYTE expected[]={0x89,0x46,0x08,0x74,0x06,0x8b,0x08};
+        const auto code=fault>=5 ? SnapshotBytes(snapshot,fault-5,sizeof(expected)) : nullptr;
+        if (code && !memcmp(code,expected,sizeof(expected)) && snapshot.context.Esp<=MAXDWORD-4
+            && SnapshotWord(snapshot,snapshot.context.Esp+4,caller)) {
+            // 00410FDF pushes ESI but never establishes an EBP frame.
+            WriteHexLine(file,"directCallerReturn",caller);
+            WriteModuleInfo(file,"directCaller",reinterpret_cast<void*>(caller));
+        } else WriteLine(file,"directCallerStatus","unavailable_signature_or_stack");
+    } else if (snapshot.family==Family::ActionJump && fault>=0x660a98) {
+        const DWORD base=fault-0x660a98;
+        const auto code=SnapshotBytes(snapshot,base+0x52edb2,10);
+        if (code && code[0]==0xb8 && code[5]==0xe8) {
+            DWORD relative=0;
+            memcpy(&relative,code+6,sizeof(relative));
+            const DWORD target=base+0x52edbc+relative;
+            WriteHexLine(file,"actionPrologueCallTarget",target);
+            WriteLine(file,"actionPrologueCallMatchesBaseline",target==base+0x660b98 ? "true" : "false");
+        } else WriteLine(file,"actionPrologueCallStatus","unavailable_or_changed_opcode");
+        DWORD outer=0,action=0;
+        const DWORD sp=snapshot.context.Esp;
+        const bool local=sp<=MAXDWORD-8 && SnapshotWord(snapshot,sp,caller)
+            && caller==base+0x52edbc && SnapshotWord(snapshot,sp+4,outer) && outer==base+0x551799;
+        WriteLine(file,"localActionCallChain",local ? "matched" : "unconfirmed");
+        if (local) {
+            WriteHexLine(file,"directCallerReturn",caller);
+            WriteHexLine(file,"localActionCallerReturn",outer);
+            if (SnapshotWord(snapshot,sp+8,action) && action<167) WriteLine(file,"actionIndex",action);
+            DWORD skill=0;
+            if (snapshot.frameCount && snapshot.frames[0].address==snapshot.context.Ebp
+                && snapshot.frames[0].words[1]==base+0x56951e && snapshot.context.Ebp>=0x10
+                && SnapshotWord(snapshot,snapshot.context.Ebp-0x10,skill) && skill && skill<100000000)
+                WriteLine(file,"localActionSkillId",skill);
+        }
+    }
+}
+
 void WriteTextReport(
 	const WCHAR* textPath,
 	const WCHAR* dumpPath,
 	EXCEPTION_POINTERS* exceptionInfo,
 	BOOL dumpWritten,
-	const char* reportType, bool compact)
+	const char* reportType, bool compact, const TargetedCrashSnapshot::Snapshot* snapshot)
 {
 	HANDLE file = CreateFileW(textPath, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (file == INVALID_HANDLE_VALUE) {
@@ -569,7 +637,19 @@ void WriteTextReport(
 	WriteLine(file, "connectionState", ClientDiagnostics::StateName(diagnostic.connectionState));
 	WriteLine(file, "diagnosticSnapshot", snapshotAvailable ? "available" : "unavailable");
 	WriteLine(file, "dumpWritten", dumpWritten ? "true" : "false");
-	WriteLine(file, "dumpType", compact ? "mini-conditional" : GetDumpModeName());
+	WriteLine(file, "dumpType", snapshot ? "mini-targeted" : compact ? "mini-conditional" : GetDumpModeName());
+	if (snapshot) {
+		const auto& t=snapshot->time;
+		char captured[80]{};
+		StringCchPrintfA(captured,ARRAYSIZE(captured),"%04u-%02u-%02uT%02u:%02u:%02u.%03uZ",
+			t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond,t.wMilliseconds);
+		WriteLine(file,"firstChanceTimestamp",captured);
+		WriteLine(file,"targetedFamily",TargetedCrashSnapshot::Name(snapshot->family));
+		WriteLine(file,"fatalStatus","unknown_first_chance");
+		WriteHexLine(file,"localSnapshotStream",TargetedCrashSnapshot::StreamType);
+		WriteLine(file,"localSnapshotVersion",snapshot->version);
+		WriteTargetedDetails(file,*snapshot);
+	}
 
 	char dumpPathUtf8[MAX_PATH * 3]{};
 	WideCharToMultiByte(CP_UTF8, 0, dumpPath, -1, dumpPathUtf8, sizeof(dumpPathUtf8), nullptr, nullptr);
@@ -603,11 +683,23 @@ void WriteTextReport(
 	WriteContext(file, exceptionInfo != nullptr ? exceptionInfo->ContextRecord : nullptr);
 	WriteRecentTrace(file);
 	// Uploadable text keeps module/frame metadata; arbitrary memory remains local in the dump.
-	WriteFrameWalk(file, exceptionInfo != nullptr ? exceptionInfo->ContextRecord : nullptr);
+	if (snapshot) {
+		WriteText(file,"frameWalk=begin\r\n");
+		for (DWORD i=0;i<snapshot->frameCount;++i) {
+			const auto& frame=snapshot->frames[i];
+			char moduleDescription[MAX_PATH*3]{}, line[512]{};
+			DescribeModuleAddress(moduleDescription,ARRAYSIZE(moduleDescription),frame.words[1]);
+			StringCchPrintfA(line,ARRAYSIZE(line),"frame%02lu=ebp:0x%08lX next:0x%08lX return:0x%08lX %s\r\n",
+				i,frame.address,frame.words[0],frame.words[1],moduleDescription);
+			WriteText(file,line);
+		}
+		WriteText(file,"frameWalk=end\r\n");
+	} else WriteFrameWalk(file, exceptionInfo != nullptr ? exceptionInfo->ContextRecord : nullptr);
 	CloseHandle(file);
 }
 
-void WriteExceptionArtifacts(EXCEPTION_POINTERS* exceptionInfo, const WCHAR* reportTag, const char* reportType, bool compact = false)
+void WriteExceptionArtifacts(EXCEPTION_POINTERS* exceptionInfo, const WCHAR* reportTag, const char* reportType,
+    bool compact = false, const TargetedCrashSnapshot::Snapshot* snapshot = nullptr)
 {
     // DbgHelp is single-threaded. Do not deadlock a faulting thread by waiting
     // for a writer that it may itself have interrupted.
@@ -646,17 +738,28 @@ void WriteExceptionArtifacts(EXCEPTION_POINTERS* exceptionInfo, const WCHAR* rep
 		dumpExceptionInfo.ExceptionPointers = exceptionInfo ? &dumpInfo : nullptr;
 		dumpExceptionInfo.ClientPointers = FALSE;
 
-		const MINIDUMP_TYPE dumpType = compact
+		const MINIDUMP_TYPE dumpType = snapshot
+            ? static_cast<MINIDUMP_TYPE>(MiniDumpNormal | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithFullMemoryInfo)
+            : compact
             ? static_cast<MINIDUMP_TYPE>(MiniDumpNormal | MiniDumpWithThreadInfo | MiniDumpWithUnloadedModules | MiniDumpWithIndirectlyReferencedMemory)
             : GetMiniDumpType();
 
+		MINIDUMP_USER_STREAM stream{};
+		MINIDUMP_USER_STREAM_INFORMATION streams{};
+		if (snapshot) {
+			stream.Type=TargetedCrashSnapshot::StreamType;
+			stream.BufferSize=sizeof(*snapshot);
+			stream.Buffer=const_cast<TargetedCrashSnapshot::Snapshot*>(snapshot);
+			streams.UserStreamCount=1;
+			streams.UserStreamArray=&stream;
+		}
 		dumpWritten = MiniDumpWriteDump(
 			GetCurrentProcess(),
 			GetCurrentProcessId(),
 			dumpFile,
 			dumpType,
 			&dumpExceptionInfo,
-			nullptr,
+			snapshot ? &streams : nullptr,
 			nullptr);
 		if (!dumpWritten) dumpError = GetLastError();
 		CloseHandle(dumpFile);
@@ -664,8 +767,23 @@ void WriteExceptionArtifacts(EXCEPTION_POINTERS* exceptionInfo, const WCHAR* rep
 	ClientLog::Emergency("dump_result type=%s written=%d win32Error=%lu path=%ls",
 		reportType, dumpWritten, dumpError, dumpPath);
 
-	WriteTextReport(textPath, dumpPath, exceptionInfo ? &reportInfo : nullptr, dumpWritten, reportType, compact);
+	WriteTextReport(textPath, dumpPath, exceptionInfo ? &reportInfo : nullptr, dumpWritten, reportType, compact, snapshot);
     InterlockedExchange(&g_dumpWriterBusy, 0);
+}
+
+void CaptureTargetedSnapshot(const TargetedCrashSnapshot::Snapshot& snapshot)
+{
+    if (!g_dumpEnabled) return;
+    // Capture already copied the original context and memory before invoking
+    // any logger or dump writer. DbgHelp receives a separate mutable copy.
+    EXCEPTION_RECORD record=snapshot.record;
+    CONTEXT context=snapshot.context;
+    EXCEPTION_POINTERS info{&record,&context};
+    WCHAR tag[40]{};
+    swprintf_s(tag,L"_targeted-%u",static_cast<unsigned>(snapshot.family)+1);
+    ClientLog::Emergency("targeted_snapshot_trigger family=%s firstChance=1 fatalUnknown=1 maxPerFamily=1",
+        TargetedCrashSnapshot::Name(snapshot.family));
+    WriteExceptionArtifacts(&info,tag,"targeted_first_chance",true,&snapshot);
 }
 
 LONG WINAPI HandleUnhandledException(EXCEPTION_POINTERS* exceptionInfo)
@@ -709,11 +827,23 @@ void CrashReporter::Install(bool enabled, const std::string& dumpType, bool trac
 	}
 
 	SetUnhandledExceptionFilter(HandleUnhandledException);
+	const bool targeted=TargetedCrashSnapshot::Install(GetModuleHandleW(nullptr),CaptureTargetedSnapshot);
+	ClientLog::Emergency("targeted_snapshot_config enabled=%d maxFamiliesPerSession=5 independentOfLifecycle=1",
+		targeted ? 1 : 0);
 }
 
 void CrashReporter::EnableConditionalDump(bool enabled) {
     g_conditionalEnabled = enabled;
     ClientLog::Emergency("conditional_dump_config enabled=%d maxDistinctAttemptsPerSession=4 deduplicate=stack type=mini", enabled);
+}
+
+void CrashReporter::CaptureMainLoopException(const TargetedCrashSnapshot::Snapshot& snapshot, unsigned index) {
+    if (!g_dumpEnabled || index<1 || index>4) return;
+    EXCEPTION_RECORD record=snapshot.record;
+    CONTEXT context=snapshot.context;
+    EXCEPTION_POINTERS info{&record,&context};
+    WCHAR tag[40]{};swprintf_s(tag,L"_main-loop-%u",index);
+    WriteExceptionArtifacts(&info,tag,"native_main_loop_escape",true,&snapshot);
 }
 
 void CrashReporter::CaptureConditionalException(EXCEPTION_POINTERS* info, const char* reason,

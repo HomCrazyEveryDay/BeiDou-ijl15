@@ -207,6 +207,24 @@
     <ClInclude Include="RefreshRateTrace.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="PcomExitFix.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="MobInitializationFix.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="InventoryRefreshFix.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="CharacterSelectFocusFix.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="TargetedCrashSnapshot.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="NativeExitDiagnostics.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="HpMpAlert.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -306,6 +324,24 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="RefreshRateTrace.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PcomExitFix.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="MobInitializationFix.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="InventoryRefreshFix.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CharacterSelectFocusFix.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TargetedCrashSnapshot.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="NativeExitDiagnostics.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="HpMpAlert.cpp">

@@ -185,6 +185,12 @@
     <ClInclude Include="ClientCrashFixes.h" />
     <ClInclude Include="ResourceReadGuards.h" />
     <ClInclude Include="FlashRendererFix.h" />
+    <ClInclude Include="PcomExitFix.h" />
+    <ClInclude Include="MobInitializationFix.h" />
+    <ClInclude Include="InventoryRefreshFix.h" />
+    <ClInclude Include="CharacterSelectFocusFix.h" />
+    <ClInclude Include="TargetedCrashSnapshot.h" />
+    <ClInclude Include="NativeExitDiagnostics.h" />
     <ClInclude Include="ClientLog.h" />
     <ClInclude Include="ClientDiagnostics.h" />
     <ClInclude Include="ChairCompatibility.h" />
@@ -273,6 +279,12 @@
     <ClCompile Include="CharacterSlots.cpp" />
     <ClCompile Include="ClientCrashFixes.cpp" />
     <ClCompile Include="FlashRendererFix.cpp" />
+    <ClCompile Include="PcomExitFix.cpp" />
+    <ClCompile Include="MobInitializationFix.cpp" />
+    <ClCompile Include="InventoryRefreshFix.cpp" />
+    <ClCompile Include="CharacterSelectFocusFix.cpp" />
+    <ClCompile Include="TargetedCrashSnapshot.cpp" />
+    <ClCompile Include="NativeExitDiagnostics.cpp" />
     <ClCompile Include="ClientLog.cpp" />
     <ClCompile Include="ClientDiagnostics.cpp" />
     <ClCompile Include="DisconnectDiagnostics.cpp" />

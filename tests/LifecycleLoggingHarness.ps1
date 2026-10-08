@@ -6,7 +6,7 @@ Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-ar
 $output = Join-Path $env:TEMP ('beidou-lifecycle-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $output | Out-Null
 $repo = Split-Path $PSScriptRoot
-$sources = @('DisconnectDiagnostics.cpp','ClientDiagnostics.cpp','ClientLog.cpp','CrashReporter.cpp','Memory.cpp','ProcessExitMonitor.cpp') | ForEach-Object { Join-Path $repo "ezorsia/$_" }
+$sources = @('DisconnectDiagnostics.cpp','ClientDiagnostics.cpp','ClientLog.cpp','CrashReporter.cpp','TargetedCrashSnapshot.cpp','Memory.cpp','ProcessExitMonitor.cpp') | ForEach-Object { Join-Path $repo "ezorsia/$_" }
 & cl.exe /nologo /std:c++17 /EHsc (Join-Path $PSScriptRoot 'LifecycleLoggingHarness.cpp') @sources "/I$repo/ezorsia" "/Fo:$output\" "/Fe:$output/test.exe" /link "$repo/detours/detours.lib" Advapi32.lib Ws2_32.lib Dbghelp.lib
 if ($LASTEXITCODE -ne 0) { throw 'Harness build failed' }
 Copy-Item "$repo/out/Release/BeiDouExitMonitor.exe" "$output/BeiDouExitMonitor.exe"
@@ -66,7 +66,7 @@ foreach ($mode in @('handled','terminate','crash','dumpfail','disabled','conditi
         conditional { @('conditional_dump_trigger','type=conditional_first_chance written=1') }
         provenance { @('kind=resource_request','kind=queued_path_candidate','input=Effect/Test.img/source','path=Effect/Test.img/source/1','pathCandidates=1') }
         limit { @('conditional_dump_skipped reason=session_limit limit=4','attempt=4') }
-        generic { @('reason=observed_exception','type=conditional_first_chance written=1','conditional_dump_skipped reason=duplicate') }
+        generic { @('reason=observed_exception','type=conditional_first_chance written=1') }
     }
     foreach ($entry in $required) { if (!$log.Contains($entry)) { throw "Missing evidence: $mode / $entry; $output" } }
     if ($mode -notin @('disabled','conditional','limit') -and !$log.Contains('filterHook=1')) { throw "Hook installation failed: $output" }
@@ -78,6 +78,11 @@ foreach ($mode in @('handled','terminate','crash','dumpfail','disabled','conditi
     if ($mode -in @('conditional','generic')) {
         if (@($files | Where-Object Extension -eq '.dmp').Count -ne 1) { throw 'Conditional dump is not limited to one' }
         if ($testProcess.ExitCode -ne 0) { throw 'Handled exception behavior changed' }
+    }
+    # Generic duplicates are dropped by CaptureObservedDump before the writer,
+    # so they need not emit the writer's duplicate-reservation message.
+    if ($mode -eq 'generic' -and ([regex]::Matches($log,'conditional_dump_trigger reason=observed_exception')).Count -ne 1) {
+        throw 'Observed duplicate triggered the writer more than once'
     }
     if ($mode -eq 'limit' -and (@($files | Where-Object Extension -eq '.dmp').Count -ne 4 -or $testProcess.ExitCode -ne 0)) { throw 'Distinct exception budget failed' }
     Write-Output "PASS $mode exitCode=$($testProcess.ExitCode)"

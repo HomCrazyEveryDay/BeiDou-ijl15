@@ -10,6 +10,9 @@
 #include "ResourceReadGuards.h"
 #include "ModernEquipmentCompatibility.h"
 #include "NameTagOriginFix.h"
+#include "MobInitializationFix.h"
+#include "InventoryRefreshFix.h"
+#include "CharacterSelectFocusFix.h"
 
 namespace {
 
@@ -217,6 +220,12 @@ void __fastcall HookInitializeCharacterList(void* self, void*, void* records)
 
 void ClientCrashFixes::Install()
 {
+    CrashReporter::RecordEvent("mob.init.fix", "ready=%d",
+        MobInitializationFix::Install(GetModuleHandleW(nullptr)) ? 1 : 0);
+    CrashReporter::RecordEvent("inventory.refresh", "ready=%d",
+        InventoryRefreshFix::Install(GetModuleHandleW(nullptr)) ? 1 : 0);
+    CrashReporter::RecordEvent("charSelect.focus", "ready=%d",
+        CharacterSelectFocusFix::Install(GetModuleHandleW(nullptr)) ? 1 : 0);
     ResourceReadGuards::Install();
     ModernEquipmentCompatibility::Install();
     CrashReporter::RecordEvent("nametag.origin", "install result=%d", NameTagOriginFix::Install() ? 1 : 0);

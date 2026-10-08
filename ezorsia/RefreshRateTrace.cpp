@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "RefreshRateTrace.h"
 #include "FlashRendererFix.h"
+#include "PcomExitFix.h"
 
 #include "CrashReporter.h"
 #include "detours.h"
@@ -31,6 +32,9 @@ void PinPcomForProcessLifetime()
 		pinned ? 1 : 0,
 		pcomModule,
 		lastError);
+	if (pinned) {
+		PcomExitFix::Install(GetModuleHandleW(nullptr), pcomModule);
+	}
 }
 
 LONG LogException(const char* phase, EXCEPTION_POINTERS* exceptionInfo)
