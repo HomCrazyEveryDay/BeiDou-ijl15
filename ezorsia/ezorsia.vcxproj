@@ -191,6 +191,7 @@
     <ClInclude Include="CharacterSelectFocusFix.h" />
     <ClInclude Include="TargetedCrashSnapshot.h" />
     <ClInclude Include="NativeExitDiagnostics.h" />
+    <ClInclude Include="NativeLoopCleanupFix.h" />
     <ClInclude Include="ClientLog.h" />
     <ClInclude Include="ClientDiagnostics.h" />
     <ClInclude Include="ChairCompatibility.h" />
@@ -285,6 +286,7 @@
     <ClCompile Include="CharacterSelectFocusFix.cpp" />
     <ClCompile Include="TargetedCrashSnapshot.cpp" />
     <ClCompile Include="NativeExitDiagnostics.cpp" />
+    <ClCompile Include="NativeLoopCleanupFix.cpp" />
     <ClCompile Include="ClientLog.cpp" />
     <ClCompile Include="ClientDiagnostics.cpp" />
     <ClCompile Include="DisconnectDiagnostics.cpp" />

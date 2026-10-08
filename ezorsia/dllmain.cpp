@@ -29,6 +29,7 @@
 #include "EvanRuntime.h"
 #include "CrashReporter.h"
 #include "NativeExitDiagnostics.h"
+#include "NativeLoopCleanupFix.h"
 #include "ClientLog.h"
 #include "DisconnectDiagnostics.h"
 #include "ProcessExitMonitor.h"
@@ -1104,8 +1105,12 @@ namespace
 		const int requestedHeight = Client::m_nGameHeight;
 		const ResolutionEnvironment resolutionEnvironment = ReadResolutionEnvironment();
 		CrashReporter::Install(enableCrashDump, crashDumpType, enableCrashTrace);
+		// Modal dialogs also enter CWvsApp::Run. Repair its skipped allocation's
+		// cleanup before adding a diagnostic frame, even when crash dumps are off.
+		const bool loopCleanupReady = NativeLoopCleanupFix::Install(GetModuleHandleW(nullptr));
+		ClientLog::Emergency("native_loop_cleanup_fix installed=%d", loopCleanupReady ? 1 : 0);
 		if (enableCrashDump) ClientLog::Emergency("native_exit_diagnostics_config installed=%d",
-			NativeExitDiagnostics::Install(GetModuleHandleW(nullptr),CrashReporter::CaptureMainLoopException) ? 1 : 0);
+			loopCleanupReady && NativeExitDiagnostics::Install(GetModuleHandleW(nullptr),CrashReporter::CaptureMainLoopException) ? 1 : 0);
 		// Verbose lifecycle observation remains opt-in. CrashReporter separately
 		// captures the five known AV sites once each under the crash-dump setting.
 		DisconnectDiagnostics::Install(settings.values[LifecycleDiagnostics] != 0);
