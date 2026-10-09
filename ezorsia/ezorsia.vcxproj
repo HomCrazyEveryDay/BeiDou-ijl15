@@ -200,6 +200,7 @@
     <ClInclude Include="RefreshRateTrace.h" />
     <ClInclude Include="HpMpAlert.h" />
     <ClInclude Include="IntegratedFinalAttack.h" />
+    <ClInclude Include="WineCompatibility.h" />
     <ClInclude Include="LauncherGate.h" />
     <ClInclude Include="SnipeDamageSync.h" />
     <ClInclude Include="HurricaneDamageSync.h" />
@@ -320,6 +321,7 @@
     <ClCompile Include="dllmain.cpp" />
     <ClCompile Include="Memory.cpp" />
     <ClCompile Include="NMCO.cpp" />
+    <ClCompile Include="WineCompatibility.cpp" />
     <ClCompile Include="SelectCharMacFix.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>

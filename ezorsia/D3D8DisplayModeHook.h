@@ -1,5 +1,6 @@
-#pragma once
+﻿#pragma once
 #include "ClientLog.h"
+#include "WineCompatibility.h"
 #include <strsafe.h>
 
 namespace D3D8DisplayModeHook {
@@ -287,6 +288,30 @@ static HRESULT WINAPI CreateDevice_Hook(
 	return hr;
 }
 
+template<class Method>
+static void InstallMethodHook(void** vtable, UINT slot, Method& original, Method hook) {
+	if (WineCompatibility::IsWine()) {
+		if (vtable[slot] == reinterpret_cast<void*>(hook)) return;
+		// Wine 的 COM 方法入口可能无法被旧版 Detours 反汇编，直接替换接口槽位。
+		if (original && vtable[slot] != reinterpret_cast<void*>(original)) {
+			AppendStartupLogF("d3d8.vtable mismatch slot=%u\r\n", slot);
+			return;
+		}
+		DWORD oldProtect = 0;
+		if (!VirtualProtect(&vtable[slot], sizeof(void*), PAGE_EXECUTE_READWRITE, &oldProtect)) {
+			AppendStartupLogF("d3d8.vtable protect_failed slot=%u error=%lu\r\n", slot, GetLastError());
+			return;
+		}
+		original = reinterpret_cast<Method>(vtable[slot]);
+		InterlockedExchangePointer(&vtable[slot], reinterpret_cast<void*>(hook));
+		DWORD ignored = 0;
+		VirtualProtect(&vtable[slot], sizeof(void*), oldProtect, &ignored);
+	} else if (!original) {
+		original = reinterpret_cast<Method>(vtable[slot]);
+		if (!Memory::SetHook(true, reinterpret_cast<void**>(&original), hook)) original = nullptr;
+	}
+}
+
 static void InstallInterfaceHooks(void* d3d8) {
 	if (!d3d8) {
 		return;
@@ -296,39 +321,18 @@ static void InstallInterfaceHooks(void* d3d8) {
 	// 8 = GetAdapterDisplayMode, 9 = CheckDeviceType, 10 = CheckDeviceFormat,
 	// 13 = GetDeviceCaps, 15 = CreateDevice.
 	void** vtable = *reinterpret_cast<void***>(d3d8);
-	if (!s_getAdapterModeCount) {
-		s_getAdapterModeCount = reinterpret_cast<GetAdapterModeCount_t>(vtable[6]);
-		Memory::SetHook(true, reinterpret_cast<void**>(&s_getAdapterModeCount), GetAdapterModeCount_Hook);
-	}
-	if (!s_enumAdapterModes) {
-		s_enumAdapterModes = reinterpret_cast<EnumAdapterModes_t>(vtable[7]);
-		Memory::SetHook(true, reinterpret_cast<void**>(&s_enumAdapterModes), EnumAdapterModes_Hook);
-	}
-	if (!s_createDevice) {
-		s_createDevice = reinterpret_cast<CreateDevice_t>(vtable[15]);
-		Memory::SetHook(true, reinterpret_cast<void**>(&s_createDevice), CreateDevice_Hook);
-	}
+	InstallMethodHook(vtable, 6, s_getAdapterModeCount, GetAdapterModeCount_Hook);
+	InstallMethodHook(vtable, 7, s_enumAdapterModes, EnumAdapterModes_Hook);
+	InstallMethodHook(vtable, 15, s_createDevice, CreateDevice_Hook);
 	// Mode count/enumeration hooks above are the compatibility fix. The hooks
 	// below are diagnostics only, so keep them out of the normal startup path.
 	if (!Client::enableStartupLog) {
 		return;
 	}
-	if (!s_getAdapterDisplayMode) {
-		s_getAdapterDisplayMode = reinterpret_cast<GetAdapterDisplayMode_t>(vtable[8]);
-		Memory::SetHook(true, reinterpret_cast<void**>(&s_getAdapterDisplayMode), GetAdapterDisplayMode_Hook);
-	}
-	if (!s_checkDeviceType) {
-		s_checkDeviceType = reinterpret_cast<CheckDeviceType_t>(vtable[9]);
-		Memory::SetHook(true, reinterpret_cast<void**>(&s_checkDeviceType), CheckDeviceType_Hook);
-	}
-	if (!s_checkDeviceFormat) {
-		s_checkDeviceFormat = reinterpret_cast<CheckDeviceFormat_t>(vtable[10]);
-		Memory::SetHook(true, reinterpret_cast<void**>(&s_checkDeviceFormat), CheckDeviceFormat_Hook);
-	}
-	if (!s_getDeviceCaps) {
-		s_getDeviceCaps = reinterpret_cast<GetDeviceCaps_t>(vtable[13]);
-		Memory::SetHook(true, reinterpret_cast<void**>(&s_getDeviceCaps), GetDeviceCaps_Hook);
-	}
+	InstallMethodHook(vtable, 8, s_getAdapterDisplayMode, GetAdapterDisplayMode_Hook);
+	InstallMethodHook(vtable, 9, s_checkDeviceType, CheckDeviceType_Hook);
+	InstallMethodHook(vtable, 10, s_checkDeviceFormat, CheckDeviceFormat_Hook);
+	InstallMethodHook(vtable, 13, s_getDeviceCaps, GetDeviceCaps_Hook);
 }
 
 static void* WINAPI Direct3DCreate8_Hook(UINT sdkVersion) {

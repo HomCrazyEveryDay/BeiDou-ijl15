@@ -5,6 +5,7 @@
 #include "GameLaunchSettings.h"
 #include "ReplacementFuncs.h"
 #include "D3D8DisplayModeHook.h"
+#include "WineCompatibility.h"
 #include <comutil.h>
 #include "BossHP.h"
 #include "AranComboUi.h"
@@ -1096,6 +1097,12 @@ namespace
 		const bool enableStackedBuffIconLog = settings.values[BuffLog] != 0;
 		const bool enableEquipmentSlotLog = settings.values[EquipmentLog] != 0;
 		const int configParseError = 0;
+		if (!WineCompatibility::Install() || !WineCompatibility::InstallUiFonts()) {
+			ClientLog::Append(ClientLog::Component::Lifecycle, "startup_rejected stage=wine_compatibility");
+			MessageBoxW(nullptr, L"Wine compatibility initialization failed. Please check the client logs.",
+				L"BeiDou", MB_OK | MB_ICONERROR);
+			ExitProcess(ERROR_DLL_INIT_FAILED);
+		}
 		if (!ApplyLocalEndpointOverride(settings)) {
 			ClientLog::Append(ClientLog::Component::Lifecycle, "startup_rejected stage=settings_endpoint");
 			MessageBoxW(nullptr, L"\u542f\u52a8\u5668\u4e2d\u7684\u6d4b\u8bd5\u8fde\u63a5\u5730\u5740\u65e0\u6548\uff0c\u8bf7\u5728\u8bbe\u7f6e\u4e2d\u4fee\u6b63\u3002", L"\u65e0\u6cd5\u542f\u52a8\u6e38\u620f", MB_OK | MB_ICONERROR);

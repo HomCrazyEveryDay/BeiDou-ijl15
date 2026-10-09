@@ -13,7 +13,7 @@ if ($LASTEXITCODE -ne 0) { throw 'Launcher parent policy test compilation failed
 & $output
 if ($LASTEXITCODE -ne 0) { throw 'Launcher parent policy regression.' }
 if ($DllPath) {
-    $bytes = [IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $DllPath).Path)
+    $bytes = [IO.File]::ReadAllBytes((Resolve-Path -LiteralPath $DllPath).ProviderPath)
     $text = [Text.Encoding]::Unicode.GetString($bytes)
     foreach ($name in @('ZhuMengLauncher.exe', 'ZhuMengLauncher-Dev.exe')) {
         if (!$text.Contains($name)) { throw "Built DLL is missing launcher name: $name" }
