@@ -418,6 +418,117 @@ static void CheckFollowupResources() {
     }
     std::puts("PASS: 2 canonical Chinese knot sitting canvases and 39 pet UI canvases, native pixels");
 }
+static BYTE petActionFrame[0x100]{};
+static void* petActionFramePointer = petActionFrame + 0x80;
+static void* petActionSource = nullptr;
+static void* petActionOutput = nullptr;
+static DWORD petActionBridge = reinterpret_cast<DWORD>(ModernEquipmentCompatibility::AssignPetActionProperty);
+static HRESULT petActionResult;
+static void RunPetActionAssignment() {
+    __asm {
+        push ebp
+        push ebx
+        push esi
+        push edi
+        mov ebp, petActionFramePointer
+        lea ecx, petActionOutput
+        lea eax, petActionSource
+        push eax
+        call dword ptr [petActionBridge]
+        mov petActionResult, eax
+        pop edi
+        pop esi
+        pop ebx
+        pop ebp
+    }
+}
+static VARIANT ReadPetProperty(void* property, const wchar_t* name) {
+    VARIANT value{};
+    BSTR key = SysAllocString(name);
+    Require(key != nullptr, "pet property key allocation");
+    const HRESULT hr = ModernEquipmentCompatibility::Method<HRESULT(__stdcall*)(void*, BSTR, VARIANT*)>(property, 0x14)(property, key, &value);
+    SysFreeString(key);
+    Require(SUCCEEDED(hr), "native pet property read");
+    return value;
+}
+static void CheckPetActionUols() {
+    using namespace ModernEquipmentCompatibility;
+    // Execute the shipped EXE's actual QI/Release routine and the new x86
+    // bridge. Only its IID absolute address needs relocation in this mapping.
+    Require(*reinterpret_cast<DWORD*>(0x004052C4) == 0xBD8308, "native property assignment IID operand");
+    *reinterpret_cast<DWORD*>(0x004052C4) = 0x00BD8308;
+    const BYTE expected[] = {0xe8,0xab,0x6f,0xff,0xff};
+    const auto site = reinterpret_cast<BYTE*>(0x0040E2FD);
+    Require(!std::memcmp(site, expected, sizeof(expected)), "pet action assignment call signature");
+    DWORD ignored = 0;
+    Require(VirtualProtect(site, sizeof(expected), PAGE_EXECUTE_READ, &ignored), "pet action patch page setup");
+    protectionCalls = 0; deniedProtectionCall = 1;
+    Require(!InstallPetActionUols() && !std::memcmp(site, expected, sizeof(expected)), "denied pet action patch changes nothing");
+    deniedProtectionCall = 0;
+    Require(InstallPetActionUols() && !InstallPetActionUols(), "pet action patch installs once");
+    Require(0x0040E302 + *reinterpret_cast<DWORD*>(site + 1) == petActionBridge, "pet action call reaches tested bridge");
+    MEMORY_BASIC_INFORMATION page{};
+    Require(VirtualQuery(site, &page, sizeof(page)) && page.Protect == PAGE_EXECUTE_READ, "pet action page protection restored");
+
+    static const GUID propertyId = {0x986515d9,0x0a0b,0x4929,{0x8b,0x4f,0x71,0x86,0x82,0x17,0x7b,0x92}};
+    for (int petId : {5000042, 5002414, 5002415, 5002416}) {
+        wchar_t path[96]; swprintf_s(path, L"Item/Pet/%d.img", petId);
+        void* root = LoadInterface(path, propertyId);
+        Require(root != nullptr, "native pet IMG root");
+        for (const wchar_t* action : {L"jump", L"fly"}) {
+            VARIANT raw = ReadPetProperty(root, action);
+            Require(raw.vt == VT_UNKNOWN && raw.punkVal, "native action object");
+            petActionSource = raw.punkVal;
+            const bool alias = petId != 5000042 && !wcscmp(action, L"fly");
+            const HRESULT before = assignPetProperty(&petActionOutput, &petActionSource);
+            Require(before == (alias ? E_NOINTERFACE : S_OK), "reproduce original action UOL rejection");
+            if (petActionOutput) static_cast<IUnknown*>(petActionOutput)->Release();
+            petActionOutput = nullptr;
+            // Match the native caller's BSTR Data_t layout, not a wchar_t*
+            // accidentally interpreted as the wrapper's shared string data.
+            BSTR actionBstr = SysAllocString(action);
+            void* actionData[3] = {actionBstr, nullptr, reinterpret_cast<void*>(1)};
+            *reinterpret_cast<void**>(static_cast<BYTE*>(petActionFramePointer) - 0x38) = actionData;
+            *reinterpret_cast<int*>(static_cast<BYTE*>(petActionFramePointer) - 0x2c) = petId;
+            for (int repeat = 0; repeat < 32; ++repeat) {
+                SetLastError(9876);
+                RunPetActionAssignment();
+                Require(petActionResult == S_OK && petActionOutput, "native bridge resolves real pet action including UOL");
+                Require(GetLastError() == 9876, "pet action resolution preserves last error");
+                VARIANT frame = ReadPetProperty(petActionOutput, L"0");
+                Require(frame.vt == VT_UNKNOWN && frame.punkVal, "resolved action has frame zero");
+                void* canvas = nullptr;
+                static const GUID canvasId = {0x7600dc6c,0x9328,0x4bff,{0x96,0x24,0x5b,0x0f,0x5c,0x01,0x17,0x9e}};
+                Require(SUCCEEDED(frame.punkVal->QueryInterface(canvasId, &canvas)), "resolved frame is a native canvas");
+                int width = 0, height = 0;
+                Require(Dimensions(canvas, width, height), "resolved frame dimensions");
+                if (repeat == 0) CheckPixels(canvas, width, height);
+                static_cast<IUnknown*>(canvas)->Release(); VariantClear(&frame);
+                // Deliberately keep output alive across assignments: the next
+                // native call must release it and acquire exactly one result.
+            }
+            static_cast<IUnknown*>(petActionOutput)->Release(); petActionOutput = nullptr;
+            if (alias) {
+                void*& rm = *reinterpret_cast<void**>(0x00BF14E8);
+                void* saved = rm; rm = nullptr;
+                Require(ResolvePetActionProperty(&petActionOutput, &petActionSource, petId, action) == E_NOINTERFACE
+                    && !petActionOutput, "unavailable resolver preserves original failure");
+                rm = saved;
+                Require(ResolvePetActionProperty(&petActionOutput, &petActionSource, 4000000, action) == E_NOINTERFACE
+                    && !petActionOutput, "non-pet category cannot activate resolution");
+                Require(ResolvePetActionProperty(&petActionOutput, &petActionSource, petId, L"missingAction") == E_NOINTERFACE
+                    && !petActionOutput, "missing action stays missing rather than inventing frames");
+            } else {
+                Require(petActionSource != nullptr, "ordinary action source kept alive");
+            }
+            SysFreeString(actionBstr); VariantClear(&raw); petActionSource = nullptr;
+        }
+        static_cast<IUnknown*>(root)->Release();
+    }
+    Require(ResolvePetActionProperty(&petActionOutput, &petActionSource, 5002416, L"fly") == E_NOINTERFACE
+        && !petActionOutput, "null native action remains absent");
+    std::puts("PASS: native pet action UOL failure reproduced; x86 bridge resolves 3 modern pets; legacy, pixels, repeat assignment and failure paths");
+}
 static void CheckNativeResources(const wchar_t* exePath, const wchar_t* followupRoot) {
     // Exercise the production loader against the real WZ components and IMG,
     // in this isolated process. No game initialization, window or connection.
@@ -454,7 +565,7 @@ static void CheckNativeResources(const wchar_t* exePath, const wchar_t* followup
     SysFreeString(path);
     *reinterpret_cast<void**>(0x00BF14E8) = rm;
     if (followupRoot) CheckFollowupResources();
-    else { CheckInstalledResources(); CheckPetEquipmentResources(); CheckPetRenderingTrace(); CheckNameTagResources(create); }
+    else { CheckInstalledResources(); CheckPetEquipmentResources(); CheckPetRenderingTrace(); CheckPetActionUols(); CheckNameTagResources(create); }
     *reinterpret_cast<void**>(0x00BF14E8) = nullptr;
     static_cast<IUnknown*>(rm)->Release();
     static_cast<IUnknown*>(fs)->Release();

@@ -118,6 +118,78 @@ static bool InstallPetEquipment() {
     return false;
 }
 
+// LoadPetAction reads the action with IWzProperty::get_item and then directly
+// queries IWzProperty at 0040E2FD. Unlike ResMan::GetObject, get_item leaves an
+// action-level UOL unresolved (CMS pets use fly -> jump). The empty frame list
+// makes CPet throw CTerminateException(0x22000006) in swimming maps.
+// Resolve only UOL results at this call site, through the same full resource
+// path. Keep the original action/cache key, equipment compositor and all frames.
+using AssignProperty = HRESULT(__thiscall*)(void**, void**);
+static auto assignPetProperty = reinterpret_cast<AssignProperty>(0x004052AD);
+static LONG petActionUolReports = 0;
+static HRESULT __stdcall ResolvePetActionProperty(void** out, void** source,
+    int petId, const wchar_t* action) {
+    const HRESULT original = assignPetProperty(out, source);
+    if (original != E_NOINTERFACE || !source || !*source
+        || petId / 10000 != 500 || !action || !*action) return original;
+    const DWORD error = GetLastError();
+    static const GUID uolId = {0xf945bf59,0xd1ec,0x45e8,{0x8b,0xd9,0x3d,0xd1,0x1a,0xc1,0xa4,0x8a}};
+    void* uol = nullptr;
+    const HRESULT queried = static_cast<IUnknown*>(*source)->QueryInterface(uolId, &uol);
+    void* resolved = nullptr;
+    if (SUCCEEDED(queried) && uol) {
+        static_cast<IUnknown*>(uol)->Release();
+        wchar_t path[256];
+        if (_snwprintf_s(path, _countof(path), _TRUNCATE, L"Item/Pet/%d.img/%s", petId, action) >= 0) {
+            static const GUID propertyId = {0x986515d9,0x0a0b,0x4929,{0x8b,0x4f,0x71,0x86,0x82,0x17,0x7b,0x92}};
+            resolved = LoadInterface(path, propertyId);
+        }
+        if (InterlockedIncrement(&petActionUolReports) <= 24)
+            CrashReporter::RecordEvent("equipment.pet-action-uol", "petId=%d resolved=%d", petId, resolved != nullptr);
+    }
+    // The original assignment already released/cleared the old destination.
+    // LoadInterface supplies exactly one owning reference on success.
+    if (resolved) *out = resolved;
+    SetLastError(error);
+    return resolved ? S_OK : original;
+}
+
+__declspec(naked) static void AssignPetActionProperty() {
+    __asm {
+        // Caller is the verified LoadPetAction frame. -38h is a native
+        // _bstr_t Data_t pointer (its first word is the action BSTR), -2Ch the
+        // full pet ID. Preserve the thiscall's single stack argument cleanup.
+        mov eax, dword ptr [ebp - 38h]
+        test eax, eax
+        jz action_ready
+        mov eax, dword ptr [eax]
+    action_ready:
+        push eax
+        push dword ptr [ebp - 2Ch]
+        push dword ptr [esp + 12]
+        push ecx
+        call ResolvePetActionProperty
+        ret 4
+    }
+}
+
+static bool InstallPetActionUols() {
+    const BYTE expected[] = {0xe8,0xab,0x6f,0xff,0xff};
+    auto site = reinterpret_cast<BYTE*>(0x0040E2FD);
+    if (std::memcmp(site, expected, sizeof(expected))) return false;
+    DWORD protection = 0, ignored = 0;
+    if (!VirtualProtect(site, sizeof(expected), PAGE_EXECUTE_READWRITE, &protection)) return false;
+    const DWORD displacement = reinterpret_cast<DWORD>(AssignPetActionProperty) - 0x0040E302;
+    std::memcpy(site + 1, &displacement, sizeof(displacement));
+    const bool flushed = FlushInstructionCache(GetCurrentProcess(), site, sizeof(expected)) != FALSE;
+    if (!flushed) {
+        std::memcpy(site, expected, sizeof(expected));
+        FlushInstructionCache(GetCurrentProcess(), site, sizeof(expected));
+    }
+    const bool restored = VirtualProtect(site, sizeof(expected), protection, &ignored) != FALSE;
+    return flushed && restored;
+}
+
 // Observe the original compositor without changing its arguments or result.
 // Its output is ZList<ZRef<PetActionFrame>>: count +8, head +12,
 // ZRef value +4, and the frame's owning canvas pointer +12.
@@ -317,8 +389,9 @@ static bool Install() {
     const bool icon = Memory::SetHook(true, reinterpret_cast<void**>(&getIcon), ItemIcon);
     const bool face = InstallFaceImages();
     const bool pet = InstallPetEquipment();
+    const bool petActionUol = InstallPetActionUols();
     const bool petTrace = InstallPetRenderingTrace();
-    CrashReporter::RecordEvent("equipment.compat", "install icon=%d faceImage=%d petEquipment=%d petRenderTrace=%d", icon, face, pet, petTrace);
-    return icon && face && pet;
+    CrashReporter::RecordEvent("equipment.compat", "install icon=%d faceImage=%d petEquipment=%d petRenderTrace=%d petActionUol=%d", icon, face, pet, petTrace, petActionUol);
+    return icon && face && pet && petActionUol;
 }
 }
