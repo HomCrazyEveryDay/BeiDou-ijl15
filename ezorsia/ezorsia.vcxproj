@@ -230,6 +230,7 @@
     <ClInclude Include="EvanPursuit.h" />
     <ClInclude Include="EvanCreationOptions.h" />
     <ClInclude Include="PrivateCleanSlateHook.h" />
+    <ClInclude Include="PetEquipScrollCompatibility.h" />
     <ClInclude Include="SecondPendantRules.h" />
     <ClInclude Include="SecondPendantSlot.h" />
     <ClInclude Include="Client.h" />
@@ -314,6 +315,7 @@
     <ClCompile Include="EvanRuntime.cpp" />
     <ClCompile Include="ProcessExitMonitor.cpp" />
     <ClCompile Include="PrivateCleanSlateHook.cpp" />
+    <ClCompile Include="PetEquipScrollCompatibility.cpp" />
     <ClCompile Include="SecondPendantSlot.cpp" />
     <ClCompile Include="Client.cpp" />
     <ClCompile Include="ijl15.cpp" />

@@ -22,6 +22,7 @@
 #include "MovementKeyHook.h"
 #include "NpcShopCurrency.h"
 #include "PrivateCleanSlateHook.h"
+#include "PetEquipScrollCompatibility.h"
 #include "SecondPendantSlot.h"
 #include "MineralBagWnd.h"
 #include "MixedDyeWnd.h"
@@ -1210,6 +1211,9 @@ namespace
 		MixedDyeWnd::Install();
 		if (!MonthlyShop::Install()) CrashReporter::RecordEvent("monthly.shop", "install_failed");
 		PrivateCleanSlateHook::Install();
+		if (!PetEquipScrollCompatibility::Install(GetModuleHandleW(nullptr))) {
+			CrashReporter::RecordEvent("pet.scroll", "install_failed");
+		}
 		SecondPendantSlot::Install(enableEquipmentSlotLog);
 		Client::MoreHook();
 		AranComboUi::Install();
