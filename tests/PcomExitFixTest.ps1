@@ -9,7 +9,7 @@ New-Item -ItemType Directory -Path $output | Out-Null
 & cl.exe /nologo /std:c++17 /O2 /EHsc /MT (Join-Path $PSScriptRoot 'PcomExitFixTest.cpp') (Join-Path $repo 'ezorsia/PcomExitFix.cpp') "/I:$repo/ezorsia" "/Fo:$output\" "/Fe:$output/test.exe" /link "$repo/detours/detours.lib" /BASE:0x20000000 /DYNAMICBASE:NO
 if ($LASTEXITCODE -ne 0) { throw 'PCOM exit fix test build failed' }
 $client = (Resolve-Path (Join-Path $repo '../BeiDou-Client')).Path
-foreach ($case in @('baseline-guard', 'fixed-guard', 'fixed-heap', 'initialized-guard', 'initialized-heap', 'uninitialized', 'propagate')) {
+foreach ($case in @('baseline-guard', 'fixed-guard', 'fixed-heap', 'preclear-late-term', 'late-term-guard', 'late-term-heap', 'uninitialized', 'propagate')) {
     $result = & "$output/test.exe" $client $case 2>&1
     $exit = $LASTEXITCODE
     $result | Set-Content -LiteralPath (Join-Path $output "$case.log") -Encoding utf8
@@ -18,4 +18,4 @@ foreach ($case in @('baseline-guard', 'fixed-guard', 'fixed-heap', 'initialized-
         throw "PCOM exit fix test failed: $case exit=$exit; artifacts: $output"
     }
 }
-Write-Output "PASS all 7 PCOM exit cases; artifacts: $output"
+Write-Output "PASS all 8 PCOM exit cases; artifacts: $output"

@@ -11,6 +11,7 @@ BYTE* g_client = nullptr;
 BYTE* g_pcom = nullptr;
 Destructor g_destroyPool = nullptr;
 bool g_installed = false;
+LONG g_exitReports = 0;
 
 constexpr DWORD kPoolDestructor = 0x396D51;
 constexpr DWORD kPoolFlags = 0x7F00F0;
@@ -88,29 +89,20 @@ bool MatchesCode(const BYTE* client, const BYTE* pcom)
         && std::memcmp(pcom + 0x7855, clearEnd, sizeof(clearEnd)) == 0;
 }
 
-void __cdecl DestroyPoolAfterList()
+void __cdecl RetainPoolForDllTeardown()
 {
-    const bool destroying = (g_client[kPoolFlags] & 1) == 0;
-    if (destroying) {
-        if ((g_pcom[kListInitialized] & 1) == 0) {
-            // Do not call the lazy accessor: shutdown must not create List.wz.
-            ClientLog::Emergency("pcom.exit.fix cleanup.skip reason=list_uninitialized");
-        } else if (!UsesNativePool(g_client, g_pcom)) {
-            ClientLog::Emergency("pcom.exit.fix cleanup.skip reason=allocator_changed");
-        } else {
-            ClientLog::Emergency("pcom.exit.fix cleanup.begin entries=%lu poolFlags=%02X",
-                Read32(g_pcom + kList + 12), g_client[kPoolFlags]);
-            // The EXE CRT runs this callback BEFORE ExitProcess and PCOM detach.
-            // Leave PCOM's later registered destructor intact; it sees an empty
-            // table. Do not suppress exceptions or change ordinary Alloc/Free.
-            reinterpret_cast<Destructor>(g_pcom + kListDestructor)();
-            ClientLog::Emergency("pcom.exit.fix cleanup.end entries=%lu poolFlags=%02X",
-                Read32(g_pcom + kList + 12), g_client[kPoolFlags]);
-        }
-    }
-    g_destroyPool();
-    if (destroying)
-        ClientLog::Emergency("pcom.exit.fix pool.end poolFlags=%02X", g_client[kPoolFlags]);
+    // This dedicated EXE CRT callback (registered at 00796D45) runs before
+    // ExitProcess unloads PCOM and the other WZ DLLs. List is not the only
+    // owner: PcInitModule's path string and outstanding COM objects also use
+    // this pool. Clearing List cannot make those later frees safe.
+    // Keep the process-wide allocator alive through DLL teardown. Windows
+    // reclaims its backing heap with the process. Alloc/Realloc/Free, PCOM's
+    // own destructors and their exceptions are unchanged; do not mark this
+    // still-live pool destroyed or eagerly tear down any of its consumers.
+    if (InterlockedIncrement(&g_exitReports) == 1)
+        ClientLog::Emergency("pcom.exit.fix pool.retained lifetime=process entries=%lu poolFlags=%02X nativeAllocator=%d",
+            (g_pcom[kListInitialized] & 1) ? Read32(g_pcom + kList + 12) : 0,
+            g_client[kPoolFlags], UsesNativePool(g_client, g_pcom) ? 1 : 0);
 }
 
 bool Reject(const char* reason)
@@ -138,7 +130,7 @@ bool PcomExitFix::Install(HMODULE clientModule, HMODULE pcomModule)
     if (result == NO_ERROR) {
         result = DetourUpdateThread(GetCurrentThread());
         if (result == NO_ERROR)
-            result = DetourAttach(reinterpret_cast<PVOID*>(&g_destroyPool), DestroyPoolAfterList);
+            result = DetourAttach(reinterpret_cast<PVOID*>(&g_destroyPool), RetainPoolForDllTeardown);
         if (result == NO_ERROR) result = DetourTransactionCommit();
         else DetourTransactionAbort();
     }

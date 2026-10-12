@@ -16,13 +16,11 @@ static void Require(bool ok, const char* why)
     }
 }
 
-static unsigned cleanupBegins, cleanupEnds, uninitializedSkips;
+static unsigned retainedReports;
 namespace ClientLog {
 void Emergency(const char* format, ...)
 {
-    if (strstr(format, "cleanup.begin")) ++cleanupBegins;
-    if (strstr(format, "cleanup.end")) ++cleanupEnds;
-    if (strstr(format, "list_uninitialized")) ++uninitializedSkips;
+    if (strstr(format, "pool.retained")) ++retainedReports;
     va_list args; va_start(args, format); vprintf(format, args); va_end(args);
     puts("");
 }
@@ -40,7 +38,7 @@ static DWORD Native(DWORD original) { return original + kDelta; }
 struct Block { BYTE* base; SIZE_T size; bool freed; };
 static Block blocks[4096];
 static unsigned allocated, freed;
-static bool guarded, fixedOrder;
+static bool guarded;
 static BYTE* pcom;
 static DWORD faultCode, faultAddress;
 static BYTE& PoolFlags() { return *reinterpret_cast<BYTE*>(Native(0x00BF00F0)); }
@@ -69,8 +67,6 @@ static BOOL WINAPI FreeBlock(HANDLE heap, DWORD flags, LPVOID value)
         break;
     }
     Require(found, "no unknown/double backing free");
-    if (fixedOrder && (PoolFlags() & 1))
-        Require(!ListReady() || Entries() == 0, "List emptied BEFORE backing block destruction");
     return guarded ? VirtualFree(value, 0, MEM_DECOMMIT) : HeapFree(heap, flags, value);
 }
 
@@ -161,6 +157,12 @@ static void CheckRejectedInstallations(BYTE* client)
     Require(client[0x396D51] == 0xF6, "rejections left entry unchanged");
 }
 
+static void TermPcom() {
+    auto term = reinterpret_cast<void(__cdecl*)()>(GetProcAddress(reinterpret_cast<HMODULE>(pcom), "PcTermModule"));
+    Require(term != nullptr, "PCOM term export");
+    __try { term(); } __except(Capture(GetExceptionInformation())) {}
+}
+
 int main(int argc, char** argv)
 {
     Require(argc == 3, "arguments: client-directory case");
@@ -168,11 +170,11 @@ int main(int argc, char** argv)
     setvbuf(stdout, nullptr, _IONBF, 0);
     const char* mode = argv[2];
     const bool baseline = strcmp(mode, "baseline-guard") == 0;
+    const bool preclear = strcmp(mode, "preclear-late-term") == 0;
     const bool uninitialized = strcmp(mode, "uninitialized") == 0;
     const bool propagation = strcmp(mode, "propagate") == 0;
-    const bool initialized = strncmp(mode, "initialized-", 12) == 0;
+    const bool initialized = preclear || strncmp(mode, "late-term-", 10) == 0;
     guarded = strstr(mode, "heap") == nullptr;
-    fixedOrder = !baseline;
     BYTE* client = MapAllocator(argv[1]);
     char path[MAX_PATH]; sprintf_s(path, "%s\\PCOM.dll", argv[1]);
     pcom = reinterpret_cast<BYTE*>(LoadLibraryA(path));
@@ -184,73 +186,68 @@ int main(int argc, char** argv)
     *reinterpret_cast<DWORD*>(pcom + 0x212A8) = Native(0x9F2503);
     *reinterpret_cast<DWORD*>(pcom + 0x212AC) = Native(0x9F2525);
     *reinterpret_cast<DWORD*>(pcom + 0x212B0) = Native(0x9F2514);
-
     Require(!ListReady(), "List initially uninitialized");
-    if (!baseline) {
+    if (!baseline && !preclear) {
         CheckRejectedInstallations(client);
         Require(PcomExitFix::Install(reinterpret_cast<HMODULE>(client), reinterpret_cast<HMODULE>(pcom)), "install production fix");
         Require(PcomExitFix::Install(reinterpret_cast<HMODULE>(client), reinterpret_cast<HMODULE>(pcom)), "repeated install harmless");
         Require(!PcomExitFix::Install(nullptr, reinterpret_cast<HMODULE>(pcom)), "different instance after install rejected");
-        Require(!ListReady() && !allocated, "install does not initialize List or allocate native memory");
+        Require(!ListReady() && !allocated, "install has no allocator or List side effects");
     }
-
+    if (initialized) {
+        auto init = reinterpret_cast<HRESULT(__cdecl*)()>(GetProcAddress(reinterpret_cast<HMODULE>(pcom), "PcInitModule"));
+        Require(init && SUCCEEDED(init()), "real PCOM init retains module path string");
+    }
     unsigned entries = 0;
+    auto alloc = reinterpret_cast<void*(__stdcall*)(unsigned)>(Native(0x9F2503));
+    auto free = reinterpret_cast<void(__stdcall*)(void*)>(Native(0x9F2514));
+    void* outstanding = nullptr;
     if (!uninitialized) {
-        if (initialized) {
-            auto init = reinterpret_cast<HRESULT(__cdecl*)()>(GetProcAddress(reinterpret_cast<HMODULE>(pcom), "PcInitModule"));
-            Require(init && SUCCEEDED(init()), "normal PCOM init");
-        }
         reinterpret_cast<void*(__cdecl*)()>(pcom + 0x6BF8)();
         entries = Entries();
-        Require(ListReady() && entries > 0, "real List populated after install");
-        // Normal runtime allocation/free must remain intact and must not clear
-        // the table. No instrumented replacement of PCOM's callbacks is used.
-        auto alloc = reinterpret_cast<void*(__stdcall*)(unsigned)>(Native(0x9F2503));
-        auto free = reinterpret_cast<void(__stdcall*)(void*)>(Native(0x9F2514));
-        auto* value = static_cast<BYTE*>(alloc(41));
-        Require(value != nullptr, "runtime allocation"); memset(value, 0x5A, 41); free(value);
-        Require(Entries() == entries && PoolFlags() == 0 && cleanupBegins == 0, "runtime free unchanged");
-        if (initialized) {
-            auto term = reinterpret_cast<void(__cdecl*)()>(GetProcAddress(reinterpret_cast<HMODULE>(pcom), "PcTermModule"));
-            Require(term != nullptr, "normal PCOM term export"); term();
-            Require(Entries() == entries, "PcTermModule alone leaves List populated");
-        }
+        Require(entries == 371, "real List populated");
+        auto value = alloc(41); memset(value, 0x5A, 41); free(value);
+        outstanding = alloc(41); memset(outstanding, 0xA5, 41);
+        Require(Entries() == entries && PoolFlags() == 0 && retainedReports == 0, "normal allocator unchanged");
     }
-
-    if (propagation) {
-        // Raise a real instruction exception inside the offline native Free.
-        // The production wrapper must let it escape and must NOT destroy the
-        // backing pool after a failed List cleanup. End this test process after
-        // observing it, since the native destructor has partially progressed.
-        auto* entry = reinterpret_cast<BYTE*>(Native(0x9F2514));
-        entry[0] = 0x0F; entry[1] = 0x0B;
-        FlushInstructionCache(GetCurrentProcess(), entry, 2);
-        DestroyPool();
-        Require(faultCode == EXCEPTION_ILLEGAL_INSTRUCTION && faultAddress == Native(0x9F2514), "cleanup exception propagated");
-        Require(PoolFlags() == 0 && freed == 0 && cleanupBegins == 1 && cleanupEnds == 0, "failed cleanup does not destroy pool");
+    if (preclear) {
+        DestroyList(); Require(!faultCode && Entries() == 0, "old fix successfully clears List");
+    }
+    DestroyPool();
+    if (baseline || preclear) {
+        Require(!faultCode && PoolFlags() == 1 && freed == allocated, "baseline destroys pool");
+        if (preclear) TermPcom(); else DestroyList();
+        Require(faultCode == EXCEPTION_ACCESS_VIOLATION && faultAddress == Native(0x4031FE),
+            "exact late-free fault reproduced, including after successful List cleanup");
     } else {
+        Require(!faultCode && PoolFlags() == 0 && freed == 0 && retainedReports == 1, "pool survives CRT exit callback");
         DestroyPool();
-        Require(faultCode == 0 && (PoolFlags() & 1), "original pool destructor completed");
-        Require(freed == allocated, "all native backing blocks released");
-        if (baseline) {
-            Require(Entries() == entries, "baseline leaves stale List");
+        Require(!faultCode && retainedReports == 1, "repeat callback harmless and diagnostics bounded");
+        if (uninitialized) Require(!ListReady() && !allocated, "exit never initializes List");
+        else {
+            Require(Entries() == entries && *static_cast<BYTE*>(outstanding) == 0xA5, "all late owners still valid");
+            free(outstanding);
+            auto late = alloc(41); free(late);
+            if (initialized) { TermPcom(); Require(!faultCode, "PCOM path released after EXE exit callback"); }
+            if (propagation) {
+                auto entry = reinterpret_cast<BYTE*>(Native(0x9F2514));
+                entry[0] = 0x0F; entry[1] = 0x0B; FlushInstructionCache(GetCurrentProcess(), entry, 2);
+            }
             DestroyList();
-            Require(faultCode == EXCEPTION_ACCESS_VIOLATION && faultAddress == Native(0x4031FE), "baseline reproduces exact fault instruction");
-        } else if (uninitialized) {
-            Require(!ListReady() && !allocated && uninitializedSkips == 1, "shutdown does not initialize List");
-            DestroyPool();
-            Require(faultCode == 0 && uninitializedSkips == 1, "repeated empty shutdown harmless");
-        } else {
-            Require(Entries() == 0 && cleanupBegins == 1 && cleanupEnds == 1, "production fix cleared List once");
-            DestroyPool(); DestroyList(); DestroyList();
-            Require(faultCode == 0 && Entries() == 0 && freed == allocated
-                && cleanupBegins == 1 && cleanupEnds == 1, "later PCOM/repeated shutdown harmless");
+            if (propagation) Require(faultCode == EXCEPTION_ILLEGAL_INSTRUCTION && faultAddress == Native(0x9F2514), "unrelated cleanup exception propagates");
+            else {
+                Require(!faultCode && Entries() == 0, "native PCOM late cleanup succeeds");
+                DestroyList(); Require(!faultCode, "repeat native PCOM cleanup succeeds");
+            }
+        }
+        if (!propagation) {
+            // Test-only final reclamation, after ALL consumers have gone. The
+            // shipping fix leaves this allocation to Windows process teardown.
+            reinterpret_cast<void(__thiscall*)(void*)>(Native(0x797B64))(reinterpret_cast<void*>(Native(0xBF0B00)));
+            Require(freed == allocated, "backing blocks remain valid and reclaimable");
         }
     }
-    printf("PASS PcomExitFixTest %s entries=%u blocks=%u freed=%u observedException=%08lX\n",
-        mode, entries, allocated, freed, faultCode);
-    // Only the isolated test process: do not rerun loader cleanup after the
-    // deliberately faulting baseline/propagation experiments.
+    printf("PASS PcomExitFixTest %s entries=%u blocks=%u freed=%u observedException=%08lX\n", mode, entries, allocated, freed, faultCode);
     TerminateProcess(GetCurrentProcess(), 0);
     return 0;
 }
