@@ -67,7 +67,7 @@ HRESULT __stdcall GetMixedObject(void* rm,BSTR path,VARIANT a,VARIANT b,VARIANT*
         }else cache.entries.splice(cache.entries.begin(),cache.entries,found);
         auto& image=cache.entries.front().image;
         if(suffix.empty()){VariantInit(result);result->vt=VT_UNKNOWN;result->punkVal=static_cast<IUnknown*>(image.p);result->punkVal->AddRef();}
-        else{Value value=Resolve(image.p,suffix);Check(VariantCopy(result,&value.v));}
+        else{Value value=Resolve(image.p,suffix);Check(ResourceVariant::Copy(result,&value.v));}
         return S_OK;
     }catch(...){
         if(InterlockedIncrement(&reports)<=8)CrashReporter::RecordEvent("appearance.mix","resource_failed id=%u primary=%d secondary=%d",id,style.primary,style.secondary);

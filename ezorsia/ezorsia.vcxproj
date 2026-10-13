@@ -196,6 +196,7 @@
     <ClInclude Include="ClientDiagnostics.h" />
     <ClInclude Include="ChairCompatibility.h" />
     <ClInclude Include="ChairImageLinks.h" />
+    <ClInclude Include="ResourceVariant.h" />
     <ClInclude Include="CrashReporter.h" />
     <ClInclude Include="RefreshRateTrace.h" />
     <ClInclude Include="HpMpAlert.h" />

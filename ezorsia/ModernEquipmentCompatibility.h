@@ -4,6 +4,7 @@
 #include <cstring>
 #include <cwchar>
 #include "Memory.h"
+#include "ResourceVariant.h"
 #include "CrashReporter.h"
 
 namespace ModernEquipmentCompatibility {
@@ -43,7 +44,7 @@ static void* LoadInterface(const wchar_t* name, const GUID& iid) {
         : value.vt == VT_DISPATCH ? value.pdispVal : nullptr;
     void* canvas = nullptr;
     if (SUCCEEDED(hr) && object) object->QueryInterface(iid, &canvas);
-    VariantClear(&value);
+    ResourceVariant::Clear(&value);
     return canvas;
 }
 

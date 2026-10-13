@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "BuffCountdown.h"
 #include "BuffCountdownCanvas.h"
+#include "ResourceVariant.h"
 #include "ClientLog.h"
 #include <oleauto.h>
 #include <cstring>
@@ -109,7 +110,7 @@ void* LoadDigit(int digit) {
     IUnknown* object = value.vt == VT_UNKNOWN ? value.punkVal
         : value.vt == VT_DISPATCH ? value.pdispVal : nullptr;
     if (SUCCEEDED(hr) && object) object->QueryInterface(CanvasIID(), &canvas);
-    VariantClear(&value);
+    ResourceVariant::Clear(&value);
     return canvas;
 }
 

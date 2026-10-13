@@ -3,6 +3,7 @@
 #include <oleauto.h>
 #include <cstring>
 #include "CrashReporter.h"
+#include "ResourceVariant.h"
 #pragma comment(lib, "oleaut32.lib")
 
 // Narrow v83 guards for the player dumps at 00401D52, 005DAE07 and
@@ -136,7 +137,7 @@ static void* LoadBracket() {
         : value.vt == VT_DISPATCH ? value.pdispVal : nullptr;
     void* canvas = nullptr;
     if (SUCCEEDED(hr) && object) object->QueryInterface(iid, &canvas);
-    VariantClear(&value);
+    ResourceVariant::Clear(&value);
     return canvas; // Owns the QueryInterface reference.
 }
 using CopyCanvas = HRESULT(__thiscall*)(void*, int, int, void*, const VARIANT*);

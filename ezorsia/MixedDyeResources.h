@@ -1,6 +1,7 @@
 #pragma once
 #include "MixedDye.h"
 #include "DreamCanvas.h"
+#include "ResourceVariant.h"
 #include <oleauto.h>
 #include <algorithm>
 #include <string>
@@ -28,10 +29,10 @@ struct Object {
     void* detach(){void* v=p;p=nullptr;return v;}
 };
 struct Value {
-    VARIANT v{};~Value(){VariantClear(&v);}
+    VARIANT v{};~Value(){ResourceVariant::Clear(&v);}
     Value()=default;Value(const Value&)=delete;Value& operator=(const Value&)=delete;
     Value(Value&& other) noexcept:v(other.v){VariantInit(&other.v);}
-    Value& operator=(Value&& other) noexcept {if(this!=&other){VariantClear(&v);v=other.v;VariantInit(&other.v);}return *this;}
+    Value& operator=(Value&& other) noexcept {if(this!=&other){ResourceVariant::Clear(&v);v=other.v;VariantInit(&other.v);}return *this;}
 };
 inline void Check(HRESULT hr){if(FAILED(hr))throw hr;}
 inline IUnknown* Unknown(const VARIANT& v){return v.vt==VT_UNKNOWN?v.punkVal:v.vt==VT_DISPATCH?v.pdispVal:nullptr;}
@@ -136,12 +137,12 @@ inline Value Resolve(void* root,const std::wstring& path,unsigned hops=0){
         }
         auto link=Query(next.v,UolIID());
         if(link.p){
-            BSTR raw=nullptr;Check(Method<HRESULT(__stdcall*)(void*,BSTR*)>(link.p,0x18)(link.p,&raw));
-            std::wstring target=parent+(parent.empty()?L"":L"/")+(raw?raw:L"");SysFreeString(raw);
+            ResourceVariant::String raw;Check(Method<HRESULT(__stdcall*)(void*,BSTR*)>(link.p,0x18)(link.p,&raw.value));
+            std::wstring target=parent+(parent.empty()?L"":L"/")+(raw.value?raw.value:L"");
             if(end<path.size())target+=path.substr(end);
             return Resolve(root,Normalize(target),hops+1);
         }
-        VariantClear(&current.v);current.v=next.v;VariantInit(&next.v);
+        current=std::move(next);
         if(!parent.empty())parent+=L'/';parent+=key;begin=end+1;
     }
     return current;
@@ -211,9 +212,9 @@ inline Object BlendShade(const VARIANT& a,const VARIANT& b,Factory factory,Budge
     for(auto& key:keys) {
         if(key.empty() || key.find_first_not_of(L"0123456789")!=std::wstring::npos)continue;
         Value av,bv;
-        if(ac.p)Check(VariantCopy(&av.v,const_cast<VARIANT*>(&a)));
+        if(ac.p)Check(ResourceVariant::Copy(&av.v,&a));
         else if(ap.p)av=ResolveColor(context.rootA,context.idA,path+L"/"+key);
-        if(bc.p)Check(VariantCopy(&bv.v,const_cast<VARIANT*>(&b)));
+        if(bc.p)Check(ResourceVariant::Copy(&bv.v,&b));
         else if(bp.p)bv=ResolveColor(context.rootB,context.idB,path+L"/"+key);
         auto first=Query(av.v,CanvasIID()),second=Query(bv.v,CanvasIID());
         if((!first.p && !Empty(av.v)) || (!second.p && !Empty(bv.v)))throw E_INVALIDARG;

@@ -171,7 +171,7 @@ inline HRESULT GetObject(Getter native, Factory factory, void* manager, BSTR pat
         }
         auto value = Read(cache.image.p, suffix);
         VariantInit(result);
-        Check(VariantCopy(result, &value.v));
+        Check(ResourceVariant::Copy(result, &value.v));
         return S_OK;
     } catch (...) {
         static LONG reports = 0;

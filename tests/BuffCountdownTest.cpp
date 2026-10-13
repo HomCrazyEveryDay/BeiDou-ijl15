@@ -3,6 +3,7 @@
 #include <oleauto.h>
 #include <gdiplus.h>
 #include "../ezorsia/BuffCountdownCanvas.h"
+#include "../ezorsia/ResourceVariant.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
