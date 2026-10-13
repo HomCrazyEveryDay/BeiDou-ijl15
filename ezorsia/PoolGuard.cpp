@@ -13,7 +13,10 @@ namespace {
 constexpr DWORD kImageBase = 0x00400000;
 constexpr int kBuckets = 4;
 constexpr DWORD kLockFunction = 0x00403166;   // ZFatalSection::Lock, ecx = pool+4
-constexpr DWORD kLockSlot = 0x00BDC9D0;       // set by the EXE CRT before any pool use
+constexpr DWORD kLockSlot = 0x00BDC9D0;       // initially points at the lazy bootstrap
+constexpr DWORD kLockBootstrap = 0x00796EF9;
+constexpr DWORD kSystemInfoSlot = 0x00BF03E0; // bootstrap's GetSystemInfo dependency
+constexpr DWORD kSleepSlot = 0x00BF02F4;      // contended Lock dependency
 constexpr DWORD kNoMatch = 0xFFFF;
 constexpr LONG kMaxReports = 24;
 constexpr LONG kMaxDumps = 2;
@@ -105,7 +108,16 @@ bool ReadWords(const void* address, DWORD* out, unsigned count)
     }
 }
 
-bool LockReady() { return *reinterpret_cast<void* const*>(Rebase(kLockSlot)) != nullptr; }
+bool LockReady()
+{
+    const auto callback = *reinterpret_cast<void* const volatile*>(Rebase(kLockSlot));
+    // At process entry the callback is already non-null (00796EF9), but the
+    // EXE's API slots are still empty. Calling it here jumps through address 0.
+    // Leave initialization to the EXE; never write its callback/API slots.
+    if (!callback || !*reinterpret_cast<void* const volatile*>(Rebase(kSleepSlot))) return false;
+    return callback != Rebase(kLockBootstrap)
+        || *reinterpret_cast<void* const volatile*>(Rebase(kSystemInfoSlot)) != nullptr;
+}
 void Lock(BYTE* self) { reinterpret_cast<LockFn>(Rebase(kLockFunction))(self + 4, nullptr); }
 // Mirrors the native unlock (00403155): owner-thread count, clear owner at zero.
 void Unlock(BYTE* self)

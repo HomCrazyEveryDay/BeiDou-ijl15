@@ -9,6 +9,10 @@ $output = Join-Path $repo ('../.tmp/pool-guard-test-' + [guid]::NewGuid().ToStri
 New-Item -ItemType Directory -Path $output | Out-Null
 & cl.exe /nologo /std:c++17 /O2 /Oy- /EHsc /MT /D_CRT_SECURE_NO_WARNINGS (Join-Path $PSScriptRoot 'PoolGuardTest.cpp') (Join-Path $repo 'ezorsia/PoolGuard.cpp') "/I$repo/ezorsia" "/Fo:$output\" "/Fe:$output/test.exe" /link "$repo/detours/detours.lib" /BASE:0x20000000 /DYNAMICBASE:NO
 if ($LASTEXITCODE) { throw 'Pool guard test compilation failed.' }
+foreach ($fixture in @('--unready-bootstrap', '--unready-sleep', '--null-callback')) {
+    & "$output/test.exe" (Resolve-Path -LiteralPath $ClientExe).Path $fixture 2>&1 | Tee-Object -FilePath "$output/$fixture.txt"
+    if ($LASTEXITCODE) { throw "Pool guard startup fixture $fixture failed: $LASTEXITCODE; artifacts: $output" }
+}
 & "$output/test.exe" (Resolve-Path -LiteralPath $ClientExe).Path 2>&1 | Tee-Object -FilePath "$output/result.txt"
 if ($LASTEXITCODE) { throw "Pool guard test failed: $LASTEXITCODE; artifacts: $output" }
 $sources = @('PoolGuard.cpp', 'CrashReporter.cpp', 'TargetedCrashSnapshot.cpp', 'ClientLog.cpp', 'ClientDiagnostics.cpp') | ForEach-Object { Join-Path $repo "ezorsia/$_" }

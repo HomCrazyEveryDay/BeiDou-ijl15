@@ -60,12 +60,14 @@ static BYTE* MapImage(const char* path) {
     // and carve helpers. All other code stays inert; no PE entry executes.
     const DWORD operands[] = {0x403066,0x4030CD,0x4030D4,0x40316B,0x403177,0x403183,
         0x4031B2,0x4031B9,0x403262,0x403269,0x420757,0x4207BE,0x4207C5,
-        0x4222AC,0x422315,0x42231C,0x406448,0x40644F,0x405DD1,0x405DD8};
+        0x4222AC,0x422315,0x42231C,0x406448,0x40644F,0x405DD1,0x405DD8,
+        0x796F08,0x796F12,0x796F16,0x796F1E,0x796F22,0x796F2A};
     for (DWORD operand : operands) *reinterpret_cast<DWORD*>(Native(operand)) += delta;
     *reinterpret_cast<void**>(Native(0xBF032C)) = reinterpret_cast<void*>(&GetProcessHeap);
     *reinterpret_cast<void**>(Native(0xBF0324)) = reinterpret_cast<void*>(&HeapAlloc);
     *reinterpret_cast<void**>(Native(0xBF0328)) = reinterpret_cast<void*>(&HeapFree);
     *reinterpret_cast<void**>(Native(0xBF02F4)) = reinterpret_cast<void*>(&Sleep);
+    *reinterpret_cast<void**>(Native(0xBF03E0)) = reinterpret_cast<void*>(&GetSystemInfo);
     // Native CRT selects the LOCK CMPXCHG variant on multiprocessor systems.
     *reinterpret_cast<void**>(Native(0xBDC9D0)) = reinterpret_cast<void*>(Native(0x796F51));
     for (DWORD instance : {0xBF0B00, 0xBF0A90, 0xBF0BA8}) memset(reinterpret_cast<void*>(Native(instance)), 0, 0x2C);
@@ -144,16 +146,49 @@ static double Benchmark(unsigned rounds) {
 }
 
 int main(int argc, char** argv) {
-    Require(argc == 2, "client exe argument"); setvbuf(stdout, nullptr, _IONBF, 0);
+    Require(argc == 2 || argc == 3, "client exe argument and optional startup fixture"); setvbuf(stdout, nullptr, _IONBF, 0);
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     BYTE* image = MapImage(argv[1]);
+    if (argc == 3) {
+        const bool nullCallback = !strcmp(argv[2], "--null-callback");
+        const bool missingSystemInfo = !strcmp(argv[2], "--unready-bootstrap");
+        const bool missingSleep = !strcmp(argv[2], "--unready-sleep");
+        Require(nullCallback || missingSystemInfo || missingSleep, "known startup fixture");
+        // The real entry-point dump has a NON-null bootstrap callback. It
+        // calls the EXE's still-null GetSystemInfo slot, then selects UP/MP.
+        void* callback = nullCallback ? nullptr : reinterpret_cast<void*>(Native(0x796EF9));
+        *reinterpret_cast<void**>(Native(0xBDC9D0)) = callback;
+        if (missingSystemInfo) *reinterpret_cast<void**>(Native(0xBF03E0)) = nullptr;
+        if (missingSleep) *reinterpret_cast<void**>(Native(0xBF02F4)) = nullptr;
+        Require(PoolGuard::Install(reinterpret_cast<HMODULE>(image), false), "install before native API initialization");
+        Require(*reinterpret_cast<void**>(Native(0xBDC9D0)) == callback, "install must not execute unready bootstrap");
+        for (DWORD instance : instances) {
+            const DWORD* pool = reinterpret_cast<const DWORD*>(Native(instance));
+            for (unsigned i = 0; i < 11; ++i) Require(pool[i] == 0, "install leaves unconstructed pool untouched");
+        }
+        *reinterpret_cast<void**>(Native(0xBF03E0)) = reinterpret_cast<void*>(&GetSystemInfo);
+        *reinterpret_cast<void**>(Native(0xBF02F4)) = reinterpret_cast<void*>(&Sleep);
+        *reinterpret_cast<void**>(Native(0xBDC9D0)) = reinterpret_cast<void*>(Native(0x796EF9));
+        Healthy(500);
+        void* selected = *reinterpret_cast<void**>(Native(0xBDC9D0));
+        Require(selected == reinterpret_cast<void*>(Native(0x796F31)) || selected == reinterpret_cast<void*>(Native(0x796F51)),
+            "first allocation executes real bootstrap after API initialization");
+        Require(PoolGuard::Snapshot().reports == 0, "early install has no false corruption reports");
+        auto* sample = static_cast<DWORD*>(NAlloc(0, 32)); NFree(0, sample); sample[1] ^= 1;
+        Require(NAlloc(0, 32) != sample && PoolGuard::Snapshot().freedBlockWritten == 1, "guard remains active after deferred bootstrap");
+        printf("PASS startup fixture %s; real bootstrap, all buckets, guard active\n", argv[2]);
+        return 0;
+    }
 #ifdef POOL_GUARD_REAL_REPORT
-    // Exercise the actual process-entry timing (CRT lock callback not ready)
+    // Exercise the actual process-entry timing (bootstrap exists, APIs absent)
     // and the production artifact writer in a separate executable.
-    *reinterpret_cast<void**>(Native(0xBDC9D0)) = nullptr;
+    *reinterpret_cast<void**>(Native(0xBDC9D0)) = reinterpret_cast<void*>(Native(0x796EF9));
+    *reinterpret_cast<void**>(Native(0xBF03E0)) = nullptr;
+    *reinterpret_cast<void**>(Native(0xBF02F4)) = nullptr;
     CrashReporter::Install(true, "mini", false);
     Require(PoolGuard::Install(reinterpret_cast<HMODULE>(image), true), "pre-CRT install");
-    *reinterpret_cast<void**>(Native(0xBDC9D0)) = reinterpret_cast<void*>(Native(0x796F51));
+    *reinterpret_cast<void**>(Native(0xBF03E0)) = reinterpret_cast<void*>(&GetSystemInfo);
+    *reinterpret_cast<void**>(Native(0xBF02F4)) = reinterpret_cast<void*>(&Sleep);
     for (int i = 0; i < 3; ++i) {
         auto* sample = static_cast<DWORD*>(NAlloc(0, 32)); NFree(0, sample); sample[1] ^= 1;
         Require(NAlloc(0, 32) != sample, "real capture quarantines sample");

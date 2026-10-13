@@ -13,6 +13,7 @@
 #include "MobInitializationFix.h"
 #include "InventoryRefreshFix.h"
 #include "CharacterSelectFocusFix.h"
+#include "NpcDialogFocusFix.h"
 
 namespace {
 
@@ -226,6 +227,8 @@ void ClientCrashFixes::Install()
         InventoryRefreshFix::Install(GetModuleHandleW(nullptr)) ? 1 : 0);
     CrashReporter::RecordEvent("charSelect.focus", "ready=%d",
         CharacterSelectFocusFix::Install(GetModuleHandleW(nullptr)) ? 1 : 0);
+    CrashReporter::RecordEvent("npc.focus", "ready=%d",
+        NpcDialogFocusFix::Install(GetModuleHandleW(nullptr)) ? 1 : 0);
     ResourceReadGuards::Install();
     ModernEquipmentCompatibility::Install();
     CrashReporter::RecordEvent("nametag.origin", "install result=%d", NameTagOriginFix::Install() ? 1 : 0);

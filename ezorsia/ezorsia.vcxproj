@@ -191,6 +191,7 @@
     <ClInclude Include="MobInitializationFix.h" />
     <ClInclude Include="InventoryRefreshFix.h" />
     <ClInclude Include="CharacterSelectFocusFix.h" />
+    <ClInclude Include="NpcDialogFocusFix.h" />
     <ClInclude Include="TargetedCrashSnapshot.h" />
     <ClInclude Include="ResourceLookupDiagnostics.h" />
     <ClInclude Include="NativeExitDiagnostics.h" />
@@ -291,6 +292,7 @@
     <ClCompile Include="MobInitializationFix.cpp" />
     <ClCompile Include="InventoryRefreshFix.cpp" />
     <ClCompile Include="CharacterSelectFocusFix.cpp" />
+    <ClCompile Include="NpcDialogFocusFix.cpp" />
     <ClCompile Include="TargetedCrashSnapshot.cpp" />
     <ClCompile Include="ResourceLookupDiagnostics.cpp" />
     <ClCompile Include="NativeExitDiagnostics.cpp" />
