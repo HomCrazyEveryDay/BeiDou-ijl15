@@ -1115,11 +1115,11 @@ namespace
 		const int requestedHeight = Client::m_nGameHeight;
 		const ResolutionEnvironment resolutionEnvironment = ReadResolutionEnvironment();
 		CrashReporter::Install(enableCrashDump, crashDumpType, enableCrashTrace);
-		// Allocator probes stay opt-in. Set before starting the launcher; the
-		// child inherits the switch. Installation is only attempted at startup.
+		// Allocator probes are on by default; BEIDOU_POOL_GUARD=0 inherited from
+		// the launcher's environment opts out. Installation is only attempted at startup.
 		WCHAR poolGuardOption[4]{};
-		const bool enablePoolGuard = GetEnvironmentVariableW(L"BEIDOU_POOL_GUARD", poolGuardOption, ARRAYSIZE(poolGuardOption)) == 1
-			&& poolGuardOption[0] == L'1';
+		const bool enablePoolGuard = !(GetEnvironmentVariableW(L"BEIDOU_POOL_GUARD", poolGuardOption, ARRAYSIZE(poolGuardOption)) == 1
+			&& poolGuardOption[0] == L'0');
 		const bool poolGuardReady = enablePoolGuard && PoolGuard::Install(GetModuleHandleW(nullptr), enableCrashDump);
 		ClientLog::Emergency("pool_guard_config enabled=%d installed=%d maxReports=24 maxDumps=2 detectionOnlyStack=1",
 			enablePoolGuard, poolGuardReady);

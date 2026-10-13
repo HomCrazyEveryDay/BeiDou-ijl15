@@ -15,6 +15,7 @@ static void Require(bool ok, const char* why) {
 }
 static unsigned reports, dumps;
 static bool failLogger, failDump;
+static char lastBlock[512];
 #ifndef POOL_GUARD_REAL_REPORT
 namespace ClientLog {
 EmergencyBatch::EmergencyBatch() {}
@@ -24,6 +25,8 @@ void Emergency(const char* format, ...) {
     if (strstr(format, "pool_guard fault=")) {
         ++reports;
         va_list args; va_start(args, format); vprintf(format, args); va_end(args); puts("");
+    } else if (strstr(format, "pool_guard_block ")) {
+        va_list args; va_start(args, format); vsnprintf(lastBlock, sizeof(lastBlock), format, args); va_end(args);
     }
 }
 }
@@ -105,10 +108,13 @@ static void Faults(int pool, bool replica) {
     release(pool, p); Require(PoolGuard::Snapshot().reports == before, "live canary collision accepted");
     release(pool, p); Require(PoolGuard::Snapshot().doubleFree > 0 && PoolGuard::Snapshot().reports == before + 1, "double free detected once");
     Require(allocate(pool, size) == p, "double free did not duplicate list");
-    release(pool, p); p[1] ^= 1;
+    release(pool, p); p[1] -= 1;  // in-place decrement, as a stale Release would do
     before = PoolGuard::Snapshot().reports;
     void* fresh = allocate(pool, size);
     Require(fresh != p && PoolGuard::Snapshot().reports == before + 1, "freed-block write quarantined");
+#ifndef POOL_GUARD_REAL_REPORT
+    Require(strstr(lastBlock, "canaryDelta=-1 changed=canary freedBy=") != nullptr, "canary delta and surviving free words reported");
+#endif
     p = static_cast<DWORD*>(fresh); release(pool, p); p[0] = reinterpret_cast<DWORD>(p);
     before = PoolGuard::Snapshot().reports;
     fresh = allocate(pool, size);

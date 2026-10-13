@@ -212,6 +212,38 @@ void Describe(const void* address, char* out, size_t size)
     StringCchPrintfA(out, size, "%p", address);
 }
 
+bool CodeAddress(const void* address)
+{
+    HMODULE module = nullptr;
+    return address && GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        static_cast<LPCSTR>(address), &module);
+}
+
+// Signed difference when small; larger changes are reported as "replaced".
+const char* SmallDelta(DWORD observed, DWORD expected, char* out, size_t size)
+{
+    const LONG delta = static_cast<LONG>(observed - expected);
+    if (delta < -0x100 || delta > 0x100) return "replaced";
+    StringCchPrintfA(out, size, "%+ld", delta);
+    return out;
+}
+
+// Which free-time marker words no longer look as the free left them. A freshly
+// carved block legitimately carries zero freedBy/sequence words.
+const char* ChangedWords(bool markerIntact, DWORD freedByWord, bool freedByCode, DWORD sequence, bool sequenceKnown,
+    char* out, size_t size)
+{
+    const bool fresh = !freedByWord && !sequence;
+    StringCchPrintfA(out, size, "%s%s%s",
+        markerIntact ? "" : "canary,",
+        fresh || freedByCode ? "" : "freedBy,",
+        fresh || sequenceKnown ? "" : "freeSeq,");
+    const size_t length = strlen(out);
+    if (!length) return "none";
+    out[length - 1] = '\0';
+    return out;
+}
+
 const char* FaultName(PoolGuard::Fault fault)
 {
     switch (fault) {
@@ -274,18 +306,31 @@ __declspec(noinline) void SubmitBody(const Report& report)
     if (index <= kMaxReports) {
         const DWORD savedError = GetLastError();
         ClientLog::EmergencyBatch batch;
-        char caller[MAX_PATH + 32]{}, freedBy[MAX_PATH + 32]{};
+        char caller[MAX_PATH + 32]{}, freedBy[MAX_PATH + 32]{}, headerDelta[16]{}, canaryDelta[16]{}, changed[32]{};
         Describe(report.caller, caller, ARRAYSIZE(caller));
         const bool markerIntact = report.wordsKnown && report.words[1] == PoolGuard::Canary(report.block);
         // Generic pool data may be user input. Log metadata only, never an
         // ASCII/UTF-16 rendering or raw payload words from arbitrary blocks.
-        Describe(markerIntact ? reinterpret_cast<const void*>(report.words[2]) : nullptr, freedBy, ARRAYSIZE(freedBy));
+        // The free-time words survive a write that only hit the canary, so keep
+        // them when they still look like a code address and an issued sequence.
+        const DWORD freedByWord = report.wordsKnown ? report.words[2] : 0;
+        const bool freedByCode = CodeAddress(reinterpret_cast<const void*>(freedByWord));
+        const DWORD sequence = report.wordsKnown ? report.words[3] : 0;
+        const bool sequenceKnown = sequence && sequence <= static_cast<DWORD>(PoolGuard::State().sequence);
+        Describe(freedByCode ? reinterpret_cast<const void*>(freedByWord) : nullptr, freedBy, ARRAYSIZE(freedBy));
         ClientLog::Emergency(
-            "pool_guard fault=%s action=%s pool=%s block=%p header=%08lX expected=%08lX caller=%s report=%ld",
+            "pool_guard fault=%s action=%s pool=%s block=%p header=%08lX expected=%08lX headerDelta=%s caller=%s report=%ld",
             FaultName(report.fault), report.action == PoolGuard::Action::SkippedFree ? "skipped_free" : "dropped_freelist",
-            report.pool, report.block, report.header, report.expected, caller, index);
-        ClientLog::Emergency("pool_guard_block known=%d markerIntact=%d freedBy=%s freeSeq=%lu",
-            report.wordsKnown ? 1 : 0, markerIntact ? 1 : 0, freedBy, markerIntact ? report.words[3] : 0);
+            report.pool, report.block, report.header, report.expected,
+            SmallDelta(report.header, report.expected, headerDelta, ARRAYSIZE(headerDelta)), caller, index);
+        // A small canaryDelta (e.g. -1/+1) means the second word was adjusted in
+        // place, as a refcount decrement/increment on a stale object would do;
+        // "replaced" means it was overwritten. Deltas are metadata, not payload.
+        ClientLog::Emergency("pool_guard_block known=%d markerIntact=%d canaryDelta=%s changed=%s freedBy=%s freeSeq=%lu",
+            report.wordsKnown ? 1 : 0, markerIntact ? 1 : 0,
+            report.wordsKnown ? SmallDelta(report.words[1], PoolGuard::Canary(report.block), canaryDelta, ARRAYSIZE(canaryDelta)) : "unknown",
+            report.wordsKnown ? ChangedWords(markerIntact, freedByWord, freedByCode, sequence, sequenceKnown, changed, ARRAYSIZE(changed)) : "unknown",
+            freedBy, sequenceKnown ? sequence : 0);
         WalkFrames();
         SetLastError(savedError);
     }

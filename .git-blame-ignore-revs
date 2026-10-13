@@ -1,0 +1,3 @@
+# Whitespace/line-ending-only commits. Use: git config blame.ignoreRevsFile .git-blame-ignore-revs
+# style: 恢复客户端补丁与项目文件的原有换行
+14e717f8d1b870bfd4cdaf14f8abb41847a3f325
