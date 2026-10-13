@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|Win32">
@@ -186,6 +186,8 @@
     <ClInclude Include="ResourceReadGuards.h" />
     <ClInclude Include="FlashRendererFix.h" />
     <ClInclude Include="PcomExitFix.h" />
+    <ClInclude Include="PoolGuard.h" />
+    <ClInclude Include="PoolGuardCore.h" />
     <ClInclude Include="MobInitializationFix.h" />
     <ClInclude Include="InventoryRefreshFix.h" />
     <ClInclude Include="CharacterSelectFocusFix.h" />
@@ -285,6 +287,7 @@
     <ClCompile Include="ClientCrashFixes.cpp" />
     <ClCompile Include="FlashRendererFix.cpp" />
     <ClCompile Include="PcomExitFix.cpp" />
+    <ClCompile Include="PoolGuard.cpp" />
     <ClCompile Include="MobInitializationFix.cpp" />
     <ClCompile Include="InventoryRefreshFix.cpp" />
     <ClCompile Include="CharacterSelectFocusFix.cpp" />

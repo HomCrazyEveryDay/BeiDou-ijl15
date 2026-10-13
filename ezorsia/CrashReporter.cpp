@@ -828,7 +828,7 @@ void CrashReporter::Install(bool enabled, const std::string& dumpType, bool trac
 
 	SetUnhandledExceptionFilter(HandleUnhandledException);
 	const bool targeted=TargetedCrashSnapshot::Install(GetModuleHandleW(nullptr),CaptureTargetedSnapshot);
-	ClientLog::Emergency("targeted_snapshot_config enabled=%d maxFamiliesPerSession=7 independentOfLifecycle=1",
+	ClientLog::Emergency("targeted_snapshot_config enabled=%d maxFamiliesPerSession=8 independentOfLifecycle=1",
 		targeted ? 1 : 0);
 }
 
@@ -874,6 +874,12 @@ void CrashReporter::CaptureConditionalException(EXCEPTION_POINTERS* info, const 
     WCHAR tag[40]{};
     swprintf_s(tag, L"_conditional-%u", attempt);
     WriteExceptionArtifacts(info, tag, "conditional_first_chance", true);
+}
+
+void CrashReporter::CaptureDiagnosticSnapshot(EXCEPTION_POINTERS* info, const WCHAR* tag, const char* reportType) {
+    // Caller-limited evidence for a detected non-fatal fault; the process continues.
+    if (!g_dumpEnabled || !info) return;
+    WriteExceptionArtifacts(info, tag, reportType, true);
 }
 
 void CrashReporter::RecordEvent(const char* category, const char* format, ...)

@@ -74,6 +74,38 @@ DWORD KnownPcom() {
         && nt.FileHeader.Machine==IMAGE_FILE_MACHINE_I386
         && nt.FileHeader.TimeDateStamp==0x4b7c140c && nt.OptionalHeader.SizeOfImage==0x25000 ? pc:0;
 }
+void CopyCashCategoryEvidence(Snapshot& snapshot) {
+    const DWORD base=reinterpret_cast<DWORD>(clientBase);
+    for (DWORD i=0;i<snapshot.frameCount;++i) {
+        const auto& f=snapshot.frames[i];
+        // 00468411 is the constructor's return from 00471F37. EBP-14 owns
+        // CCashShop, EBP-10 is the commodity index; EBP-1C is already replaced
+        // by 22000006, so derive the category only from the captured SN.
+        if (f.words[1]!=base+0x68411 || f.address<0x60) continue;
+        CopyBlock(snapshot,f.address-0x60,0x80);
+        DWORD owner=0,index=0,context=0,rows=0,count=0,item=0,categories=0;
+        Read(f.address-0x14,&owner,4); Read(f.address-0x10,&index,4);
+        if (Read(base+0x7e7918,&context,4) && context && context<=MAXDWORD-0x36e4
+            && Read(context+0x36e0,&rows,4) && rows>=4 && Read(rows-4,&count,4)
+            && count<=50000 && index<count && rows<=MAXDWORD-index*8-8
+            && Read(rows+index*8+4,&item,4)) CopyBlock(snapshot,item,0x50);
+        if (!owner || owner>MAXDWORD-0x48) break;
+        CopyBlock(snapshot,owner+0x44,4);
+        if (!Read(owner+0x44,&categories,4) || categories<4) break;
+        if (!Read(categories-4,&count,4) || count>1000) {
+            CopyBlock(snapshot,categories-4,4); break;
+        }
+        // The deployed table has 30 rows (844 bytes with its count). It fits
+        // four blocks; larger tables retain their count and a bounded prefix.
+        const DWORD bytes=4+count*0x1c;
+        for (DWORD offset=0;offset<bytes && snapshot.memoryCount<ARRAYSIZE(snapshot.memory);offset+=256) {
+            if (categories-4>MAXDWORD-offset) break;
+            const DWORD remaining=bytes-offset;
+            CopyBlock(snapshot,categories-4+offset,remaining>256?256:remaining);
+        }
+        break;
+    }
+}
 void CopyResourceEvidence(Snapshot& snapshot) {
     const DWORD base=reinterpret_cast<DWORD>(clientBase);
     if (snapshot.family==Family::PcomFactory) {
@@ -111,7 +143,7 @@ void CopyResourceEvidence(Snapshot& snapshot) {
             CopyBlock(snapshot,f.address,32); // all five Boss arguments
             break;
         }
-    }
+    } else if (snapshot.family==Family::CashCategory) CopyCashCategoryEvidence(snapshot);
 }
 void CaptureNow(EXCEPTION_POINTERS* info, Family family) {
     if (capturing || !captureSnapshot || !info || !info->ExceptionRecord || !info->ContextRecord) return;
@@ -136,7 +168,9 @@ void CaptureNow(EXCEPTION_POINTERS* info, Family family) {
     }
     CopyBlock(snapshot,snapshot.context.Esp,256);
     const DWORD address=reinterpret_cast<DWORD>(snapshot.record.ExceptionAddress);
-    if (address>=16) CopyBlock(snapshot,address-16,64);
+    // Cash needs four category blocks. Its throw site is already retained in
+    // the record/frame chain; spend this slot on its live data instead of code.
+    if (address>=16 && family!=Family::CashCategory) CopyBlock(snapshot,address-16,64);
     if (family==Family::ActionJump) {
         const DWORD base=reinterpret_cast<DWORD>(clientBase);
         CopyBlock(snapshot,base+0x52edb2,16);
@@ -186,6 +220,7 @@ const char* Name(Family family) {
     case Family::MainLoopEscape:return "main_loop_escape";
     case Family::PcomFactory:return "pcom_factory_first_throw";
     case Family::BossResource:return "boss_resource_first_throw";
+    case Family::CashCategory:return "cash_category_first_throw";
     default:return "unknown";
     }
 }
@@ -218,6 +253,25 @@ void ObserveResourceCpp(EXCEPTION_POINTERS* info,DWORD hresult,void* const* fram
     }
     if (factoryThrow && factoryCaller) CaptureNow(info,Family::PcomFactory);
     else if (hresult==0x80004003 && bossCaller) CaptureNow(info,Family::BossResource);
+    SetLastError(error);
+}
+void ObserveCashCategoryCpp(EXCEPTION_POINTERS* info,DWORD code) {
+    if (code!=0x22000006 || !observer || capturing || !clientBase || !info
+        || !info->ExceptionRecord || !info->ContextRecord
+        || info->ExceptionRecord->ExceptionCode!=0xe06d7363 || info->ExceptionRecord->NumberParameters!=3
+        || info->ExceptionRecord->ExceptionInformation[0]!=0x19930520) return;
+    const DWORD error=GetLastError(),base=reinterpret_cast<DWORD>(clientBase);
+    bool throwSite=false,constructor=false;
+    DWORD frame=info->ContextRecord->Ebp;
+    for (unsigned i=0;i<24;++i) {
+        DWORD words[2]{};
+        if (!Read(frame,words,sizeof(words))) break;
+        if (words[1]==base+0x722c7) throwSite=true;
+        if (words[1]==base+0x68411 && throwSite) constructor=true;
+        if (words[0]<=frame || words[0]-frame>1024*1024) break;
+        frame=words[0];
+    }
+    if (throwSite && constructor) CaptureNow(info,Family::CashCategory);
     SetLastError(error);
 }
 bool Install(HMODULE client, Capture capture) {

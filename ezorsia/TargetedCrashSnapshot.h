@@ -4,7 +4,7 @@
 namespace TargetedCrashSnapshot {
 constexpr ULONG StreamType = 0x42445331; // BDS1, local minidump user stream
 // Append only: numeric values are persisted in BDS1 streams and filenames.
-enum class Family : DWORD { ActionJump, MobInitialization, NullVariant, Canvas, KernelWrite, MainLoopEscape, PcomFactory, BossResource, Count };
+enum class Family : DWORD { ActionJump, MobInitialization, NullVariant, Canvas, KernelWrite, MainLoopEscape, PcomFactory, BossResource, CashCategory, Count };
 struct Memory {
     DWORD address = 0, size = 0, copied = 0;
     BYTE bytes[256]{};
@@ -32,5 +32,8 @@ bool Install(HMODULE client, Capture capture);
 // Called only for RTTI-verified _com_error by the main-loop exception observer.
 // Saves the FIRST throw, before native window-procedure translation/unwinding.
 void ObserveResourceCpp(EXCEPTION_POINTERS* info, DWORD hresult, void* const* frames, unsigned count);
+// Called only for RTTI-verified CTerminateException. Capture the native cash
+// category mismatch before its commodity and category locals are unwound.
+void ObserveCashCategoryCpp(EXCEPTION_POINTERS* info, DWORD code);
 const char* Name(Family family);
 }

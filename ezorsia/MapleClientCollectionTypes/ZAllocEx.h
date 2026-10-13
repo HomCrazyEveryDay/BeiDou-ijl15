@@ -36,6 +36,8 @@ private:
 	LPVOID m_apBuff[4];
 	LPVOID m_apBlockHead[4];
 
+	static bool* GuardBuckets() { static bool ready[4]{}; return ready; }
+
 	std::mutex* GetMutex()
 	{
 		static std::mutex mtx;
@@ -111,6 +113,12 @@ public:
 
 		GetMutex()->lock();
 
+		// PoolGuard: never pop a free block whose canary, header or link was overwritten.
+		PoolGuard::Fault fault = PoolGuard::Fault::FreeListLinkBad;
+		const bool guard = PoolGuard::Enabled();
+		const void* corrupt = guard ? PrepareGuardHead(this->m_apBuff[nBlockSizeIndex], nBlockSize, GuardBuckets()[nBlockSizeIndex], &fault) : nullptr;
+		if (corrupt) this->m_apBuff[nBlockSizeIndex] = nullptr;
+
 		/* check if theres an available block of memory at the current buffer position */
 		/* if not, we allocate another kb of memory blocks */
 		if (!this->m_apBuff[nBlockSizeIndex])
@@ -125,6 +133,7 @@ public:
 			/* throw the newly allocated memory block list onto the top of the stack */
 			this->m_apBlockHead[nBlockSizeIndex] = pBlockAllocHead;
 			this->m_apBuff[nBlockSizeIndex] = pBlockAllocHead;
+			if (guard) StampFreeChain(pBlockAllocHead, nBlockSize);
 		}
 
 		/* grab the top pointer off the stack */
@@ -146,8 +155,11 @@ public:
 
 		/* set the top of the stack to equal the previous pointer */
 		this->m_apBuff[nBlockSizeIndex] = *lpAllocRet;
+		if (guard) { reinterpret_cast<DWORD*>(lpAllocRet)[1] = 0; PoolGuard::MarkActive(lpAllocRet); }
 
 		GetMutex()->unlock();
+		if (corrupt)
+			PoolGuard::ReportReplicaFault(fault, PoolGuard::Action::DroppedFreeList, corrupt, nBlockSize, _ReturnAddress());
 
 		/* return memory */
 		return lpAllocRet;
@@ -207,13 +219,29 @@ public:
 
 		GetMutex()->lock();
 
+		// PoolGuard: separately recorded free state corroborates a double free.
+		// Skip it (leak) so the freelist never links the same block twice.
+		if (PoolGuard::Enabled() && PoolGuard::TrackedFree(p))
+		{
+			GetMutex()->unlock();
+			PoolGuard::ReportReplicaFault(PoolGuard::Fault::DoubleFree, PoolGuard::Action::SkippedFree, p, uSize, _ReturnAddress());
+			return;
+		}
+
+		PoolGuard::Fault fault = PoolGuard::Fault::FreeListLinkBad;
+		const void* corrupt = PoolGuard::Enabled()
+			? PrepareGuardHead(this->m_apBuff[nBlockSizeIndex], uSize, GuardBuckets()[nBlockSizeIndex], &fault) : nullptr;
+		if (corrupt) this->m_apBuff[nBlockSizeIndex] = nullptr;
+
 		/* assign the top block pointer to the head of the freed memory*/
 		*p = this->m_apBuff[nBlockSizeIndex];
 
 		/* put the freed memory on top of the available memory stack */
 		this->m_apBuff[nBlockSizeIndex] = p;
+		if (PoolGuard::Enabled()) StampFree(p, _ReturnAddress());
 
 		GetMutex()->unlock();
+		if (corrupt) PoolGuard::ReportReplicaFault(fault, PoolGuard::Action::DroppedFreeList, corrupt, uSize, _ReturnAddress());
 	}
 };
 
@@ -236,6 +264,8 @@ private:
 	ZFatalSection m_lock; // we dont use this but we keep it for proper maple struct alignment
 	LPVOID m_apBuff[4];
 	LPVOID m_apBlockHead[4];
+
+	static bool* GuardBuckets() { static bool ready[4]{}; return ready; }
 
 	std::mutex* GetMutex()
 	{
@@ -311,6 +341,12 @@ public:
 
 		GetMutex()->lock();
 
+		// PoolGuard: never pop a free block whose canary, header or link was overwritten.
+		PoolGuard::Fault fault = PoolGuard::Fault::FreeListLinkBad;
+		const bool guard = PoolGuard::Enabled();
+		const void* corrupt = guard ? PrepareGuardHead(this->m_apBuff[nBlockSizeIndex], nBlockSize, GuardBuckets()[nBlockSizeIndex], &fault) : nullptr;
+		if (corrupt) this->m_apBuff[nBlockSizeIndex] = nullptr;
+
 		/* check if theres an available block of memory at the current buffer position */
 		/* if not, we allocate another kb of memory blocks */
 		if (!this->m_apBuff[nBlockSizeIndex])
@@ -324,6 +360,7 @@ public:
 			/* throw the newly allocated memory block list onto the top of the stack */
 			this->m_apBlockHead[nBlockSizeIndex] = pBlockAllocHead;
 			this->m_apBuff[nBlockSizeIndex] = pBlockAllocHead;
+			if (guard) StampFreeChain(pBlockAllocHead, nBlockSize);
 		}
 
 		/* grab the top pointer off the stack */
@@ -345,8 +382,11 @@ public:
 
 		/* set the top of the stack to equal the previous pointer */
 		this->m_apBuff[nBlockSizeIndex] = *lpAllocRet;
+		if (guard) { reinterpret_cast<DWORD*>(lpAllocRet)[1] = 0; PoolGuard::MarkActive(lpAllocRet); }
 
 		GetMutex()->unlock();
+		if (corrupt)
+			PoolGuard::ReportReplicaFault(fault, PoolGuard::Action::DroppedFreeList, corrupt, nBlockSize, _ReturnAddress());
 
 		/* return memory */
 		return lpAllocRet;
@@ -404,13 +444,29 @@ public:
 
 		GetMutex()->lock();
 
+		// PoolGuard: separately recorded free state corroborates a double free.
+		// Skip it (leak) so the freelist never links the same block twice.
+		if (PoolGuard::Enabled() && PoolGuard::TrackedFree(p))
+		{
+			GetMutex()->unlock();
+			PoolGuard::ReportReplicaFault(PoolGuard::Fault::DoubleFree, PoolGuard::Action::SkippedFree, p, uSize, _ReturnAddress());
+			return;
+		}
+
+		PoolGuard::Fault fault = PoolGuard::Fault::FreeListLinkBad;
+		const void* corrupt = PoolGuard::Enabled()
+			? PrepareGuardHead(this->m_apBuff[nBlockSizeIndex], uSize, GuardBuckets()[nBlockSizeIndex], &fault) : nullptr;
+		if (corrupt) this->m_apBuff[nBlockSizeIndex] = nullptr;
+
 		/* assign the top block pointer to the head of the freed memory*/
 		*p = this->m_apBuff[nBlockSizeIndex];
 
 		/* put the freed memory on top of the available memory stack */
 		this->m_apBuff[nBlockSizeIndex] = p;
+		if (PoolGuard::Enabled()) StampFree(p, _ReturnAddress());
 
 		GetMutex()->unlock();
+		if (corrupt) PoolGuard::ReportReplicaFault(fault, PoolGuard::Action::DroppedFreeList, corrupt, uSize, _ReturnAddress());
 	}
 };
 

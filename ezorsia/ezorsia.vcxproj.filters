@@ -213,6 +213,12 @@
     <ClInclude Include="PcomExitFix.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="PoolGuard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="PoolGuardCore.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="MobInitializationFix.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -339,6 +345,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="PcomExitFix.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PoolGuard.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="MobInitializationFix.cpp">

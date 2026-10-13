@@ -11,6 +11,8 @@ void EnableConditionalDump(bool enabled);
 void CaptureMainLoopException(const TargetedCrashSnapshot::Snapshot& snapshot, unsigned index);
 // Observes a matching first-chance exception; never handles it.
 void CaptureConditionalException(EXCEPTION_POINTERS* info, const char* reason = "observed_exception", unsigned long long fingerprint = 0);
+// Writes one compact report/dump for a synthetic, non-fatal exception record.
+void CaptureDiagnosticSnapshot(EXCEPTION_POINTERS* info, const WCHAR* tag, const char* reportType);
 void RecordEvent(const char* category, const char* format, ...);
 void RecordRecentEvent(const char* category, const char* format, ...);
 void RecordIncomingPacket(

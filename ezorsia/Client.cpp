@@ -251,7 +251,7 @@ void Client::UpdateResolution() {
 	Memory::WriteInt(0x004CC160 + 3, m_nGameWidth);	// C7 45 F0 imm32: preserve the [ebp-16] operand.
 	Memory::WriteInt(0x004CC2C5 + 2, m_nGameHeight);//cmp ecx,600
 	Memory::WriteInt(0x004CC2B0 + 1, m_nGameWidth);	//mov eax,800 ; CreateWnd
-	Memory::WriteInt(0x004D59B2 + 1, m_nGameHeight);//mov eax,800
+	Memory::WriteInt(0x004D59B2 + 2, m_nGameHeight);//81 F9 imm32: cmp ecx,height
 	Memory::WriteInt(0x004D599D + 1, m_nGameWidth);	//mov eax,800 ; CreateWnd
 	Memory::WriteInt(0x0085F36C + 2, m_nGameWidth);	//cmp edx,800
 	Memory::WriteInt(0x0085F374 + 1, m_nGameWidth - 80);	//mov ecx,720 ; CreateDlg
@@ -307,7 +307,7 @@ void Client::UpdateResolution() {
 	Memory::WriteInt(0x006404F8 + 1, m_nGameWidth);	//mov ecx,800
 	Memory::WriteInt(0x00640618 + 1, m_nGameHeight);//mov ecx,600
 	Memory::WriteInt(0x00640690 + 1, m_nGameHeight);//mov ecx,600
-	Memory::WriteInt(0x0064061D + 1, m_nGameHeight);//mov ecx,600
+	// 0064061D is idiv ecx; its height operand is patched at 00640618 above.
 	Memory::WriteInt(0x0064064B + 1, m_nGameHeight);//mov ecx,600
 	Memory::WriteInt(0x00640606 + 1, m_nGameWidth);	//mov ecx,800
 	Memory::WriteInt(0x0064067E + 1, m_nGameWidth);	//mov ecx,800
@@ -458,7 +458,7 @@ void Client::UpdateResolution() {
 	Memory::WriteInt(0x00A24D0B + 1, (m_nGameWidth / 2) - 129);//??
 
 	Memory::WriteInt(0x00BE273C, 128);//??
-	Memory::WriteByte(0x00A5FC2B, 0x05);//??
+	// Preserve 00A5FC2B: mov eax,SEH-handler before the exception destructor prolog.
 	//Memory::WriteByte(0x008D1790 + 2, 0x01); //related to quickslots area presence		 originally 1U but changed because unsigned int crashes it after char select
 	Memory::WriteByte(0x0089B636 + 2, 0x01); //related to exp gain/item pick up msg, seems to affect msg height ! originally 1U but changed because unsigned int crashes it after char select
 	Memory::WriteByte(0x00592A06 + 1, 0x01);//???likely related to mouse pos

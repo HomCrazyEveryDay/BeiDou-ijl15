@@ -79,6 +79,10 @@ LONG CALLBACK RememberCpp(EXCEPTION_POINTERS* info) {
         recording=true;
         __try { TargetedCrashSnapshot::ObserveResourceCpp(info,event.value,event.frames,event.frameCount); }
         __finally { recording=false; }
+    } else if(event.valueKnown && !strcmp(event.type,"CTerminateException")) {
+        recording=true;
+        __try { TargetedCrashSnapshot::ObserveCashCategoryCpp(info,event.value); }
+        __finally { recording=false; }
     }
     SetLastError(error);
     return EXCEPTION_CONTINUE_SEARCH;

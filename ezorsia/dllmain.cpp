@@ -32,6 +32,7 @@
 #include "CrashReporter.h"
 #include "ResourceLookupDiagnostics.h"
 #include "NativeExitDiagnostics.h"
+#include "PoolGuard.h"
 #include "NativeLoopCleanupFix.h"
 #include "ClientLog.h"
 #include "DisconnectDiagnostics.h"
@@ -1114,6 +1115,14 @@ namespace
 		const int requestedHeight = Client::m_nGameHeight;
 		const ResolutionEnvironment resolutionEnvironment = ReadResolutionEnvironment();
 		CrashReporter::Install(enableCrashDump, crashDumpType, enableCrashTrace);
+		// Allocator probes stay opt-in. Set before starting the launcher; the
+		// child inherits the switch. Installation is only attempted at startup.
+		WCHAR poolGuardOption[4]{};
+		const bool enablePoolGuard = GetEnvironmentVariableW(L"BEIDOU_POOL_GUARD", poolGuardOption, ARRAYSIZE(poolGuardOption)) == 1
+			&& poolGuardOption[0] == L'1';
+		const bool poolGuardReady = enablePoolGuard && PoolGuard::Install(GetModuleHandleW(nullptr), enableCrashDump);
+		ClientLog::Emergency("pool_guard_config enabled=%d installed=%d maxReports=24 maxDumps=2 detectionOnlyStack=1",
+			enablePoolGuard, poolGuardReady);
 		ClientLog::Emergency("resource_lookup_config enabled=%d installed=%d maxReports=8 observationOnly=1",
 			enableCrashDump, ResourceLookupDiagnostics::Install(GetModuleHandleW(nullptr), enableCrashDump));
 		// Modal dialogs also enter CWvsApp::Run. Repair its skipped allocation's

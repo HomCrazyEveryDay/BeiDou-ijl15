@@ -272,6 +272,14 @@ __declspec(naked) void ResourceReturned() {
         jge resume
         push ecx
         mov ecx, [ebp + 4]
+        cmp ecx, 0066B37Dh
+        jne objectScope
+        // CMob::AddDamage reads /hitAfter as a scalar. Only failed HRESULTs
+        // need evidence here; an integer or optional empty value is valid.
+        test eax, eax
+        js abnormal
+        jmp leaveFast
+    objectScope:
         cmp ecx, 005336CAh
         jb existingScope
         cmp ecx, 00534A1Eh

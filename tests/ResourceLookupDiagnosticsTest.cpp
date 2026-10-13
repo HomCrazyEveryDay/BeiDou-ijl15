@@ -257,6 +257,29 @@ static void VerifyTruncatedName() {
         "unreadable Unicode key near text limit truncates without CRT invalid-parameter failure");
     VirtualFree(memory, 0, MEM_RELEASE);
 }
+static void VerifyMobHitAfter() {
+    ResetReports(); invokeSite = 0x00403ae7;
+    Prepare(0x0066b37d, S_OK, VT_I4, 17); CheckMachine();
+    Require(!reports && !reads && branch == 1, "hitAfter scalar success has no diagnostic work");
+    Prepare(0x0066b37d, S_OK, VT_EMPTY, 0); CheckMachine();
+    Require(!reports && !reads && branch == 1, "optional hitAfter value remains native behavior");
+    wchar_t path[] = L"fixture/action/hitAfter";
+    const DWORD previousKey = keyPointer;
+    keyPointer = reinterpret_cast<DWORD>(path);
+    Prepare(0x0066b37d, STG_E_FILENOTFOUND, VT_EMPTY, 0); CheckMachine();
+    Require(branch == 2 && iid == 0x00bd8318 && reports == 1 && lines.size() == 1,
+        "hitAfter query failure recorded before original error propagation");
+    Require(lines[0].find("key=\"fixture/action/hitAfter\"") != std::string::npos
+        && lines[0].find("hr=80030002") != std::string::npos
+        && lines[0].find("stage=resource") != std::string::npos,
+        "hitAfter actual query string and HRESULT retained");
+    CheckMachine(); Require(reports == 1 && lines.size() == 1, "hitAfter same-site report bounded");
+    for (DWORD caller : {0x0066b37cu, 0x0066b37eu}) {
+        Prepare(caller, STG_E_FILENOTFOUND, VT_EMPTY, 0); const unsigned before = reads; CheckMachine();
+        Require(reports == 1 && reads == before, "hitAfter observer is limited to verified call site");
+    }
+    keyPointer = previousKey;
+}
 static double Time(unsigned iterations) {
     LARGE_INTEGER freq{}, a{}, b{}; QueryPerformanceFrequency(&freq); QueryPerformanceCounter(&a);
     for (unsigned i = 0; i < iterations; ++i) Invoke();
@@ -284,7 +307,7 @@ static void Benchmark() {
 }
 int wmain(int argc, wchar_t** argv) {
     Require(argc == 2, "EXE fixture argument required"); auto image = Map(argv[1]);
-    VerifyInstallation(image); VerifyLookup(); VerifyQI(); VerifyCriticalAndBoss(); VerifyDictionary(); VerifyTruncatedName(); Benchmark();
+    VerifyInstallation(image); VerifyLookup(); VerifyQI(); VerifyCriticalAndBoss(); VerifyDictionary(); VerifyTruncatedName(); VerifyMobHitAfter(); Benchmark();
     std::puts("PASS: native branches/registers/stack, COM result/ownership, failure isolation, signatures, limits, healthy-path overhead");
     return 0;
 }
