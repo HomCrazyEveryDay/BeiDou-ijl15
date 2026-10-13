@@ -6,6 +6,10 @@
 
 本分支主要服务于BeiDou的客户端。
 
+客户端闪退排查参考：[Write.dll 多功能辅助特征与 RichEdit 退出崩溃](docs/third-party-write-richedit-crash-20261013.md)，包含文件指纹、现场调用链及首次异常和退出二次崩溃的判定边界。
+
+非 RichEdit 首次崩溃：[暴击、Property 工厂与龙王血条取证](docs/logs9-resource-first-failure-20261013.md)，含本地诊断交付及已验证/未闭环范围。
+
 ## 使用方法
 
 已测试的开发工具 VS 2019，SDK 10，工具集 VS2019（v142）

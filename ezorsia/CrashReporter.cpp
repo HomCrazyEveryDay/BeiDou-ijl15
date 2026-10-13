@@ -828,7 +828,7 @@ void CrashReporter::Install(bool enabled, const std::string& dumpType, bool trac
 
 	SetUnhandledExceptionFilter(HandleUnhandledException);
 	const bool targeted=TargetedCrashSnapshot::Install(GetModuleHandleW(nullptr),CaptureTargetedSnapshot);
-	ClientLog::Emergency("targeted_snapshot_config enabled=%d maxFamiliesPerSession=5 independentOfLifecycle=1",
+	ClientLog::Emergency("targeted_snapshot_config enabled=%d maxFamiliesPerSession=7 independentOfLifecycle=1",
 		targeted ? 1 : 0);
 }
 

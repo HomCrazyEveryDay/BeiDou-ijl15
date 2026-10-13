@@ -52,18 +52,74 @@ void CopyBlock(Snapshot& snapshot, DWORD address, DWORD size) {
     block.size=size>sizeof(block.bytes) ? sizeof(block.bytes) : size;
     if (Read(address,block.bytes,block.size)) block.copied=block.size;
 }
-LONG CALLBACK Observe(EXCEPTION_POINTERS* info) {
-    if (capturing || !info || !info->ExceptionRecord || !info->ContextRecord) return EXCEPTION_CONTINUE_SEARCH;
-    const DWORD error=GetLastError();
-    Family family;
-    if (!Classify(*info->ExceptionRecord,family)) {
-        SetLastError(error);
-        return EXCEPTION_CONTINUE_SEARCH;
+void CopyText(Snapshot& snapshot, DWORD address) {
+    if (!address || snapshot.memoryCount==ARRAYSIZE(snapshot.memory)) return;
+    auto& block=snapshot.memory[snapshot.memoryCount++]; block.address=address;
+    // Copy only the bounded UTF-16 text, not adjacent heap contents. A short or
+    // unreadable string retains its actual byte count in the existing ABI.
+    for (unsigned i=0;i<sizeof(block.bytes);i+=2) {
+        wchar_t c=0;
+        if (address>MAXDWORD-i || !Read(address+i,&c,2)) break;
+        memcpy(block.bytes+i,&c,2); block.copied+=2;
+        if (!c) break;
     }
+    block.size=sizeof(block.bytes);
+}
+DWORD KnownPcom() {
+    const DWORD pc=reinterpret_cast<DWORD>(GetModuleHandleW(L"PCOM.dll"));
+    IMAGE_DOS_HEADER dos{}; IMAGE_NT_HEADERS32 nt{};
+    return pc && Read(pc,&dos,sizeof(dos)) && dos.e_magic==IMAGE_DOS_SIGNATURE
+        && dos.e_lfanew>=0x40 && dos.e_lfanew<=0x1000
+        && Read(pc+dos.e_lfanew,&nt,sizeof(nt)) && nt.Signature==IMAGE_NT_SIGNATURE
+        && nt.FileHeader.Machine==IMAGE_FILE_MACHINE_I386
+        && nt.FileHeader.TimeDateStamp==0x4b7c140c && nt.OptionalHeader.SizeOfImage==0x25000 ? pc:0;
+}
+void CopyResourceEvidence(Snapshot& snapshot) {
+    const DWORD base=reinterpret_cast<DWORD>(clientBase);
+    if (snapshot.family==Family::PcomFactory) {
+        const DWORD pc=KnownPcom();
+        if (!pc) return;
+        CopyBlock(snapshot,pc+0x1ca20,0xb0); // self handle, module path, factory caches
+        CopyBlock(snapshot,static_cast<DWORD>(snapshot.record.ExceptionInformation[1]),16);
+        for (DWORD i=0;i<snapshot.frameCount;++i) {
+            const auto& f=snapshot.frames[i];
+            if (f.words[1]!=pc+0x4e67 || f.address<0x48) continue;
+            CopyBlock(snapshot,f.address-0x48,0x80); // factory locals before unwinding
+            DWORD holder=0,text=0;
+            // +50B2 reuses argument 1 for the normalized _bstr_t holder.
+            if (Read(f.words[2],&text,4)) CopyText(snapshot,text);
+            if (i+1<snapshot.frameCount) {
+                const auto& caller=snapshot.frames[i+1];
+                if (caller.address<0x24) break;
+                CopyBlock(snapshot,caller.address-0x24,0x44);
+                // PcCreateObject clears its original argument at +4D19, but
+                // retains the copied original class in EBP-14 until unwinding.
+                if (Read(caller.address-0x14,&holder,4) && Read(holder,&text,4)) CopyText(snapshot,text);
+            }
+            break;
+        }
+    } else if (snapshot.family==Family::BossResource) {
+        CopyBlock(snapshot,base+0x7f14e0,16); // root, ResMan, graphics globals
+        CopyBlock(snapshot,static_cast<DWORD>(snapshot.record.ExceptionInformation[1]),16);
+        for (DWORD i=0;i<snapshot.frameCount;++i) {
+            const auto& f=snapshot.frames[i];
+            if (f.words[1]!=base+0x133315 || f.address<0x200) continue;
+            // Include original function locals/return sites below the verified
+            // packet caller. They are raw evidence, not assumed live COM values.
+            CopyBlock(snapshot,f.address-0x200,256);
+            CopyBlock(snapshot,f.address-0x100,256);
+            CopyBlock(snapshot,f.address,32); // all five Boss arguments
+            break;
+        }
+    }
+}
+void CaptureNow(EXCEPTION_POINTERS* info, Family family) {
+    if (capturing || !captureSnapshot || !info || !info->ExceptionRecord || !info->ContextRecord) return;
+    const DWORD error=GetLastError();
     const LONG bit=1L<<static_cast<unsigned>(family);
     if (InterlockedOr(&claimed,bit)&bit) {
         SetLastError(error);
-        return EXCEPTION_CONTINUE_SEARCH;
+        return;
     }
     capturing=true;
     auto& snapshot=snapshots[static_cast<unsigned>(family)];
@@ -74,8 +130,10 @@ LONG CALLBACK Observe(EXCEPTION_POINTERS* info) {
     snapshot.record=*info->ExceptionRecord;
     snapshot.record.ExceptionRecord=nullptr; // Do not persist a live nested-record pointer.
     snapshot.context=*info->ContextRecord;
-    const DWORD target=static_cast<DWORD>(snapshot.record.ExceptionInformation[1]);
-    VirtualQuery(reinterpret_cast<void*>(target),&snapshot.faultRegion,sizeof(snapshot.faultRegion));
+    if (snapshot.record.ExceptionCode==EXCEPTION_ACCESS_VIOLATION) {
+        const DWORD target=static_cast<DWORD>(snapshot.record.ExceptionInformation[1]);
+        VirtualQuery(reinterpret_cast<void*>(target),&snapshot.faultRegion,sizeof(snapshot.faultRegion));
+    }
     CopyBlock(snapshot,snapshot.context.Esp,256);
     const DWORD address=reinterpret_cast<DWORD>(snapshot.record.ExceptionAddress);
     if (address>=16) CopyBlock(snapshot,address-16,64);
@@ -99,8 +157,19 @@ LONG CALLBACK Observe(EXCEPTION_POINTERS* info) {
         if (next<=frame || next-frame>1024*1024) break;
         frame=next;
     }
-    captureSnapshot(snapshot);
+    CopyResourceEvidence(snapshot);
+    // A failing diagnostic writer must not replace the observed exception or
+    // permanently hold the per-thread recursion guard.
+    __try { captureSnapshot(snapshot); }
+    __except(EXCEPTION_EXECUTE_HANDLER) {}
     capturing=false;
+    SetLastError(error);
+}
+LONG CALLBACK Observe(EXCEPTION_POINTERS* info) {
+    if (capturing || !info || !info->ExceptionRecord || !info->ContextRecord) return EXCEPTION_CONTINUE_SEARCH;
+    const DWORD error=GetLastError();
+    Family family;
+    if (Classify(*info->ExceptionRecord,family)) CaptureNow(info,family);
     SetLastError(error);
     // A first-chance sample may be caught by native code. Never handle it here.
     return EXCEPTION_CONTINUE_SEARCH;
@@ -115,8 +184,41 @@ const char* Name(Family family) {
     case Family::Canvas:return "canvas";
     case Family::KernelWrite:return "kernel_write";
     case Family::MainLoopEscape:return "main_loop_escape";
+    case Family::PcomFactory:return "pcom_factory_first_throw";
+    case Family::BossResource:return "boss_resource_first_throw";
     default:return "unknown";
     }
+}
+void ObserveResourceCpp(EXCEPTION_POINTERS* info,DWORD hresult,void* const* frames,unsigned count) {
+    if ((hresult!=0x800401f8 && hresult!=0x80004003)
+        || !observer || capturing || !clientBase || !frames || !info || !info->ExceptionRecord || !info->ContextRecord
+        || info->ExceptionRecord->ExceptionCode!=0xe06d7363 || info->ExceptionRecord->NumberParameters!=3
+        || info->ExceptionRecord->ExceptionInformation[0]!=0x19930520) return;
+    const DWORD error=GetLastError();
+    const DWORD base=reinterpret_cast<DWORD>(clientBase);
+    const DWORD pc=hresult==0x800401f8 ? KnownPcom():0;
+    bool factoryThrow=false,factoryCaller=false,bossCaller=false;
+    for (unsigned i=0;i<count && i<24;++i) {
+        const DWORD address=reinterpret_cast<DWORD>(frames[i]);
+        if (pc && address==pc+0x52cf) factoryThrow=true;
+        if (pc && address==pc+0x4e67) factoryCaller=true;
+        if (address==base+0x133315) bossCaller=true;
+    }
+    // Start from the original exception context too: stack walking inside the
+    // VEH itself can stop at an optimized handler frame and lose native callers.
+    DWORD frame=info->ContextRecord->Ebp;
+    for (unsigned i=0;i<24;++i) {
+        DWORD words[2]{};
+        if (!Read(frame,words,sizeof(words))) break;
+        if (pc && words[1]==pc+0x52cf) factoryThrow=true;
+        if (pc && words[1]==pc+0x4e67) factoryCaller=true;
+        if (words[1]==base+0x133315) bossCaller=true;
+        if (words[0]<=frame || words[0]-frame>1024*1024) break;
+        frame=words[0];
+    }
+    if (factoryThrow && factoryCaller) CaptureNow(info,Family::PcomFactory);
+    else if (hresult==0x80004003 && bossCaller) CaptureNow(info,Family::BossResource);
+    SetLastError(error);
 }
 bool Install(HMODULE client, Capture capture) {
     if (observer) return true;

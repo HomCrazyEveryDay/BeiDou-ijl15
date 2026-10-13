@@ -75,6 +75,11 @@ LONG CALLBACK RememberCpp(EXCEPTION_POINTERS* info) {
     event.tick=GetTickCount64();DecodeCpp(*info->ExceptionRecord,event);
     event.frameCount=CaptureStackBackTrace(1,ARRAYSIZE(event.frames),event.frames,nullptr);
     recent[recentCount++%ARRAYSIZE(recent)]=event;
+    if(event.valueKnown && !strcmp(event.type,"_com_error")) {
+        recording=true;
+        __try { TargetedCrashSnapshot::ObserveResourceCpp(info,event.value,event.frames,event.frameCount); }
+        __finally { recording=false; }
+    }
     SetLastError(error);
     return EXCEPTION_CONTINUE_SEARCH;
 }

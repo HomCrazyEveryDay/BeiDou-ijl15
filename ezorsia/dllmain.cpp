@@ -30,6 +30,7 @@
 #include "EvanCreation.h"
 #include "EvanRuntime.h"
 #include "CrashReporter.h"
+#include "ResourceLookupDiagnostics.h"
 #include "NativeExitDiagnostics.h"
 #include "NativeLoopCleanupFix.h"
 #include "ClientLog.h"
@@ -1113,6 +1114,8 @@ namespace
 		const int requestedHeight = Client::m_nGameHeight;
 		const ResolutionEnvironment resolutionEnvironment = ReadResolutionEnvironment();
 		CrashReporter::Install(enableCrashDump, crashDumpType, enableCrashTrace);
+		ClientLog::Emergency("resource_lookup_config enabled=%d installed=%d maxReports=8 observationOnly=1",
+			enableCrashDump, ResourceLookupDiagnostics::Install(GetModuleHandleW(nullptr), enableCrashDump));
 		// Modal dialogs also enter CWvsApp::Run. Repair its skipped allocation's
 		// cleanup before adding a diagnostic frame, even when crash dumps are off.
 		const bool loopCleanupReady = NativeLoopCleanupFix::Install(GetModuleHandleW(nullptr));

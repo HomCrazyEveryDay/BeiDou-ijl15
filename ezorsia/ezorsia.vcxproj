@@ -190,6 +190,7 @@
     <ClInclude Include="InventoryRefreshFix.h" />
     <ClInclude Include="CharacterSelectFocusFix.h" />
     <ClInclude Include="TargetedCrashSnapshot.h" />
+    <ClInclude Include="ResourceLookupDiagnostics.h" />
     <ClInclude Include="NativeExitDiagnostics.h" />
     <ClInclude Include="NativeLoopCleanupFix.h" />
     <ClInclude Include="ClientLog.h" />
@@ -288,6 +289,7 @@
     <ClCompile Include="InventoryRefreshFix.cpp" />
     <ClCompile Include="CharacterSelectFocusFix.cpp" />
     <ClCompile Include="TargetedCrashSnapshot.cpp" />
+    <ClCompile Include="ResourceLookupDiagnostics.cpp" />
     <ClCompile Include="NativeExitDiagnostics.cpp" />
     <ClCompile Include="NativeLoopCleanupFix.cpp" />
     <ClCompile Include="ClientLog.cpp" />
