@@ -189,6 +189,71 @@ static HRESULT __fastcall Copy(void* self, void*, int x, int y, void* source, co
     return S_OK;
 }
 
+static void* rawVtable[33]{};
+static void** rawTarget = rawVtable;
+static unsigned rawCopies;
+static HRESULT rawResult = S_OK;
+static HRESULT __stdcall RawCopy(void* self, int x, int y, void* source, VARIANT alpha) {
+    Require(self == &rawTarget && x == 12 && y == 34 && source == &nativeCanvas
+        && alpha.vt == VT_I4 && alpha.lVal == 255, "native Copy preserves all by-value arguments");
+    ++rawCopies;
+    return rawResult;
+}
+static DWORD directCopySite = 0x004B7DBB;
+// Enter the original direct call site with precisely the COM stack layout.
+// Its continuation is replaced by ret only in the isolated mapped image.
+__declspec(naked) static HRESULT __stdcall DirectCopy(void*, int, int, void*, VARIANT) {
+    __asm {
+        mov eax, esp
+        push offset finished
+        push dword ptr [eax + 32]
+        push dword ptr [eax + 28]
+        push dword ptr [eax + 24]
+        push dword ptr [eax + 20]
+        push dword ptr [eax + 16]
+        push dword ptr [eax + 12]
+        push dword ptr [eax + 8]
+        push dword ptr [eax + 4]
+        jmp dword ptr [directCopySite]
+    finished:
+        ret 32
+    }
+}
+static void CheckCopySites() {
+    using namespace ResourceReadGuards;
+    const BYTE wrapper[] = {0xff,0x90,0x80,0,0,0}, direct[] = {0xff,0x92,0x80,0,0,0};
+    Require(Patch(0x00424BC8, wrapper, sizeof(wrapper), CopyAvailableCanvas, 0xe8), "native copy wrapper patched");
+    Require(Patch(directCopySite, direct, sizeof(direct), CopyAvailableCanvas, 0xe8), "native direct copy patched");
+    *reinterpret_cast<BYTE*>(0x004B7DC1) = 0xc3;
+    rawVtable[32] = reinterpret_cast<void*>(RawCopy);
+    const auto wrapperCopy = reinterpret_cast<CopyCanvas>(0x00424BA7);
+    VARIANT alpha{}; alpha.vt = VT_I4; alpha.lVal = 255;
+    Require(wrapperCopy(&rawTarget, 12, 34, nullptr, &alpha) == S_FALSE, "native wrapper null source returns safely");
+    Require(DirectCopy(&rawTarget, 12, 34, nullptr, alpha) == S_FALSE && !rawCopies,
+        "direct null source never reaches unsafe Canvas implementation");
+    Require(wrapperCopy(&rawTarget, 12, 34, &nativeCanvas, &alpha) == S_OK, "wrapper retries valid source normally");
+    Require(DirectCopy(&rawTarget, 12, 34, &nativeCanvas, alpha) == S_OK && rawCopies == 2, "direct copy ABI and retry");
+    rawResult = E_FAIL;
+    Require(DirectCopy(&rawTarget, 12, 34, &nativeCanvas, alpha) == E_FAIL, "unrelated native HRESULT not suppressed");
+    const int before = reports;
+    for (int i = 0; i < 30; ++i) wrapperCopy(&rawTarget, 12, 34, nullptr, &alpha);
+    Require(reports - before <= 8, "null copy diagnostics bounded");
+}
+
+static DWORD canvasFault;
+static LONG CaptureCanvasFault(EXCEPTION_POINTERS* exception) {
+    if (exception->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION)
+        return EXCEPTION_CONTINUE_SEARCH;
+    canvasFault = reinterpret_cast<DWORD>(exception->ExceptionRecord->ExceptionAddress);
+    return EXCEPTION_EXECUTE_HANDLER;
+}
+static void BaselineNullCanvas(void* canvas) {
+    VARIANT alpha{}; alpha.vt = VT_I4; alpha.lVal = 255;
+    using Copy = HRESULT(__stdcall*)(void*, int, int, void*, VARIANT);
+    __try { ResourceReadGuards::Method<Copy>(canvas, 0x80)(canvas, 0, 0, nullptr, alpha); }
+    __except(CaptureCanvasFault(GetExceptionInformation())) {}
+}
+
 static void CheckNativeBracket(const wchar_t* exePath) {
     // Exercise the production loader against the real WZ components and IMG,
     // in this isolated process. No game initialization, window or connection.
@@ -231,7 +296,24 @@ static void CheckNativeBracket(const wchar_t* exePath) {
     Require(SUCCEEDED(Method<Dimension>(loaded, 0x40)(loaded, &width))
         && SUCCEEDED(Method<Dimension>(loaded, 0x48)(loaded, &height))
         && width > 0 && height > 0, "recovered canvas has valid dimensions");
+    BaselineNullCanvas(loaded);
+    Require(canvasFault == reinterpret_cast<DWORD>(GetModuleHandleW(L"Canvas.dll")) + 0xed28,
+        "real Canvas null source reproduces production ED28 fault");
+    VARIANT alpha{}; alpha.vt = VT_I4; alpha.lVal = 255;
+    const auto guardedCopy = reinterpret_cast<ResourceReadGuards::CopyCanvas>(0x00424BA7);
+    Require(guardedCopy(loaded, 0, 0, nullptr, &alpha) == S_FALSE,
+        "patched native wrapper avoids same fault with real Canvas object");
+    Require(DirectCopy(loaded, 0, 0, nullptr, alpha) == S_FALSE,
+        "patched native direct call avoids same fault with real Canvas object");
     static_cast<IUnknown*>(loaded)->Release();
+    for (const auto tutorial : {L"UI/tutorial.img/evan/0/0", L"UI/tutorial.img/evan/8/0"}) {
+        void* canvas = ResourceReadGuards::LoadCanvasAt(tutorial);
+        Require(canvas != nullptr, "Evan tutorial canvas exists at exact packet resource path");
+        Require(SUCCEEDED(Method<Dimension>(canvas, 0x40)(canvas, &width))
+            && SUCCEEDED(Method<Dimension>(canvas, 0x48)(canvas, &height))
+            && width > 0 && height > 0, "Evan tutorial dimensions");
+        static_cast<IUnknown*>(canvas)->Release();
+    }
     *reinterpret_cast<void**>(0x00BF14E8) = nullptr;
     static_cast<IUnknown*>(rm)->Release();
     static_cast<IUnknown*>(fs)->Release();
@@ -245,6 +327,7 @@ static void CheckNativeBracket(const wchar_t* exePath) {
 }
 
 int wmain(int argc, wchar_t** argv) {
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     Require(argc == 2, "EXE argument"); MapClient(argv[1]);
     using namespace ResourceReadGuards;
     const BYTE avatarBytes[] = {0x8b,0x46,0x20,0x8b,0x40,0x14};
@@ -301,7 +384,8 @@ int wmain(int argc, wchar_t** argv) {
     try { CopyStatusBracket(reinterpret_cast<void*>(42), nullptr, 472, 548, &nativeCanvas, &alpha); }
     catch (const std::runtime_error&) { propagated = true; }
     Require(propagated && fallbackCanvas.refs == 0, "unrelated native errors are not swallowed");
+    CheckCopySites();
     CheckNativeBracket(argv[1]);
-    std::puts("PASS: native slot loop, CRC cleanup/cache, x86 stack ABI, floating state, canvas recovery/refcounts and bounded retries");
+    std::puts("PASS: native slot loop, CRC cleanup/cache, x86 stack ABI, real Canvas ED28 baseline/both guarded calls, recovery/refcounts, bounded retries and Evan tutorial resources");
     return 0;
 }

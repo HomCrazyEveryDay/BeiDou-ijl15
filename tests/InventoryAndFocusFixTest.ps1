@@ -6,7 +6,7 @@ Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-ar
 $repo = Split-Path $PSScriptRoot
 $output = Join-Path $repo ('../.tmp/inventory-focus-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $output | Out-Null
-& cl.exe /nologo /std:c++17 /O2 /EHsc /MT (Join-Path $PSScriptRoot 'InventoryAndFocusFixTest.cpp') (Join-Path $repo 'ezorsia/InventoryRefreshFix.cpp') (Join-Path $repo 'ezorsia/CharacterSelectFocusFix.cpp') "/I:$repo/ezorsia" "/Fo:$output\" "/Fe:$output/test.exe" /link /BASE:0x20000000 /DYNAMICBASE:NO
+& cl.exe /nologo /std:c++17 /O2 /EHsc /MT (Join-Path $PSScriptRoot 'InventoryAndFocusFixTest.cpp') (Join-Path $repo 'ezorsia/InventoryRefreshFix.cpp') (Join-Path $repo 'ezorsia/CharacterSelectFocusFix.cpp') (Join-Path $repo 'ezorsia/CharacterStatGuard.cpp') "/I:$repo/ezorsia" "/Fo:$output\" "/Fe:$output/test.exe" /link /BASE:0x20000000 /DYNAMICBASE:NO
 if ($LASTEXITCODE -ne 0) { throw 'Inventory/focus test compilation failed' }
 & "$output/test.exe" (Resolve-Path "$repo/../BeiDou-Client/BeiDou.exe").Path
 if ($LASTEXITCODE -ne 0) { throw "Inventory/focus test failed: $LASTEXITCODE; $output" }

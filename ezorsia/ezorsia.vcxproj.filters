@@ -231,6 +231,9 @@
     <ClInclude Include="NpcDialogFocusFix.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="CharacterStatGuard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="TargetedCrashSnapshot.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -363,6 +366,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="NpcDialogFocusFix.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="CharacterStatGuard.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="TargetedCrashSnapshot.cpp">

@@ -2,6 +2,7 @@
 #include <windows.h>
 #include <oleauto.h>
 #include <cstring>
+#include <intrin.h>
 #include "CrashReporter.h"
 #include "ResourceVariant.h"
 #pragma comment(lib, "oleaut32.lib")
@@ -10,6 +11,7 @@
 // CANVAS+ED28 (008DA50B). Do not catch arbitrary access violations.
 namespace ResourceReadGuards {
 static LONG avatarReports = 0, itemReports = 0, canvasReports = 0;
+static LONG missingCopyReports = 0;
 static DWORD avatarResume = 0x00401D44, avatarFallback = 0x00401D50, avatarSkip = 0x00401DBE;
 static DWORD itemResume = 0x005DAD83, itemReturn = 0x005DADE1;
 
@@ -121,10 +123,10 @@ __declspec(naked) static void ItemInfo() {
 template<class F> static F Method(void* object, unsigned offset) {
     return reinterpret_cast<F>((*reinterpret_cast<void***>(object))[offset / 4]);
 }
-static void* LoadBracket() {
+static void* LoadCanvasAt(const wchar_t* resourcePath) {
     void* rm = *reinterpret_cast<void**>(0x00BF14E8);
     if (!rm) return nullptr;
-    BSTR path = SysAllocString(L"UI/StatusBar.img/number/Lbracket");
+    BSTR path = SysAllocString(resourcePath);
     if (!path) return nullptr;
     VARIANT missing{}, value{};
     missing.vt = VT_ERROR;
@@ -140,6 +142,7 @@ static void* LoadBracket() {
     ResourceVariant::Clear(&value);
     return canvas; // Owns the QueryInterface reference.
 }
+static void* LoadBracket() { return LoadCanvasAt(L"UI/StatusBar.img/number/Lbracket"); }
 using CopyCanvas = HRESULT(__thiscall*)(void*, int, int, void*, const VARIANT*);
 static auto copyCanvas = reinterpret_cast<CopyCanvas>(0x00424BA7);
 static auto loadBracket = &LoadBracket;
@@ -171,6 +174,28 @@ static HRESULT __fastcall CopyStatusBracket(void* self, void*, int x, int y,
     return bracket ? copyCanvas(self, x, y, bracket, alpha) : S_FALSE;
 }
 
+// Both observed callers use IWzCanvas::Copy, whose native implementation
+// dereferences the source in Canvas+ED28 without checking it. Retain the
+// caller's VARIANT cleanup and all non-null drawing/error behavior. Missing
+// resources must still be diagnosed; this only omits the unavailable draw.
+static HRESULT __stdcall CopyAvailableCanvas(void* self, int x, int y,
+    void* source, VARIANT alpha) {
+    if (source) {
+        using Copy = HRESULT(__stdcall*)(void*, int, int, void*, VARIANT);
+        return Method<Copy>(self, 0x80)(self, x, y, source, alpha);
+    }
+    if (InterlockedIncrement(&missingCopyReports) <= 8) {
+        const DWORD error = GetLastError();
+        void* frames[6]{};
+        CaptureStackBackTrace(1, 6, frames, nullptr);
+        CrashReporter::RecordEvent("resource.guard",
+            "canvas missing_source caller=%p target=%p x=%d y=%d frames=%p,%p,%p,%p,%p,%p draw=omitted",
+            _ReturnAddress(), self, x, y, frames[0], frames[1], frames[2], frames[3], frames[4], frames[5]);
+        SetLastError(error);
+    }
+    return S_FALSE;
+}
+
 static bool Patch(DWORD address, const BYTE* expected, SIZE_T size, void* target, BYTE opcode) {
     auto site = reinterpret_cast<BYTE*>(address);
     if (std::memcmp(site, expected, size)) return false;
@@ -197,9 +222,13 @@ static void Install() {
     const BYTE avatar[] = {0x8b,0x46,0x20,0x8b,0x40,0x14};
     const BYTE item[] = {0x8b,0x45,0xe4,0x51,0x51};
     const BYTE canvas[] = {0xe8,0x97,0xa6,0xb4,0xff};
+    const BYTE copyWrapper[] = {0xff,0x90,0x80,0,0,0};
+    const BYTE copyDirect[] = {0xff,0x92,0x80,0,0,0};
     const bool a = Patch(0x00401D3E, avatar, sizeof(avatar), AvatarSlots, 0xe9);
     const bool i = Patch(0x005DAD7E, item, sizeof(item), ItemInfo, 0xe9);
     const bool c = Patch(0x008DA50B, canvas, sizeof(canvas), CopyStatusBracket, 0xe8);
-    CrashReporter::RecordEvent("resource.guard", "install avatar=%d item=%d statusbar=%d", a, i, c);
+    const bool w = Patch(0x00424BC8, copyWrapper, sizeof(copyWrapper), CopyAvailableCanvas, 0xe8);
+    const bool d = Patch(0x004B7DBB, copyDirect, sizeof(copyDirect), CopyAvailableCanvas, 0xe8);
+    CrashReporter::RecordEvent("resource.guard", "install avatar=%d item=%d statusbar=%d copyWrapper=%d copyDirect=%d", a, i, c, w, d);
 }
 }

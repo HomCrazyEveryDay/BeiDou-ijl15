@@ -5,6 +5,7 @@
 #include <vector>
 #include "../ezorsia/InventoryRefreshFix.h"
 #include "../ezorsia/CharacterSelectFocusFix.h"
+#include "../ezorsia/CharacterStatGuard.h"
 
 namespace CrashReporter { void RecordEvent(const char*,const char*,...) {} }
 constexpr DWORD Relocation = 0x30000000;
@@ -125,8 +126,48 @@ static bool FocusFaults(DWORD code) {
     __except(GetExceptionCode()==code ? EXCEPTION_EXECUTE_HANDLER:EXCEPTION_CONTINUE_SEARCH) { return true; }
     return false;
 }
+static BYTE statContext[0x20bc];
+static int statCalls;
+static bool statThrows;
+static void __fastcall ApplyStats(void* context, void*, void* input) {
+    Require(context == statContext && input == &packet, "stat context and packet ABI");
+    Require(*reinterpret_cast<void**>(statContext + 0x20b8) == &pet, "valid character reaches native handler");
+    ++statCalls;
+    if (statThrows) RaiseException(0xe0424242, 0, 0, nullptr);
+    ++packet.cursor;
+}
+static bool DispatchStats() {
+    using Dispatch = void(__thiscall*)(void*, int, void*);
+    __try { reinterpret_cast<Dispatch>(N(0xa07a08))(statContext, 0x1f, &packet); }
+    __except(GetExceptionCode() == 0xe0424242 ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) { return false; }
+    return true;
+}
+static void CheckStats(BYTE* base) {
+    Require(!CharacterStatGuard::Install(nullptr), "stat missing image rejected");
+    const BYTE original = base[0x607a3e]; base[0x607a3e] ^= 1;
+    Require(!CharacterStatGuard::Install(reinterpret_cast<HMODULE>(base)), "stat changed dispatcher rejected");
+    base[0x607a3e] = original;
+    Require(CharacterStatGuard::Install(reinterpret_cast<HMODULE>(base)), "stat guard installed");
+    Require(CharacterStatGuard::Install(reinterpret_cast<HMODULE>(base)), "stat repeated installation harmless");
+    // Execute the real native packet dispatcher, including its jump table,
+    // call site, epilogue and stack cleanup. Only the business handler is a
+    // stand-in; no game world or sockets are initialized by this test.
+    *reinterpret_cast<DWORD*>(N(0xa07a1d)) = N(0xa07e8e);
+    *reinterpret_cast<DWORD*>(N(0xa07e8e) + 2 * 4) = N(0xa07a3b);
+    Jump(0xa1fb52, ApplyStats);
+    packet.cursor = 0;
+    for (int i = 0; i < 30; ++i) Require(DispatchStats(), "missing character packet safely discarded");
+    Require(statCalls == 0 && packet.cursor == 0, "absent character does not consume or apply delta");
+    *reinterpret_cast<void**>(statContext + 0x20b8) = &pet;
+    Require(DispatchStats() && statCalls == 1 && packet.cursor == 1, "next valid character update reaches handler");
+    statThrows = true;
+    Require(!DispatchStats() && statCalls == 2, "valid character handler exceptions propagate");
+    puts("PASS stat: real 0x1F dispatcher, missing/present character, packet ABI, propagation and signature rejection");
+}
 int main(int argc,char** argv) {
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     Require(argc==2,"client path"); BYTE* base=Map(argv[1]);
+    CheckStats(base);
     *reinterpret_cast<DWORD*>(N(0xa1ecc7))=N(0xbebf98);
     *reinterpret_cast<DWORD*>(N(0xa1f0ee))=N(0xaf01fc);
     Jump(0x4282f7,Lookup); Jump(0x428a50,Release);

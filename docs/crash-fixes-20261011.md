@@ -1,10 +1,25 @@
 # 2026-10-11 生产崩溃首批修复与本地交付
 
-## 2026-10-14 提交范围补充
+## 2026-10-14 后续统一提交与本地交付
+
+本次将此前暂缓的 Canvas 空源保护、`CharacterStatGuard` 及测试统一纳入源码和配套 DLL。下文暂缓决定及旧哈希作为历史记录保留；当前交付已包含两组保护，同时保留 NPC 焦点恢复和内存池启动时序修复。
+
+- Canvas 空源调用返回 `S_FALSE`，省略当前不可用的绘制；非空绘制和原生错误处理保留。空源的根因尚未解决，仍可能出现局部缺图。
+- `STAT_CHANGED` 到达时若角色数据尚未初始化或已经清理，记录并丢弃当前独立属性包；不会重放到后续角色。服务端初始化包序和异常响应仍需继续排查，不能据此认定属性同步根因已解决。
+- 两组诊断每次运行各最多记录八条，不增加逐帧日志。
+- `tests/ResourceReadGuardsTest.ps1` 通过：真实 Canvas 空源 `ED28` 基线、两个修补调用入口、COM 参数与返回值、引用计数及资源读取。
+- `tests/InventoryAndFocusFixTest.ps1` 通过：真实 `0x1F` 分派器、无角色丢包、后续有效属性更新、异常传播，以及背包与选角焦点回归。
+- `ezorsia.sln` 的 `Release|x86` 重新构建通过，0 错误、47 条已有警告；日志位于 workspace `.tmp/dll-guards-20261014/build.log`。
+- 确认客户端关闭后，已将 `out/Release/ijl15.dll` 同步到 `BeiDou-Client/ijl15.dll`。大小为 813056 bytes，两者 SHA-256 均为 `2CDEE582176B2278FA765AEBBDE47CF86BC9B58C0CFE13CF074E9D91011A765F`。
+- 旧 DLL 备份为 workspace `exports/dll-guards-20261014/ijl15-before-48671ACDD37D.dll`，新 DLL 配套符号为同目录 `ijl15.pdb`。本地回退须先关闭客户端，再恢复该备份并核对 SHA-256 为 `48671ACDD37D4EC9E5B51F9CE3AC4E90B9FA5275E7D4F4945B4CED48E6250743`。
+
+此次仅执行离线组件测试、构建和本地 DLL 同步，没有启动游戏或部署远端。画面完整性、角色属性同步、登录换线和 NPC 对话仍须实机验收。
+
+## 2026-10-14 首次提交范围
 
 本次统一整理已交付的 [NPC 对话焦点修复](npc-dialog-focus-20261013.md)和[内存池探针启动时序修复](pool-guard-startup-crash-20261014.md)。配套 DLL 的 SHA-256 为 `48671ACDD37D4EC9E5B51F9CE3AC4E90B9FA5275E7D4F4945B4CED48E6250743`，`Release|x86` 构建及两项离线回归通过，游戏内行为仍待实测。
 
-下述 Canvas 空源跳过绘制和 `CharacterStatGuard` 两组候选保护继续暂缓，未包含在这次提交或配套 DLL 中。保留本记录是为了说明历史构建和当前交付的区别。
+当时下述 Canvas 空源跳过绘制和 `CharacterStatGuard` 两组候选保护继续暂缓，未包含在首次提交或配套 DLL 中。保留本记录是为了说明历史构建和当前交付的区别。
 
 ## 2026-10-13 状态补充
 

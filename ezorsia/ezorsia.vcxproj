@@ -190,6 +190,7 @@
     <ClInclude Include="PoolGuardCore.h" />
     <ClInclude Include="MobInitializationFix.h" />
     <ClInclude Include="InventoryRefreshFix.h" />
+    <ClInclude Include="CharacterStatGuard.h" />
     <ClInclude Include="CharacterSelectFocusFix.h" />
     <ClInclude Include="NpcDialogFocusFix.h" />
     <ClInclude Include="TargetedCrashSnapshot.h" />
@@ -291,6 +292,7 @@
     <ClCompile Include="PoolGuard.cpp" />
     <ClCompile Include="MobInitializationFix.cpp" />
     <ClCompile Include="InventoryRefreshFix.cpp" />
+    <ClCompile Include="CharacterStatGuard.cpp" />
     <ClCompile Include="CharacterSelectFocusFix.cpp" />
     <ClCompile Include="NpcDialogFocusFix.cpp" />
     <ClCompile Include="TargetedCrashSnapshot.cpp" />
