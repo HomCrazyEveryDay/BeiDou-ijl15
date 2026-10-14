@@ -143,6 +143,21 @@ void CopyResourceEvidence(Snapshot& snapshot) {
             CopyBlock(snapshot,f.address,32); // all five Boss arguments
             break;
         }
+    } else if (snapshot.family==Family::FaceResource) {
+        CopyBlock(snapshot,base+0x7f14e0,16);
+        for (DWORD i=0;i<snapshot.frameCount;++i) {
+            const auto& f=snapshot.frames[i];
+            // 0045370F is CAvatar's return from LoadFaceAction (00407A36).
+            // Capture before its cleanup releases the expression properties.
+            if (f.words[1]!=base+0x5370f || f.address<0x138 || f.address>MAXDWORD-0x20) continue;
+            CopyBlock(snapshot,f.address-0x138,256); // original IDs, cache owners
+            CopyBlock(snapshot,f.address-0x38,0x58); // property/canvas locals, arguments
+            for (DWORD offset : {0x20u,0x1cu,0x14u}) {
+                DWORD object=0;
+                if (Read(f.address-offset,&object,4)) CopyBlock(snapshot,object,0x50);
+            }
+            break;
+        }
     } else if (snapshot.family==Family::CashCategory) CopyCashCategoryEvidence(snapshot);
 }
 void CaptureNow(EXCEPTION_POINTERS* info, Family family) {
@@ -221,6 +236,7 @@ const char* Name(Family family) {
     case Family::PcomFactory:return "pcom_factory_first_throw";
     case Family::BossResource:return "boss_resource_first_throw";
     case Family::CashCategory:return "cash_category_first_throw";
+    case Family::FaceResource:return "face_resource_first_throw";
     default:return "unknown";
     }
 }
@@ -232,12 +248,13 @@ void ObserveResourceCpp(EXCEPTION_POINTERS* info,DWORD hresult,void* const* fram
     const DWORD error=GetLastError();
     const DWORD base=reinterpret_cast<DWORD>(clientBase);
     const DWORD pc=hresult==0x800401f8 ? KnownPcom():0;
-    bool factoryThrow=false,factoryCaller=false,bossCaller=false;
+    bool factoryThrow=false,factoryCaller=false,bossCaller=false,faceCaller=false;
     for (unsigned i=0;i<count && i<24;++i) {
         const DWORD address=reinterpret_cast<DWORD>(frames[i]);
         if (pc && address==pc+0x52cf) factoryThrow=true;
         if (pc && address==pc+0x4e67) factoryCaller=true;
         if (address==base+0x133315) bossCaller=true;
+        if (address==base+0x5370f) faceCaller=true;
     }
     // Start from the original exception context too: stack walking inside the
     // VEH itself can stop at an optimized handler frame and lose native callers.
@@ -248,11 +265,13 @@ void ObserveResourceCpp(EXCEPTION_POINTERS* info,DWORD hresult,void* const* fram
         if (pc && words[1]==pc+0x52cf) factoryThrow=true;
         if (pc && words[1]==pc+0x4e67) factoryCaller=true;
         if (words[1]==base+0x133315) bossCaller=true;
+        if (words[1]==base+0x5370f) faceCaller=true;
         if (words[0]<=frame || words[0]-frame>1024*1024) break;
         frame=words[0];
     }
     if (factoryThrow && factoryCaller) CaptureNow(info,Family::PcomFactory);
     else if (hresult==0x80004003 && bossCaller) CaptureNow(info,Family::BossResource);
+    else if (hresult==0x80004003 && faceCaller) CaptureNow(info,Family::FaceResource);
     SetLastError(error);
 }
 void ObserveCashCategoryCpp(EXCEPTION_POINTERS* info,DWORD code) {

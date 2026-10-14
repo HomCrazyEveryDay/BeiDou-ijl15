@@ -280,6 +280,41 @@ static void VerifyMobHitAfter() {
     }
     keyPointer = previousKey;
 }
+static void VerifyFaceFallback() {
+    invokeSite = 0x00403970;
+    wchar_t frameKey[] = L"0";
+    const DWORD previousKey = keyPointer;
+    keyPointer = reinterpret_cast<DWORD>(frameKey);
+    for (DWORD caller : {0x0040822f, 0x00409193}) {
+        const auto call = reinterpret_cast<const BYTE*>(caller - 5);
+        Require(call[0] == 0xe8 && caller + *reinterpret_cast<const DWORD*>(call + 1) == 0x00403935,
+            "face fallback is an actual native property query call");
+        ResetReports(); Prepare(caller, S_OK, VT_UNKNOWN, 0x1234); CheckMachine();
+        Require(!reports && !reads, "valid face fallback performs no diagnostic reads");
+        Prepare(caller, S_FALSE, VT_EMPTY, 0);
+        *reinterpret_cast<DWORD*>(outerFrame - 0x138) = 54050;
+        *reinterpret_cast<DWORD*>(outerFrame - 0x134) = 0;
+        *reinterpret_cast<DWORD*>(outerFrame - 0x130) = 1012057;
+        CheckMachine();
+        Require(branch == 1 && reports == 1 && lines.size() == 2
+            && lines[0].find("key=\"0\"") != std::string::npos
+            && lines[0].find("hr=00000001") != std::string::npos
+            && lines[1].find("faceId=54050 accessoryId=1012057 expression=0") != std::string::npos,
+            "failed mandatory face frame preserves key, IDs and native S_FALSE");
+        Require(!std::memcmp(reinterpret_cast<void*>(frame - 0x20), &value, sizeof(value)),
+            "face diagnostic never clears or replaces returned VARIANT");
+        CheckMachine(); Require(reports == 1 && lines.size() == 2, "face fallback same-site dedup");
+        ResetReports(); Prepare(caller, E_FAIL, VT_EMPTY, 0); failWriter = true;
+        CheckMachine(); failWriter = false;
+        Require(branch == 2 && iid == 0x00bd8308 && !busy, "face logger failure preserves native exception branch");
+    }
+    ResetReports();
+    for (DWORD caller : {0x00408197, 0x00409101, 0x0040822e, 0x00408230, 0x00409192, 0x00409194}) {
+        Prepare(caller, S_FALSE, VT_EMPTY, 0); CheckMachine();
+        Require(!reports && !reads, "optional default and unrelated face queries do not consume failure budget");
+    }
+    keyPointer = previousKey;
+}
 static double Time(unsigned iterations) {
     LARGE_INTEGER freq{}, a{}, b{}; QueryPerformanceFrequency(&freq); QueryPerformanceCounter(&a);
     for (unsigned i = 0; i < iterations; ++i) Invoke();
@@ -307,7 +342,7 @@ static void Benchmark() {
 }
 int wmain(int argc, wchar_t** argv) {
     Require(argc == 2, "EXE fixture argument required"); auto image = Map(argv[1]);
-    VerifyInstallation(image); VerifyLookup(); VerifyQI(); VerifyCriticalAndBoss(); VerifyDictionary(); VerifyTruncatedName(); VerifyMobHitAfter(); Benchmark();
+    VerifyInstallation(image); VerifyLookup(); VerifyQI(); VerifyCriticalAndBoss(); VerifyDictionary(); VerifyTruncatedName(); VerifyMobHitAfter(); VerifyFaceFallback(); Benchmark();
     std::puts("PASS: native branches/registers/stack, COM result/ownership, failure isolation, signatures, limits, healthy-path overhead");
     return 0;
 }

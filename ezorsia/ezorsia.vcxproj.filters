@@ -356,6 +356,9 @@
     <ClCompile Include="PoolGuard.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="LegacyStringConversionFix.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="MobInitializationFix.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

@@ -184,6 +184,7 @@
     <ClInclude Include="CharacterSlots.h" />
     <ClInclude Include="ClientCrashFixes.h" />
     <ClInclude Include="ResourceReadGuards.h" />
+    <ClInclude Include="LegacyStringConversionFix.h" />
     <ClInclude Include="FlashRendererFix.h" />
     <ClInclude Include="PcomExitFix.h" />
     <ClInclude Include="PoolGuard.h" />
@@ -290,6 +291,7 @@
     <ClCompile Include="FlashRendererFix.cpp" />
     <ClCompile Include="PcomExitFix.cpp" />
     <ClCompile Include="PoolGuard.cpp" />
+    <ClCompile Include="LegacyStringConversionFix.cpp" />
     <ClCompile Include="MobInitializationFix.cpp" />
     <ClCompile Include="InventoryRefreshFix.cpp" />
     <ClCompile Include="CharacterStatGuard.cpp" />

@@ -221,6 +221,149 @@ static void CheckNativeAssignmentContract() {
     Require(assignmentResult == E_NOINTERFACE && !*output && old.refs == 0,
         "missing native input remains E_NOINTERFACE with correct cleanup");
 }
+// Use the EXE's actual null-pointer check. Only its throw sink is replaced in
+// this isolated mapping so the probe can capture the HRESULT without loading
+// the game's C++ runtime or running its entry point.
+static void __cdecl CaptureCanvasError(HRESULT hr) {
+    Require(hr == E_POINTER, "native guard passes exact E_POINTER HRESULT");
+    const ULONG_PTR value = static_cast<ULONG_PTR>(hr);
+    RaiseException(0xE042FACE, EXCEPTION_NONCONTINUABLE, 1, &value);
+}
+static HRESULT CanvasGuard(void** canvas) {
+    using Guard = void*(__thiscall*)(void**);
+    __try {
+        Require(reinterpret_cast<Guard>(0x00414576)(canvas) == *canvas, "native guard returns canvas");
+        return S_OK;
+    } __except (GetExceptionCode() == 0xE042FACE ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH) {
+        return E_POINTER;
+    }
+}
+static DWORD faceSite;
+__declspec(naked) static void RunFaceCallSite() {
+    __asm {
+        push ebp
+        push ebx
+        push esi
+        push edi
+        mov ebp, faceFramePointer
+        lea ecx, [ebp - 14h]
+        lea eax, sourceCanvas
+        push offset resumed
+        push eax
+        jmp dword ptr [faceSite]
+    resumed:
+        mov assignmentResult, eax
+        pop edi
+        pop esi
+        pop ebx
+        pop ebp
+        ret
+    }
+}
+static void CheckFaceCanvasRecovery() {
+    using namespace ModernEquipmentCompatibility;
+    const BYTE guard[] = {0x56,0x8b,0xf1,0x83,0x3e,0,0x75,0x0a,0x68,3,0x40,0,0x80,0xe8};
+    Require(!std::memcmp(reinterpret_cast<void*>(0x00414576), guard, sizeof(guard)), "actual crash null guard signature");
+    auto sink = reinterpret_cast<BYTE*>(0x00A5FDE4);
+    sink[0] = 0xe9;
+    *reinterpret_cast<DWORD*>(sink + 1) = reinterpret_cast<DWORD>(CaptureCanvasError) - (reinterpret_cast<DWORD>(sink) + 5);
+    // Return immediately after the installed call in the disposable mapping.
+    // This preserves the exact return PC used to select the native frame key.
+    for (DWORD site : {0x004081B2,0x00409119}) {
+        DWORD old = 0;
+        Require(VirtualProtect(reinterpret_cast<void*>(site), 6, PAGE_EXECUTE_READWRITE, &old), "isolated call continuation");
+        *reinterpret_cast<BYTE*>(site + 5) = 0xc3;
+    }
+    FlushInstructionCache(GetCurrentProcess(), nullptr, 0);
+    const GUID propertyId = {0x986515d9,0x0a0b,0x4929,{0x8b,0x4f,0x71,0x86,0x82,0x17,0x7b,0x92}};
+    auto frame = static_cast<BYTE*>(faceFramePointer);
+    auto out = reinterpret_cast<void**>(frame - 0x14);
+    *reinterpret_cast<int*>(frame - 0x138) = 54050;
+    *reinterpret_cast<int*>(frame - 0x134) = 0; // Native expression table: blink.
+    *reinterpret_cast<int*>(frame - 0x130) = 1012057;
+    void* expected = LoadCanvas(L"Character/Accessory/01012057.img/default/default");
+    Require(expected != nullptr, "crash accessory original artwork");
+    for (int index = 0; index < 3; ++index) {
+        wchar_t path[128], key[16];
+        swprintf_s(key, L"%d", index);
+        swprintf_s(path, L"Character/Accessory/01012057.img/blink/%d", index);
+        void* property = LoadInterface(path, propertyId);
+        Require(property != nullptr, "crash accessory blink frame");
+        VARIANT raw{};
+        BSTR name = SysAllocString(L"default");
+        Require(SUCCEEDED(Method<HRESULT(__stdcall*)(void*,BSTR,VARIANT*)>(property,0x14)(property,name,&raw)), "native raw default query");
+        SysFreeString(name);
+        Require(raw.vt == VT_UNKNOWN && raw.punkVal, "raw result owns UOL");
+        // Native 00414ADA normally resolves UOLs before Canvas assignment.
+        // Verify that normal lookup works; then inject its empty result, as
+        // observed at the crash guard. This is failure-path replay, not proof
+        // that a healthy UOL always crashes the complete native compositor.
+        const GUID uolId = {0xf945bf59,0xd1ec,0x45e8,{0x8b,0xd9,0x3d,0xd1,0x1a,0xc1,0xa4,0x8a}};
+        void* uol = nullptr;
+        Require(SUCCEEDED(raw.punkVal->QueryInterface(uolId,&uol)) && uol, "actual blink default is UOL");
+        ResourceVariant::String absolute;
+        Require(SUCCEEDED(Method<HRESULT(__stdcall*)(void*,BSTR*)>(uol,0x2c)(uol,&absolute.value)), "native UOL absolute target");
+        void* normal = LoadCanvas(absolute.value);
+        Require(normal == expected, "normal native UOL target resolves; not a natural crash reproduction");
+        static_cast<IUnknown*>(normal)->Release();
+        static_cast<IUnknown*>(uol)->Release();
+        sourceCanvas = raw.punkVal;
+        auto original = reinterpret_cast<HRESULT(__thiscall*)(void**,void**)>(assignCanvas);
+        Require(original(out,&sourceCanvas) == E_NOINTERFACE && !*out, "unmodified native QI rejects actual UOL");
+        Require(CanvasGuard(out) == E_POINTER, "real blink input reproduces original crash guard");
+        std::printf("REPLAY: accessory=1012057 blink/%d unresolved input => QI=80004002 guard=80004003; normal UOL lookup succeeds\n", index);
+        const wchar_t* holder = key;
+        for (DWORD site : {0x004081B2,0x00409119}) {
+            // The two native traversals keep the accessory frame key in
+            // different _bstr_t locals. Poison the unused one to detect mixing.
+            *reinterpret_cast<const wchar_t***>(frame - 0x40) = site == 0x004081B2 ? &holder : nullptr;
+            *reinterpret_cast<const wchar_t***>(frame - 0x30) = site == 0x00409119 ? &holder : nullptr;
+            faceSite = site;
+            for (int mode = 0; mode < 2; ++mode) {
+                sourceCanvas = mode ? raw.punkVal : nullptr;
+                if (!mode) {
+                    Require(original(out,&sourceCanvas) == E_NOINTERFACE && !*out, "original assignment of empty conversion");
+                    Require(CanvasGuard(out) == E_POINTER, "empty conversion reproduces native guard failure");
+                }
+                const ULONG refs = static_cast<IUnknown*>(expected)->AddRef();
+                static_cast<IUnknown*>(expected)->Release();
+                for (int repeat = 0; repeat < 200; ++repeat) {
+                    SetLastError(2468);
+                    const unsigned csr = _mm_getcsr();
+                    RunFaceCallSite();
+                    Require(assignmentResult == S_OK && *out, "face bridge recovers same frame after empty/unresolved conversion");
+                    Require(GetLastError() == 2468 && _mm_getcsr() == csr, "recovery bridge preserves LastError and FP state");
+                    Require(CanvasGuard(out) == S_OK, "same native crash guard succeeds after repair");
+                    Require(*out == expected, "same native canvas identity preserves artwork and metadata");
+                    CheckPixels(*out,4,4);
+                    static_cast<IUnknown*>(*out)->Release(); *out = nullptr;
+                }
+                Require(static_cast<IUnknown*>(expected)->AddRef() == refs, "repeated recovery does not leak canvas references");
+                static_cast<IUnknown*>(expected)->Release();
+            }
+            void* rm = *reinterpret_cast<void**>(0x00BF14E8);
+            *reinterpret_cast<void**>(0x00BF14E8) = nullptr;
+            RunFaceCallSite();
+            Require(assignmentResult == E_NOINTERFACE && !*out, "unavailable ResMan preserves native failure");
+            *reinterpret_cast<void**>(0x00BF14E8) = rm;
+            *reinterpret_cast<int*>(frame - 0x130) = 1019999;
+            RunFaceCallSite();
+            Require(assignmentResult == E_NOINTERFACE && !*out, "missing accessory never replaced by other artwork");
+            *reinterpret_cast<int*>(frame - 0x130) = 1012057;
+            iconObject.queryResult = E_FAIL;
+            iconObject.AddRef(); sourceCanvas = &iconObject;
+            RunFaceCallSite();
+            Require(assignmentResult == E_FAIL && !*out && iconObject.refs == 1, "unrelated QI failure is not swallowed");
+            iconObject.Release(); iconObject.queryResult = S_OK;
+            sourceCanvas = nullptr;
+        }
+        ResourceVariant::Clear(&raw);
+        static_cast<IUnknown*>(property)->Release();
+    }
+    static_cast<IUnknown*>(expected)->Release();
+    std::memset(faceFrame,0,sizeof(faceFrame)); sourceCanvas = nullptr;
+    std::puts("PASS: 2400 real-canvas recoveries from empty/unresolved results, both installed call sites, native E_POINTER before/after, failure paths");
+}
 static SIZE_T PrivateBytes() {
     PROCESS_MEMORY_COUNTERS_EX memory{};
     Require(GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&memory),
@@ -565,7 +708,7 @@ static void CheckNativeResources(const wchar_t* exePath, const wchar_t* followup
     SysFreeString(path);
     *reinterpret_cast<void**>(0x00BF14E8) = rm;
     if (followupRoot) CheckFollowupResources();
-    else { CheckInstalledResources(); CheckPetEquipmentResources(); CheckPetRenderingTrace(); CheckPetActionUols(); CheckNameTagResources(create); }
+    else { CheckFaceCanvasRecovery(); CheckInstalledResources(); CheckPetEquipmentResources(); CheckPetRenderingTrace(); CheckPetActionUols(); CheckNameTagResources(create); }
     *reinterpret_cast<void**>(0x00BF14E8) = nullptr;
     static_cast<IUnknown*>(rm)->Release();
     static_cast<IUnknown*>(fs)->Release();

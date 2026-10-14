@@ -115,4 +115,45 @@ int wmain(int argc,wchar_t** argv) {
         "built-in branch distinguishes zero self handle from LoadLibrary failure");
     Require(HasText(L"Property") && HasText(L"PROPERTY"),"built-in class strings survive first throw");
     puts("PASS native PCOM built-in failure: Property/PROPERTY, self handle zero, route=0");
+
+    // Face first-throw evidence uses a synthetic original CONTEXT: replay the
+    // observed layout without claiming this reproduces the player's empty cache.
+    static_assert(static_cast<DWORD>(Family::CashCategory)==8 && static_cast<DWORD>(Family::FaceResource)==9,
+        "persisted family numbers must not change");
+    memset(frameBytes,0,sizeof(frameBytes));
+    BYTE parent[0x50]{}, faceCanvas[0x50]{}, accessoryCanvas[0x50]{};
+    parent[0]=0x37; faceCanvas[0]=0x49; accessoryCanvas[0]=0x61;
+    words[1]=reinterpret_cast<DWORD>(image)+0x5370f;
+    auto put=[&](DWORD offset,DWORD value){*reinterpret_cast<DWORD*>(frame-offset)=value;};
+    put(0x138,54050); put(0x134,0); put(0x130,1012057);
+    put(0x20,reinterpret_cast<DWORD>(parent)); put(0x1c,reinterpret_cast<DWORD>(faceCanvas));
+    put(0x14,reinterpret_cast<DWORD>(accessoryCanvas));
+    frames[0]=nullptr; // classification must use the original EBP chain.
+    const unsigned beforeFace=calls;
+    ObserveResourceCpp(&info,0x800401f8,frames,1);
+    words[1]+=1; ObserveResourceCpp(&info,0x80004003,frames,1); words[1]-=1;
+    Require(calls==beforeFace,"face scope requires exact native caller and E_POINTER");
+    const auto originalRecord=record; const auto originalContext=context;
+    SetLastError(246); ObserveResourceCpp(&info,0x80004003,frames,1);
+    Require(calls==beforeFace+1 && captured.family==Family::FaceResource && captured.memoryCount<=8
+        && GetLastError()==246,"face original-context capture and fixed budget");
+    const auto ids=Bytes(frame-0x138,12);
+    Require(ids && *reinterpret_cast<const DWORD*>(ids)==54050 && *reinterpret_cast<const DWORD*>(ids+8)==1012057,
+        "face and accessory IDs preserved before native cleanup");
+    for (auto object : {parent,faceCanvas,accessoryCanvas}) {
+        const auto bytes=Bytes(reinterpret_cast<DWORD>(object),0x50);
+        Require(bytes && !memcmp(bytes,object,0x50),"live property/canvas metadata copied without COM access");
+    }
+    Require(!memcmp(&record,&originalRecord,sizeof(record)) && !memcmp(&context,&originalContext,sizeof(context)),
+        "face observation leaves original exception and context untouched");
+    ObserveResourceCpp(&info,0x80004003,frames,1);
+    Require(calls==beforeFace+1,"face first-throw session dedup");
+    TargetedCrashSnapshot::claimed &= ~(1L<<static_cast<unsigned>(Family::FaceResource));
+    TargetedCrashSnapshot::snapshots[static_cast<unsigned>(Family::FaceResource)] = {};
+    put(0x14,0); put(0x20,1); failWriter=true;
+    ObserveResourceCpp(&info,0x80004003,frames,1); failWriter=false;
+    Require(calls==beforeFace+2 && !TargetedCrashSnapshot::capturing && !Bytes(1,4)
+        && !*reinterpret_cast<const DWORD*>(Bytes(frame-0x14,4)),
+        "actual null accessory shape, unreadable owner and writer fault remain safe");
+    puts("PASS face first-throw scope, original IDs/objects, null/partial memory, bounded capture and failure isolation");
 }

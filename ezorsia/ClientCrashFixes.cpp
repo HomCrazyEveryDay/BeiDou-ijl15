@@ -15,6 +15,7 @@
 #include "CharacterSelectFocusFix.h"
 #include "NpcDialogFocusFix.h"
 #include "CharacterStatGuard.h"
+#include "LegacyStringConversionFix.h"
 
 namespace {
 
@@ -222,6 +223,8 @@ void __fastcall HookInitializeCharacterList(void* self, void*, void* records)
 
 void ClientCrashFixes::Install()
 {
+    CrashReporter::RecordEvent("string.conversion.fix", "ready=%d",
+        LegacyStringConversionFix::Install(GetModuleHandleW(nullptr)) ? 1 : 0);
     CrashReporter::RecordEvent("mob.init.fix", "ready=%d",
         MobInitializationFix::Install(GetModuleHandleW(nullptr)) ? 1 : 0);
     CrashReporter::RecordEvent("inventory.refresh", "ready=%d",

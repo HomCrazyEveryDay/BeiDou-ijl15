@@ -288,25 +288,71 @@ static void __stdcall FaceImage(void** canvas, int itemId, int faceId) {
 }
 
 static DWORD assignCanvas = 0x0041E42B;
+static HRESULT __stdcall FinishFaceCanvas(void** canvas, BYTE* frame,
+    DWORD caller, HRESULT original) {
+    const DWORD error = GetLastError();
+    const int itemId = *reinterpret_cast<int*>(frame - 0x130);
+    const int faceId = *reinterpret_cast<int*>(frame - 0x138);
+    // The native VARIANT/UOL conversion can yield no canvas. Canvas QI then
+    // returns E_NOINTERFACE; the old bridge skipped recovery on that HRESULT.
+    // Retry the SAME accessory/expression/frame through ResMan before the
+    // native numbered-child fallback. Do not invent artwork or swallow errors.
+    if (original == E_NOINTERFACE && !*canvas
+        && itemId >= 1010000 && itemId < 1020000
+        && (caller == 0x004081B7 || caller == 0x0040911E)) {
+        // Order verified against EXE 0045E8C0, table 00BEC284. Invalid
+        // expression indexes use blink, matching LoadFaceAction 00407B8C.
+        static const wchar_t* expressions[] = {L"blink",L"hit",L"smile",L"troubled",L"cry",
+            L"angry",L"bewildered",L"stunned",L"vomit",L"oops",L"cheers",L"chu",L"wink",
+            L"pain",L"glitter",L"blaze",L"shine",L"love",L"despair",L"hum",L"bowing",L"hot",L"dam"};
+        int expression = *reinterpret_cast<int*>(frame - 0x134);
+        if (expression < 0 || expression >= static_cast<int>(_countof(expressions))) expression = 0;
+        // Exact _bstr_t keys used for the accessory parent query at
+        // 004080AF / 00409019. The face's modulo key is not interchangeable.
+        auto holder = *reinterpret_cast<const wchar_t***>(frame - (caller == 0x004081B7 ? 0x40 : 0x30));
+        const wchar_t* key = holder ? *holder : nullptr;
+        wchar_t path[192];
+        if (key && *key && _snwprintf_s(path, _countof(path), _TRUNCATE,
+            L"Character/Accessory/%08d.img/%s/%s/default", itemId, expressions[expression], key) >= 0) {
+            void* resolved = LoadCanvas(path);
+            int width = 0, height = 0;
+            if (Dimensions(resolved, width, height) && width > 0 && height > 0) {
+                *canvas = resolved; // LoadCanvas transfers one owning reference.
+                original = S_OK;
+                if (InterlockedIncrement(&faceReports) <= 24)
+                    CrashReporter::RecordEvent("equipment.face-recovery", "itemId=%d faceId=%d expression=%d resolved=1",
+                        itemId, faceId, expression);
+            } else if (resolved) static_cast<IUnknown*>(resolved)->Release();
+        }
+    }
+    if (SUCCEEDED(original)) FaceImage(canvas, itemId, faceId);
+    SetLastError(error);
+    return original;
+}
 __declspec(naked) static void AssignFaceCanvas() {
     __asm {
-        // Preserve the original thiscall stack and HRESULT. EBP is the
+        // Preserve the original thiscall stack. EBP is the
         // caller's LoadFaceAction frame, with the IDs saved before iteration.
         push dword ptr [esp + 4]
         call dword ptr [assignCanvas]
+        cmp eax, 80004002h
+        je finish_canvas
         test eax, eax
         js done
+    finish_canvas:
         pushfd
         pushad
         mov ebx, esp
         sub esp, 528
         and esp, -16
         fxsave [esp]
-        push dword ptr [ebp - 138h]
-        push dword ptr [ebp - 130h]
+        push eax
+        push dword ptr [ebx + 36]
+        push ebp
         lea eax, [ebp - 14h]
         push eax
-        call FaceImage
+        call FinishFaceCanvas
+        mov dword ptr [ebx + 28], eax
         fxrstor [esp]
         mov esp, ebx
         popad

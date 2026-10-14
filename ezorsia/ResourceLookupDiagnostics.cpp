@@ -54,6 +54,8 @@ struct Sample {
     Kind kind{};
     DWORD caller = 0, outerCaller = 0, owner = 0, ownerVtable = 0, source = 0, sourceVtable = 0;
     DWORD output = 0, outputVtable = 0, keyAddress = 0;
+    DWORD faceId = 0, faceAccessoryId = 0, faceExpression = 0;
+    bool faceContext = false;
     HRESULT hr = S_OK;
     VARIANT value{};
     bool valueRead = false, nameRead = false, knownProperty = false, complete = false;
@@ -163,6 +165,12 @@ void Capture(Sample& sample, DWORD frame, DWORD owner) {
     else if (!sample.name[0]) strcpy_s(sample.name, "<unreadable-key>");
     DWORD outerFrame = 0;
     if (Word(frame, outerFrame) && outerFrame <= MAXDWORD - 4) Word(outerFrame + 4, sample.outerCaller);
+    if (sample.kind == Property && (sample.caller == 0x0040822F || sample.caller == 0x00409193)
+        && outerFrame >= 0x138) {
+        sample.faceContext = Word(outerFrame - 0x138, sample.faceId)
+            && Word(outerFrame - 0x134, sample.faceExpression)
+            && Word(outerFrame - 0x130, sample.faceAccessoryId);
+    }
     Word(sample.owner, sample.ownerVtable); Word(sample.source, sample.sourceVtable); Word(sample.output, sample.outputVtable);
     if (sample.kind == Property) CaptureProperty(sample);
 }
@@ -176,6 +184,8 @@ void Write(const Sample& s, LONG index) {
         s.caller, s.outerCaller, static_cast<DWORD>(s.hr), s.valueRead, unsigned(s.value.vt), s.nameRead,
         s.name, s.keyAddress, s.owner, s.ownerVtable, s.source, s.sourceVtable, s.output, s.outputVtable,
         identity.clientRunId, identity.connectionId);
+    if (s.faceContext) ClientLog::Emergency("resource_face_fallback report=%ld faceId=%lu accessoryId=%lu expression=%lu previousDefaultCanvas=missing action=observe_only",
+        index, s.faceId, s.faceAccessoryId, s.faceExpression);
     if (!s.knownProperty) return;
     ClientLog::Emergency("resource_property report=%ld pcomBase=%08lX count=%lu buckets=%lu dictionary=%08lX captured=%lu complete=%d snapshot=best_effort",
         index, pcomBase, s.propertyCount, s.bucketCount, s.dictionary, s.nodeCount, s.complete);
@@ -216,6 +226,12 @@ __declspec(naked) void PropertyReturned() {
         jge resume
         push ecx
         mov ecx, [ebp + 4]
+        // These two mandatory frame queries run only after the accessory's
+        // default canvas was absent. Optional default misses remain silent.
+        cmp ecx, 0040822Fh
+        je watched
+        cmp ecx, 00409193h
+        je watched
         cmp ecx, 0043819Dh
         je watched
         cmp ecx, 008DA000h

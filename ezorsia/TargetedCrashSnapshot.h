@@ -4,7 +4,7 @@
 namespace TargetedCrashSnapshot {
 constexpr ULONG StreamType = 0x42445331; // BDS1, local minidump user stream
 // Append only: numeric values are persisted in BDS1 streams and filenames.
-enum class Family : DWORD { ActionJump, MobInitialization, NullVariant, Canvas, KernelWrite, MainLoopEscape, PcomFactory, BossResource, CashCategory, Count };
+enum class Family : DWORD { ActionJump, MobInitialization, NullVariant, Canvas, KernelWrite, MainLoopEscape, PcomFactory, BossResource, CashCategory, FaceResource, Count };
 struct Memory {
     DWORD address = 0, size = 0, copied = 0;
     BYTE bytes[256]{};
