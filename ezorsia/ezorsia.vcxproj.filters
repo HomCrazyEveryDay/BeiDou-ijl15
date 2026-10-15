@@ -234,6 +234,9 @@
     <ClInclude Include="CharacterStatGuard.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="TemporaryStatGuard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="TargetedCrashSnapshot.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -372,6 +375,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="CharacterStatGuard.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="TemporaryStatGuard.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="TargetedCrashSnapshot.cpp">

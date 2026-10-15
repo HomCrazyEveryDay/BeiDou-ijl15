@@ -15,6 +15,7 @@
 #include "CharacterSelectFocusFix.h"
 #include "NpcDialogFocusFix.h"
 #include "CharacterStatGuard.h"
+#include "TemporaryStatGuard.h"
 #include "LegacyStringConversionFix.h"
 
 namespace {
@@ -236,6 +237,8 @@ void ClientCrashFixes::Install()
     ResourceReadGuards::Install();
     CrashReporter::RecordEvent("character.stat", "ready=%d",
         CharacterStatGuard::Install(GetModuleHandleW(nullptr)) ? 1 : 0);
+    CrashReporter::RecordEvent("temporary.stat", "ready=%d",
+        TemporaryStatGuard::Install(GetModuleHandleW(nullptr)) ? 1 : 0);
     ModernEquipmentCompatibility::Install();
     CrashReporter::RecordEvent("nametag.origin", "install result=%d", NameTagOriginFix::Install() ? 1 : 0);
     CrashReporter::RecordEvent("login.request", "initialization install result=%d",
