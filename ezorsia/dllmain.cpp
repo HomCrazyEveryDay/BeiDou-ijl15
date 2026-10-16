@@ -99,6 +99,7 @@ static DWORD g_BattleshipPhysicsSpeedReturn = 0x0094D7E3;
 // item protocol instead, so the server can show a confirmation dialog.
 static DWORD g_ScriptedResetItemNativeContinue = 0x00A0A6CB;
 static DWORD g_ScriptedResetItemCleanupReturn = 0x00A0EAAC;
+static DWORD g_EvanApResetBudgetReturn = 0x008CBED7;
 
 namespace {
 constexpr int kAllApResetItemId = 5050100;
@@ -203,6 +204,40 @@ static void InstallApResetStatLimits()
 	if (*reinterpret_cast<const unsigned char*>(capInstructionAddress) == 0xBB
 		&& *reinterpret_cast<const int*>(capInstructionAddress + 1) == nativeCap) {
 		Memory::WriteInt(capInstructionAddress + 1, serverCap);
+	}
+}
+
+__declspec(naked) void EvanApResetBudgetCave()
+{
+	__asm {
+		// Replay the native job-suffix bonus before extending it to Evan growth stages.
+		mov ebx, edx
+		dec ebx
+		dec ebx
+		neg ebx
+		sbb ebx, ebx
+		and ebx, 0FFFFFFF6h
+		add ebx, ecx
+		pushfd
+		cmp eax, 221
+		jne done
+		cmp edx, 8
+		ja done
+		lea ebx, [edx + edx * 4]
+	done:
+		popfd
+		jmp dword ptr [g_EvanApResetBudgetReturn]
+	}
+}
+
+static void InstallEvanApResetBudget()
+{
+	constexpr unsigned char expected[] = {
+		0x8B, 0xDA, 0x4B, 0x4B, 0xF7, 0xDB, 0x1B, 0xDB, 0x83, 0xE3, 0xF6, 0x03, 0xD9
+	};
+	constexpr DWORD patchAddress = 0x008CBECA;
+	if (memcmp(reinterpret_cast<const void*>(patchAddress), expected, sizeof(expected)) == 0) {
+		Memory::CodeCave(EvanApResetBudgetCave, patchAddress, sizeof(expected));
 	}
 }
 
@@ -1209,6 +1244,7 @@ namespace
 		InstallRushWithoutTargetRequirement();
 		InstallScriptedResetItemRedirect();
 		InstallApResetStatLimits();
+		InstallEvanApResetBudget();
 		if (Client::enableMovementKeyRebind) {
 			MovementKeyHook::Hook(true);
 			Client::MovementKeyRebind();
