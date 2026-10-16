@@ -18,7 +18,7 @@ wchar_t g_directory[MAX_PATH]{};
 wchar_t g_session[80]{};
 constexpr LONGLONG kMaximumLogBytes = 8 * 1024 * 1024;
 const wchar_t* const kNames[] = {
-    L"startup", L"verify", L"launch-auth", L"trace", L"equipment", L"buff-icons", L"lifecycle"
+    L"startup", L"verify", L"launch-auth", L"trace", L"equipment", L"buff-icons", L"lifecycle", L"memory"
 };
 
 bool EnsureDirectory(const wchar_t* path)

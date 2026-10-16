@@ -362,6 +362,12 @@
     <ClCompile Include="LegacyStringConversionFix.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="MemoryTelemetry.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SoundAllocationFallback.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="MobInitializationFix.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

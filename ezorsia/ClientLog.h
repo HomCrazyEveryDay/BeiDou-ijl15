@@ -3,7 +3,7 @@
 #include <windows.h>
 
 namespace ClientLog {
-enum class Component { Startup, Verify, Authorization, Trace, Equipment, BuffIcons, Lifecycle, Count };
+enum class Component { Startup, Verify, Authorization, Trace, Equipment, BuffIcons, Lifecycle, Memory, Count };
 
 void Initialize();
 const wchar_t* Directory();

@@ -37,6 +37,7 @@
 #include "ClientLog.h"
 #include "DisconnectDiagnostics.h"
 #include "ProcessExitMonitor.h"
+#include "MemoryTelemetry.h"
 #include "ClientCrashFixes.h"
 #include "CharacterSlots.h"
 #include "ChairCompatibility.h"
@@ -1171,6 +1172,7 @@ namespace
 		DisconnectDiagnostics::Install(settings.values[LifecycleDiagnostics] != 0);
 		CrashReporter::EnableConditionalDump(settings.values[ConditionalDump] != 0);
 		if (settings.values[ExitMonitor] != 0) ProcessExitMonitor::Start();
+		MemoryTelemetry::Start();
 		ClientLog::Append(ClientLog::Component::Lifecycle,
 			"diagnostics_config parseError=%d crashDump=%d crashTrace=%d startupLog=%d equipmentLog=%d buffIconLog=%d",
 			configParseError, enableCrashDump, enableCrashTrace, Client::enableStartupLog,

@@ -3,6 +3,7 @@
 #include "ClientLog.h"
 #include "ClientDiagnostics.h"
 #include "TargetedCrashSnapshot.h"
+#include "MemoryStatus.h"
 
 #include <DbgHelp.h>
 #include <cstdarg>
@@ -20,6 +21,16 @@ SRWLOCK g_conditionalLock = SRWLOCK_INIT;
 unsigned long long g_conditionalFingerprints[4]{};
 unsigned int g_conditionalCount = 0;
 volatile LONG g_dumpWriterBusy = 0;
+// Reserved (not committed) address space handed back to Windows just before
+// DbgHelp runs. When the 32-bit client exhausts its address space, DbgHelp's
+// own allocations fail with ERROR_NOT_ENOUGH_MEMORY and leave a 0-byte dump.
+// Each report releases every slice: 8 MiB alone was not enough for DbgHelp
+// once the heap was full. Slices let a fragmented space be partly refilled
+// afterwards; the unhandled report that follows a main-loop report then reuses
+// whatever the first dump returned to the heap.
+constexpr SIZE_T kDumpMemoryReserveSliceBytes = 8 * 1024 * 1024;
+constexpr unsigned kDumpMemoryReserveSlices = 4;
+void* g_dumpMemoryReserve[kDumpMemoryReserveSlices]{};
 enum class DumpMode {
 	Normal,
 	Triage,
@@ -90,6 +101,29 @@ MINIDUMP_TYPE GetMiniDumpType()
 		| MiniDumpWithProcessThreadData
 		| MiniDumpWithFullMemoryInfo
 		| MiniDumpWithThreadInfo);
+}
+
+unsigned ReserveDumpMemory()
+{
+	unsigned held = 0;
+	for (void*& slice : g_dumpMemoryReserve) {
+		if (!slice) slice = VirtualAlloc(nullptr, kDumpMemoryReserveSliceBytes, MEM_RESERVE, PAGE_NOACCESS);
+		if (slice) ++held;
+	}
+	return held;
+}
+
+bool ReleaseDumpMemory()
+{
+	bool released = false;
+	for (void*& slice : g_dumpMemoryReserve) {
+		if (slice) {
+			VirtualFree(slice, 0, MEM_RELEASE);
+			slice = nullptr;
+			released = true;
+		}
+	}
+	return released;
 }
 
 void WriteText(HANDLE file, const char* text)
@@ -612,7 +646,8 @@ void WriteTextReport(
 	const WCHAR* dumpPath,
 	EXCEPTION_POINTERS* exceptionInfo,
 	BOOL dumpWritten,
-	const char* reportType, bool compact, const TargetedCrashSnapshot::Snapshot* snapshot)
+	const char* reportType, bool compact, const TargetedCrashSnapshot::Snapshot* snapshot,
+	const MemoryStatus::Snapshot& memory)
 {
 	HANDLE file = CreateFileW(textPath, GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
 	if (file == INVALID_HANDLE_VALUE) {
@@ -681,6 +716,19 @@ void WriteTextReport(
 	}
 
 	WriteContext(file, exceptionInfo != nullptr ? exceptionInfo->ContextRecord : nullptr);
+	if (memory.valid) {
+		char line[512]{};
+		MemoryStatus::FormatSummary(memory, line, ARRAYSIZE(line));
+		WriteLine(file, "memoryAtFault", line);
+		for (unsigned i = 0; i < memory.topCount; ++i) {
+			char key[32]{};
+			StringCchPrintfA(key, ARRAYSIZE(key), "memoryTop%02u", i);
+			MemoryStatus::FormatAllocation(memory.top[i], line, ARRAYSIZE(line));
+			WriteLine(file, key, line);
+		}
+	} else {
+		WriteLine(file, "memoryAtFault", "unavailable");
+	}
 	WriteRecentTrace(file);
 	// Uploadable text keeps module/frame metadata; arbitrary memory remains local in the dump.
 	if (snapshot) {
@@ -725,6 +773,14 @@ void WriteExceptionArtifacts(EXCEPTION_POINTERS* exceptionInfo, const WCHAR* rep
     EXCEPTION_RECORD dumpRecord = reportRecord;
     EXCEPTION_POINTERS dumpInfo{reportInfo.ExceptionRecord ? &dumpRecord : nullptr,
         reportInfo.ContextRecord ? &dumpContext : nullptr};
+	// Measure before releasing the reserve so the report shows the faulting state,
+	// but log afterwards: path conversion in CreateFileW also allocates.
+	MemoryStatus::Snapshot memory;
+	MemoryStatus::Capture(memory);
+	const bool reserveReleased = ReleaseDumpMemory();
+	char memorySummary[512]{};
+	MemoryStatus::FormatSummary(memory, memorySummary, ARRAYSIZE(memorySummary));
+	ClientLog::Emergency("memory_at_fault type=%s %s", reportType, memorySummary);
 	WCHAR dumpPath[MAX_PATH]{};
 	WCHAR textPath[MAX_PATH]{};
 	BuildCrashPaths(dumpPath, textPath, exceptionInfo, reportTag);
@@ -764,10 +820,13 @@ void WriteExceptionArtifacts(EXCEPTION_POINTERS* exceptionInfo, const WCHAR* rep
 		if (!dumpWritten) dumpError = GetLastError();
 		CloseHandle(dumpFile);
 	}
-	ClientLog::Emergency("dump_result type=%s written=%d win32Error=%lu path=%ls",
-		reportType, dumpWritten, dumpError, dumpPath);
+	ClientLog::Emergency("dump_result type=%s written=%d win32Error=%lu reserveReleased=%d path=%ls",
+		reportType, dumpWritten, dumpError, reserveReleased ? 1 : 0, dumpPath);
 
-	WriteTextReport(textPath, dumpPath, exceptionInfo ? &reportInfo : nullptr, dumpWritten, reportType, compact, snapshot);
+	WriteTextReport(textPath, dumpPath, exceptionInfo ? &reportInfo : nullptr, dumpWritten, reportType, compact, snapshot,
+		memory);
+	// Non-fatal snapshots continue running; refill released slices when space allows.
+	if (reserveReleased) ReserveDumpMemory();
     InterlockedExchange(&g_dumpWriterBusy, 0);
 }
 
@@ -826,6 +885,9 @@ void CrashReporter::Install(bool enabled, const std::string& dumpType, bool trac
 		return;
 	}
 
+	const unsigned slices = ReserveDumpMemory();
+	ClientLog::Emergency("dump_memory_reserve sliceMiB=%u slices=%u requested=%u",
+		static_cast<unsigned>(kDumpMemoryReserveSliceBytes / (1024 * 1024)), slices, kDumpMemoryReserveSlices);
 	SetUnhandledExceptionFilter(HandleUnhandledException);
 	const bool targeted=TargetedCrashSnapshot::Install(GetModuleHandleW(nullptr),CaptureTargetedSnapshot);
 	ClientLog::Emergency("targeted_snapshot_config enabled=%d maxFamiliesPerSession=9 independentOfLifecycle=1",

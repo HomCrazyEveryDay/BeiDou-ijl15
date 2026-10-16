@@ -17,6 +17,7 @@
 #include "CharacterStatGuard.h"
 #include "TemporaryStatGuard.h"
 #include "LegacyStringConversionFix.h"
+#include "SoundAllocationFallback.h"
 
 namespace {
 
@@ -226,6 +227,8 @@ void ClientCrashFixes::Install()
 {
     CrashReporter::RecordEvent("string.conversion.fix", "ready=%d",
         LegacyStringConversionFix::Install(GetModuleHandleW(nullptr)) ? 1 : 0);
+    CrashReporter::RecordEvent("sound.predecode.fallback", "ready=%d",
+        SoundAllocationFallback::Install() ? 1 : 0);
     CrashReporter::RecordEvent("mob.init.fix", "ready=%d",
         MobInitializationFix::Install(GetModuleHandleW(nullptr)) ? 1 : 0);
     CrashReporter::RecordEvent("inventory.refresh", "ready=%d",

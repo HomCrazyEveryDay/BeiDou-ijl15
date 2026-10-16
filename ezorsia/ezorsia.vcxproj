@@ -185,6 +185,9 @@
     <ClInclude Include="ClientCrashFixes.h" />
     <ClInclude Include="ResourceReadGuards.h" />
     <ClInclude Include="LegacyStringConversionFix.h" />
+    <ClInclude Include="MemoryStatus.h" />
+    <ClInclude Include="MemoryTelemetry.h" />
+    <ClInclude Include="SoundAllocationFallback.h" />
     <ClInclude Include="FlashRendererFix.h" />
     <ClInclude Include="PcomExitFix.h" />
     <ClInclude Include="PoolGuard.h" />
@@ -293,6 +296,8 @@
     <ClCompile Include="PcomExitFix.cpp" />
     <ClCompile Include="PoolGuard.cpp" />
     <ClCompile Include="LegacyStringConversionFix.cpp" />
+    <ClCompile Include="MemoryTelemetry.cpp" />
+    <ClCompile Include="SoundAllocationFallback.cpp" />
     <ClCompile Include="MobInitializationFix.cpp" />
     <ClCompile Include="InventoryRefreshFix.cpp" />
     <ClCompile Include="CharacterStatGuard.cpp" />
