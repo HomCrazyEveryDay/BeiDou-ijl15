@@ -24,6 +24,7 @@
 #include "PrivateCleanSlateHook.h"
 #include "PetEquipScrollCompatibility.h"
 #include "SecondPendantSlot.h"
+#include "MainPetInventoryMark.h"
 #include "MineralBagWnd.h"
 #include "MixedDyeWnd.h"
 #include "MonthlyShop.h"
@@ -1265,6 +1266,9 @@ namespace
 			CrashReporter::RecordEvent("pet.scroll", "install_failed");
 		}
 		SecondPendantSlot::Install(enableEquipmentSlotLog);
+		if (!MainPetInventoryMark::Install(GetModuleHandleW(nullptr))) {
+			CrashReporter::RecordEvent("pet.inventory", "install_failed");
+		}
 		Client::MoreHook();
 		AranComboUi::Install();
 		if (!AranComboCommand::Install()) {
