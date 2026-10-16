@@ -1,8 +1,22 @@
 #pragma once
 #include <windows.h>
+#include <cwchar>
 
 // IWzCanvas ABI verified against the shipped Canvas.dll, without a game session.
 namespace DreamCanvas {
+// Original viewport overlays only. Scenery and cropped lightning frames must
+// keep their world coordinates and native dimensions.
+inline bool IsViewportOverlay(const wchar_t* background, const wchar_t* path) {
+    if (!background || !path) return false;
+    if (!std::wcscmp(background, L"dragonDream"))
+        return !std::wcscmp(path, L"ani/6") || !std::wcscmp(path, L"ani/7")
+            || !std::wcscmp(path, L"ani/8");
+    if (!std::wcscmp(background, L"dragonRoad"))
+        return !std::wcscmp(path, L"ani/17") || !std::wcscmp(path, L"ani/18")
+            || !std::wcscmp(path, L"ani/19");
+    return false;
+}
+
 struct Variant { WORD type=0, r1=0, r2=0, r3=0; LONG value=0, high=0; };
 static_assert(sizeof(Variant)==16, "WZ VARIANT ABI");
 using Factory = HRESULT(__cdecl*)(const wchar_t*,const GUID*,void**,void*);

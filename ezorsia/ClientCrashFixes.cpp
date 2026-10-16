@@ -104,13 +104,12 @@ using InsertFn = void*(__fastcall*)(void*,void*,void*,void*,void*,void*,void*,vo
 auto g_insertCanvas = reinterpret_cast<InsertFn>(0x00426BAB);
 
 // CMapLoadable::LoadBack: -38 is the bS _bstr_t; -3C is ani/%d.
-// Restrict adaptation to the three original full-screen dream overlays.
+// Restrict adaptation to the original full-screen dream and memory overlays.
 void __cdecl SelectDreamFrame(const unsigned char* frame) {
     const auto nameHolder=*reinterpret_cast<const wchar_t* const* const*>(frame-0x38);
     const wchar_t* name=nameHolder ? *nameHolder : nullptr;
     const wchar_t* path=*reinterpret_cast<const wchar_t* const*>(frame-0x3c);
-    g_dreamFrame=name && path && std::wcscmp(name,L"dragonDream")==0
-        && (!std::wcscmp(path,L"ani/6") || !std::wcscmp(path,L"ani/7") || !std::wcscmp(path,L"ani/8"));
+    g_dreamFrame=DreamCanvas::IsViewportOverlay(name,path);
 }
 
 DWORD* __cdecl CreateDreamLayer(DWORD* result,DWORD property,int flip,DWORD origin,

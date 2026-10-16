@@ -6,6 +6,20 @@ void Check(bool ok,int line){if(!ok){std::fprintf(stderr,"Dream canvas assertion
 #define Require(ok) Check((ok),__LINE__)
 int wmain(int argc,wchar_t** argv){
     Require(argc==2);
+    using DreamCanvas::IsViewportOverlay;
+    for (auto path : {L"ani/6", L"ani/7", L"ani/8"}) {
+        Require(IsViewportOverlay(L"dragonDream", path));
+        Require(!IsViewportOverlay(L"dragonRoad", path));
+    }
+    for (auto path : {L"ani/17", L"ani/18", L"ani/19"}) {
+        Require(IsViewportOverlay(L"dragonRoad", path));
+        Require(!IsViewportOverlay(L"dragonDream", path));
+    }
+    for (auto path : {L"ani/13", L"ani/14", L"ani/15", L"ani/16", L"ani/170", L"back/17", L"back/41"})
+        Require(!IsViewportOverlay(L"dragonRoad", path));
+    Require(!IsViewportOverlay(nullptr, L"ani/17"));
+    Require(!IsViewportOverlay(L"dragonRoad", nullptr));
+    Require(!IsViewportOverlay(L"dragonRoadOther", L"ani/17"));
     SetDllDirectoryW(argv[1]);
     HMODULE p=LoadLibraryW(L"PCOM.dll");Require(p!=nullptr);
     using Init=HRESULT(__cdecl*)();
@@ -26,7 +40,7 @@ int wmain(int argc,wchar_t** argv){
     Require(SUCCEEDED(Method<Rect>(source,0x8c)(source,780,20,20,560,0xffffffff)));
     Require(SUCCEEDED(Method<Rect>(source,0x8c)(source,30,30,30,30,0x80ffffff)));
     Require(Scale(source,800,600,factory)==nullptr);
-    for(auto size:{POINT{1024,768},POINT{1280,720},POINT{1920,1080}}){
+    for(auto size:{POINT{1024,768},POINT{1280,720},POINT{1366,768},POINT{1920,1080},POINT{2560,1440}}){
         void* scaled=Scale(source,size.x,size.y,factory);Require(scaled!=nullptr);
         LONG w=0,h=0,x=0,y=0;
         Require(SUCCEEDED(Method<Get>(scaled,0x40)(scaled,&w)) && w==size.x);
@@ -44,5 +58,5 @@ int wmain(int argc,wchar_t** argv){
     }
     unsigned pixel=0;Require(SUCCEEDED(Method<Pixel>(source,0x88)(source,40,40,&pixel)) && (pixel>>24)>0 && (pixel>>24)<255);
     Release(source);
-    std::puts("PASS: 3 resolutions, centered origin, opaque/transparent/partial alpha, unchanged source, native 800x600 bypass");
+    std::puts("PASS: dream/memory path isolation, 5 resolutions, centered origin, opaque/transparent/partial alpha, unchanged source, native 800x600 bypass");
 }
