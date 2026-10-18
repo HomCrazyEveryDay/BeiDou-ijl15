@@ -41,6 +41,7 @@
 #include "DisconnectDiagnostics.h"
 #include "ProcessExitMonitor.h"
 #include "MemoryTelemetry.h"
+#include "ModuleAudit.h"
 #include "ClientCrashFixes.h"
 #include "CharacterSlots.h"
 #include "ChairCompatibility.h"
@@ -1124,6 +1125,7 @@ namespace
 			ExitProcess(ERROR_BAD_EXE_FORMAT);
 		}
 
+		ModuleAudit::Start();
 		//CreateConsole();	//console for devs, use this to log stuff if you want
 
 		using namespace game_settings;
