@@ -30,6 +30,7 @@
 #include "MonthlyShop.h"
 #include "EvanCreation.h"
 #include "EvanRuntime.h"
+#include "MountRopeAlignment.h"
 #include "CrashReporter.h"
 #include "ResourceLookupDiagnostics.h"
 #include "NativeExitDiagnostics.h"
@@ -1198,6 +1199,7 @@ namespace
 		HookCWvsApp__Dir_upDir(true);
 		Hookbstr_ctor(true);
 		HookAvatarLayerBuild(true);
+		ClientLog::Append(ClientLog::Component::Lifecycle, "event=mount_rope_alignment install=%s", MountRopeAlignment::Install() ? "ok" : "failed");
 		if (!MixedDye::Install()) CrashReporter::RecordEvent("appearance.mix", "resource_classification_install_failed");
 		HookIWzFileSystem__Init(true);
 		HookIWzNameSpace__Mount(true);
