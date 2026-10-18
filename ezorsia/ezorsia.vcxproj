@@ -177,6 +177,8 @@
     <ClInclude Include="AranComboUi.h" />
     <ClInclude Include="AranFirstAttack.h" />
     <ClInclude Include="AranComboCommand.h" />
+    <ClInclude Include="AranCombatStep.h" />
+    <ClInclude Include="WarriorRush.h" />
     <ClInclude Include="ComboTempestDamage.h" />
     <ClInclude Include="ComboTempestCritical.h" />
     <ClInclude Include="EquipmentCritical.h" />
@@ -290,6 +292,8 @@
     <ClCompile Include="AranComboUi.cpp" />
     <ClCompile Include="AranFirstAttack.cpp" />
     <ClCompile Include="AranComboCommand.cpp" />
+    <ClCompile Include="AranCombatStep.cpp" />
+    <ClCompile Include="WarriorRush.cpp" />
     <ClCompile Include="ComboTempestDamage.cpp" />
     <ClCompile Include="ComboTempestCritical.cpp" />
     <ClCompile Include="EquipmentCritical.cpp" />

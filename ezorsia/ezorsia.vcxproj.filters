@@ -203,6 +203,12 @@
     <ClInclude Include="AranComboCommand.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="AranCombatStep.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WarriorRush.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="ComboTempestDamage.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -350,6 +356,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="AranComboCommand.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="AranCombatStep.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WarriorRush.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="ComboTempestDamage.cpp">

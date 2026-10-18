@@ -2,6 +2,7 @@
 #include "MineralBagWnd.h"
 #include "MixedDyeWnd.h"
 #include "BossHP.h"
+#include "AranCombatStep.h"
 #include "HpMpAlert.h"
 #include "StackedBuffIcons.h"
 
@@ -83,6 +84,7 @@ void BossHP::HookDisposeField() {
 	Field__Dispose_Type Hook = [](void* pThis, void* edx) -> void
 	{
 		OnMobDamageFieldDispose();
+		AranCombatStep::OnFieldDispose();
 		StackedBuffIcons::OnFieldDispose();
 		MineralBagWnd::OnFieldDispose();
 		MixedDyeWnd::OnFieldDispose();

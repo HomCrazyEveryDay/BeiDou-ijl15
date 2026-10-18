@@ -11,6 +11,8 @@
 #include "AranComboUi.h"
 #include "AranFirstAttack.h"
 #include "AranComboCommand.h"
+#include "AranCombatStep.h"
+#include "WarriorRush.h"
 #include "ComboTempestCritical.h"
 #include "EquipmentCritical.h"
 #include "HpMpAlert.h"
@@ -1252,6 +1254,9 @@ namespace
 		InstallBattleshipMovementSpeed();
 		InstallProgressiveBerserkDamage();
 		InstallRushWithoutTargetRequirement();
+		if (!WarriorRush::Install(GetModuleHandleW(nullptr))) {
+			ClientLog::Append(ClientLog::Component::Lifecycle, "warrior_rush_install_failed");
+		}
 		InstallScriptedResetItemRedirect();
 		InstallApResetStatLimits();
 		InstallEvanApResetBudget();
@@ -1278,6 +1283,9 @@ namespace
 		}
 		Client::MoreHook();
 		AranComboUi::Install();
+		if (!AranCombatStep::Install(GetModuleHandleW(nullptr))) {
+			ClientLog::Append(ClientLog::Component::Lifecycle, "aran_combat_step_install_failed");
+		}
 		if (!AranComboCommand::Install()) {
 			ClientLog::Append(ClientLog::Component::Lifecycle, "aran_combo_command_install_failed");
 		}
