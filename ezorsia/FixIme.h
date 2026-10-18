@@ -1,4 +1,5 @@
 #pragma once
+#include "ImeFocus.h"
 #include <imm.h>
 #pragma comment(lib, "imm32.lib")
 
@@ -16,12 +17,13 @@ void EnableIme() { // 目前没有用到这个方法，未测试效果
 }
 
 void DisableIme() {
-	HWND hwnd = GetForegroundWindow(); // 获取当前前台窗口的句柄
+	// Use the game HWND even while another application is in the foreground.
+	// CWndMan::EnableIME restores its saved context on the next focus gain.
+	auto manager = *reinterpret_cast<unsigned char**>(0x00BEC20C);
+	HWND hwnd = manager ? *reinterpret_cast<HWND*>(manager + 0xAC) : nullptr;
 	if (hwnd) {
-		// 获取输入法上下文
 		HIMC hImc = ImmGetContext(hwnd);
 		if (hImc) {
-			// 解除输入法上下文的关联
 			ImmAssociateContext(hwnd, NULL);
 			ImmReleaseContext(hwnd, hImc);
 		}
@@ -29,6 +31,28 @@ void DisableIme() {
 }
 
 BYTE enabled = 0;
+
+// SetFocus notifies the new control before releasing the old control.
+// Only the control that last acquired text focus may detach the context.
+static void* imeOwner = nullptr;
+extern "C" __declspec(noinline) void __cdecl EnableImeForControl(void* control) {
+	auto manager = *reinterpret_cast<void**>(0x00BEC20C);
+	if (!manager || !control) return;
+	imeOwner = control;
+	reinterpret_cast<void(__thiscall*)(void*, int)>(0x009E85F3)(manager, 1);
+	enabled = 1;
+}
+
+extern "C" __declspec(noinline) void __cdecl DisableImeForControl(void* control) {
+	if (!control || imeOwner != control) return;
+	auto manager = *reinterpret_cast<void**>(0x00BEC20C);
+	if (manager) reinterpret_cast<void(__thiscall*)(void*)>(0x009E85E7)(manager);
+	// CancelIME may synchronously notify a control and transfer focus.
+	if (imeOwner != control) return;
+	imeOwner = nullptr;
+	enabled = 0;
+	DisableIme();
+}
 
 DWORD funcEnableImeAddr = 0x009E85F3;
 
@@ -90,7 +114,10 @@ __declspec(naked) void switchMLIme() {
 DWORD newSwitchImeRtnAddr = 0x004CA08F;
 __declspec(naked) void newSwitchIme() {
 	__asm {
-		cmp[esi + 0x80], 1 // 判断是否密码框
+		cmp dword ptr[esp + 0Ch], 0
+		jz label_lost_focus
+		mov imeOwner, esi
+		cmp dword ptr[esi + 0x80], 1 // 判断是否密码框
 		jz label_disable
 		push 1
 		call funcEnableImeAddr
@@ -101,6 +128,12 @@ __declspec(naked) void newSwitchIme() {
 		call DisableIme
 		mov enabled, 0
 		jmp newSwitchImeRtnAddr
+
+		label_lost_focus:
+		push esi
+		call DisableImeForControl
+		add esp, 4
+		jmp disableRtnAddr
 	}
 }
 
@@ -122,16 +155,40 @@ __declspec(naked) void destroyWindow() {
 	}
 }
 
-DWORD newSwitchMLImeRtnAddr = 0x004D32EE;
+DWORD newSwitchMLImeEnableRtnAddr = 0x004D32E0;
+DWORD newSwitchMLImeDisableRtnAddr = 0x004D32E2;
 __declspec(naked) void newSwitchMLIme() {
 	__asm {
+		cmp dword ptr[esp + 8], 0
+		jz label_disable
+		mov imeOwner, esi
 		push 1
 		call funcEnableImeAddr
 		mov enabled, 1
-		jmp  newSwitchMLImeRtnAddr
+		jmp newSwitchMLImeEnableRtnAddr
+
+		label_disable:
+		// Retain the new IME scheme, but detach on focus loss too.
+		push esi
+		call DisableImeForControl
+		add esp, 4
+		jmp newSwitchMLImeDisableRtnAddr
 	}
 }
 
+
+// CCtrlWnd::Destroy receives the base; its IUIMsgHandler is at +4.
+__declspec(naked) void newDestroyWindow() {
+	__asm {
+		call destroyWindowFuncAddr
+		or dword ptr[esi + 14h], 0FFFFFFFFh
+		lea eax, [esi + 4]
+		push eax
+		call DisableImeForControl
+		add esp, 4
+		jmp destroyWindowRtnAddr
+	}
+}
 
 class FixIme {
 public:
@@ -156,9 +213,13 @@ public:
 
 		GeneralHook();
 		// 单行输入框启用IME
+		// Route both focus edges through the IME hooks. Native loss branches
+		// otherwise skip these sites and leave the context associated.
+		Memory::CodeCave(setOnFocusFirstJudgement, 0x004CA05B, 6);
 		Memory::CodeCave(newSwitchIme, 0x004CA089, 6);
-		Memory::CodeCave(destroyWindow, 0x004DFEA4, 9); // 销毁窗口时固定禁用IME
+		Memory::CodeCave(newDestroyWindow, 0x004DFEA4, 9); // 销毁窗口时固定禁用IME
 		//Memory::WriteByte(0x004D32D9 + 1, 1); // 多行输入
+		Memory::FillBytes(0x004D32C6, 0x90, 2);
 		Memory::CodeCave(newSwitchMLIme, 0x004D32D9, 7); // 多行输入
 		std::cout << "New Ime Hook" << std::endl;
 		// 测试
