@@ -5,6 +5,7 @@
 #include "MonthlyShop.h"
 #include "AbsoluteDefenseSync.h"
 #include "HpMpAlert.h"
+#include "PetPotionSettings.h"
 #include "CrashReporter.h"
 #include "ClientDiagnostics.h"
 #include "EvanAttackDiagnostics.h"
@@ -740,6 +741,7 @@ using SaveGlobal_t = void(__fastcall*)(void* pThis, void* edx);
 static SaveGlobal_t s_SaveGlobal = reinterpret_cast<SaveGlobal_t>(kSaveGlobalAddr);
 static void __fastcall SaveGlobal_Hook(void* pThis, void* edx) {
     s_SaveGlobal(pThis, edx);
+    PetPotionSettings::Save(pThis);
     SendHpMpAlertFromStatusBar();
 }
 using ProcessPacket_t = void(__fastcall*)(void* pThis, void* edx, CInPacket* packet);
@@ -844,8 +846,8 @@ static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* pac
     if(reactorTracked)ReactorTimingDiagnostics::Log("receive_return",GetTickCount()-reactorStart);
 }
 } // namespace
-void HookSaveGlobal(bool enable) {
-    Memory::SetHook(enable, reinterpret_cast<void**>(&s_SaveGlobal), SaveGlobal_Hook);
+bool HookSaveGlobal(bool enable) {
+    return Memory::SetHook(enable, reinterpret_cast<void**>(&s_SaveGlobal), SaveGlobal_Hook);
 }
 void HookHpMpAlertRecv(bool enable) {
     if (!enable) ClientDiagnostics::SetAckConsumerReady(false);

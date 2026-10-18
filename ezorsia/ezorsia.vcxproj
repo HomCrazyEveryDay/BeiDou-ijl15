@@ -195,6 +195,7 @@
     <ClInclude Include="MobInitializationFix.h" />
     <ClInclude Include="InventoryRefreshFix.h" />
     <ClInclude Include="MainPetInventoryMark.h" />
+    <ClInclude Include="PetPotionSettings.h" />
     <ClInclude Include="CharacterStatGuard.h" />
     <ClInclude Include="TemporaryStatGuard.h" />
     <ClInclude Include="CharacterSelectFocusFix.h" />
@@ -301,6 +302,7 @@
     <ClCompile Include="MobInitializationFix.cpp" />
     <ClCompile Include="InventoryRefreshFix.cpp" />
     <ClCompile Include="MainPetInventoryMark.cpp" />
+    <ClCompile Include="PetPotionSettings.cpp" />
     <ClCompile Include="CharacterStatGuard.cpp" />
     <ClCompile Include="TemporaryStatGuard.cpp" />
     <ClCompile Include="CharacterSelectFocusFix.cpp" />

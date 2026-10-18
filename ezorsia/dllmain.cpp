@@ -24,6 +24,7 @@
 #include "PrivateCleanSlateHook.h"
 #include "SecondPendantSlot.h"
 #include "MainPetInventoryMark.h"
+#include "PetPotionSettings.h"
 #include "MineralBagWnd.h"
 #include "MixedDyeWnd.h"
 #include "MonthlyShop.h"
@@ -1214,7 +1215,9 @@ namespace
 			MessageBoxA(nullptr, "Evan skill hooks do not match this v83 client.", "BeiDou", MB_OK | MB_ICONERROR);
 		}
 		Hook_lpfn_NextLevel(true);
-		HookSaveGlobal(true);
+		if (!HookSaveGlobal(true) || !PetPotionSettings::Install(GetModuleHandleW(nullptr))) {
+			ClientLog::Emergency("pet_potion_settings install_failed");
+		}
 		HookHpMpAlertRecv(true);
 		StackedBuffIcons::Install(enableStackedBuffIconLog);
 		HookSelectCharMacFix(true);

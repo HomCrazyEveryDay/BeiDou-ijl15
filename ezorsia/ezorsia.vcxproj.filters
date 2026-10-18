@@ -228,6 +228,9 @@
     <ClInclude Include="MainPetInventoryMark.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="PetPotionSettings.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="CharacterSelectFocusFix.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -375,6 +378,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="MainPetInventoryMark.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="PetPotionSettings.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="CharacterSelectFocusFix.cpp">

@@ -1,5 +1,5 @@
 #pragma once
-void HookSaveGlobal(bool enable);
+bool HookSaveGlobal(bool enable);
 void HookHpMpAlertRecv(bool enable);
 void UpdateQueuedMobDamageDisplay();
 void OnMobDamageFieldInit();
