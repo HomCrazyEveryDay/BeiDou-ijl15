@@ -24,6 +24,7 @@
 #include "PrivateCleanSlateHook.h"
 #include "SecondPendantSlot.h"
 #include "MainPetInventoryMark.h"
+#include "PetPotionPersistence.h"
 #include "PetPotionSettings.h"
 #include "MineralBagWnd.h"
 #include "MixedDyeWnd.h"
@@ -1269,6 +1270,9 @@ namespace
 		SecondPendantSlot::Install(enableEquipmentSlotLog);
 		if (!MainPetInventoryMark::Install(GetModuleHandleW(nullptr))) {
 			CrashReporter::RecordEvent("pet.inventory", "install_failed");
+		}
+		if (!PetPotionPersistence::Install(GetModuleHandleW(nullptr))) {
+			CrashReporter::RecordEvent("pet.potion", "install_failed");
 		}
 		Client::MoreHook();
 		AranComboUi::Install();
