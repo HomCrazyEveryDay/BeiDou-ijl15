@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstring>
+#include "WardrobeWnd.h"
+#include "WardrobeInput.h"
 
 extern BYTE enabled;
 
@@ -318,6 +320,8 @@ namespace MovementKeyHook
 
 	static bool ShouldBypassMovementRemap()
 	{
+		if (WardrobeInput::Locked()) return true;
+		if (WardrobeWnd::IsEditing()) return true;
 		if (HasModifierKeyDown()) {
 			return true;
 		}
@@ -367,26 +371,42 @@ namespace MovementKeyHook
 
 	static LRESULT CALLBACK LowLevelKeyboardProc(int code, WPARAM wParam, LPARAM lParam)
 	{
-		if (code == HC_ACTION && lParam != 0 && IsCurrentProcessForeground()) {
+		// Keep the decision made on key-down for its matching key-up, even after focus,
+		// modifier, editor or wardrobe state changes. Otherwise an injected arrow sticks.
+		static BYTE heldTarget[256]{};
+		static BYTE heldVk[256]{};
+		static bool passedThrough[256]{};
+		if (code == HC_ACTION && lParam != 0) {
 			const KBDLLHOOKSTRUCT* keyboard = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lParam);
-
-			if (ShouldBypassMovementRemap()) {
-				return CallNextHookEx(KeyboardHook, code, wParam, lParam);
-			}
-
 			if ((keyboard->flags & LLKHF_INJECTED) == 0) {
 				BYTE sourceScan = static_cast<BYTE>(keyboard->scanCode & 0xFF);
-				if (sourceScan == 0x36) {
-					sourceScan = 0x2A;
+				const bool keyUp = wParam == WM_KEYUP || wParam == WM_SYSKEYUP;
+				if(passedThrough[sourceScan]) {
+					if(keyUp)passedThrough[sourceScan]=false;
+					return CallNextHookEx(KeyboardHook, code, wParam, lParam);
 				}
-
-				BYTE targetScan = 0;
-				WPARAM targetVk = 0;
-				if (TryGetMovementTarget(sourceScan, &targetScan, &targetVk)) {
-					const bool keyUp = wParam == WM_KEYUP || wParam == WM_SYSKEYUP;
-					keybd_event(static_cast<BYTE>(targetVk), targetScan, keyUp ? KEYEVENTF_KEYUP : 0, 0);
+				if (heldTarget[sourceScan]) {
+					if(!IsCurrentProcessForeground() || ShouldBypassMovementRemap()) {
+						keybd_event(heldVk[sourceScan],heldTarget[sourceScan],KEYEVENTF_KEYUP,0);
+						heldTarget[sourceScan]=heldVk[sourceScan]=0;passedThrough[sourceScan]=!keyUp;
+						return CallNextHookEx(KeyboardHook, code, wParam, lParam);
+					}
+					keybd_event(heldVk[sourceScan],heldTarget[sourceScan],keyUp?KEYEVENTF_KEYUP:0,0);
+					if(keyUp){heldTarget[sourceScan]=0;heldVk[sourceScan]=0;}
 					return 1;
 				}
+				if(keyUp || !IsCurrentProcessForeground() || ShouldBypassMovementRemap()) {
+					if(!keyUp)passedThrough[sourceScan]=true;
+					return CallNextHookEx(KeyboardHook, code, wParam, lParam);
+				}
+				BYTE targetScan = 0;
+				WPARAM targetVk = 0;
+				if (TryGetMovementTarget(sourceScan==0x36?0x2A:sourceScan, &targetScan, &targetVk)) {
+					heldTarget[sourceScan]=targetScan;heldVk[sourceScan]=static_cast<BYTE>(targetVk);
+					keybd_event(static_cast<BYTE>(targetVk), targetScan, 0, 0);
+					return 1;
+				}
+				passedThrough[sourceScan]=true;
 			}
 		}
 
@@ -427,7 +447,7 @@ namespace MovementKeyHook
 	static HRESULT STDMETHODCALLTYPE GetDeviceState_Hook(void* device, DWORD cbData, LPVOID lpvData)
 	{
 		const HRESULT hr = RealGetDeviceState(device, cbData, lpvData);
-		if (SUCCEEDED(hr) && cbData >= 256) {
+		if (SUCCEEDED(hr) && cbData >= 256 && !WardrobeInput::Locked()) {
 			ApplyMovementKeys(reinterpret_cast<BYTE*>(lpvData), cbData);
 		}
 		return hr;

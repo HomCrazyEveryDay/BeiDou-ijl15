@@ -237,6 +237,13 @@
     <ClInclude Include="NameTagOriginFix.h" />
     <ClInclude Include="MineralBagWnd.h" />
     <ClInclude Include="MixedDyeWnd.h" />
+    <ClInclude Include="WardrobeWnd.h" />
+    <ClInclude Include="WardrobeModel.h" />
+    <ClInclude Include="WardrobeKeybind.h" />
+    <ClInclude Include="WardrobeInput.h" />
+    <ClInclude Include="WardrobeLayout.h" />
+    <ClInclude Include="WardrobePreview.h" />
+    <ClInclude Include="WardrobeClip.h" />
     <ClInclude Include="MonthlyShop.h" />
     <ClInclude Include="MonthlyShopModel.h" />
     <ClInclude Include="MonthlyShopText.h" />
@@ -328,7 +335,10 @@
     <ClCompile Include="ChairCompatibility.cpp" />
     <ClCompile Include="CrashReporter.cpp" />
     <ClCompile Include="RefreshRateTrace.cpp" />
-    <ClCompile Include="HpMpAlert.cpp" />
+    <ClCompile Include="HpMpAlert.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Async</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="IntegratedFinalAttack.cpp" />
     <ClCompile Include="LauncherGate.cpp" />
     <ClCompile Include="SnipeDamageSync.cpp" />
@@ -341,6 +351,16 @@
     <ClCompile Include="BuffCountdown.cpp" />
     <ClCompile Include="MixedDye.cpp" />
     <ClCompile Include="MixedDyeWnd.cpp" />
+    <ClCompile Include="WardrobeWnd.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Async</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="WardrobeInput.cpp" />
+    <ClCompile Include="WardrobePreview.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Async</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="WardrobeClip.cpp" />
     <ClCompile Include="MonthlyShop.cpp" />
     <ClCompile Include="NpcShopCurrency.cpp" />
     <ClCompile Include="MineralBagWnd.cpp" />

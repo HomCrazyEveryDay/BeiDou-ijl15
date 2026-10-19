@@ -1285,6 +1285,8 @@ __declspec(naked) void KeyConfig_GetIconIndex_cave()
 {
 	__asm {
 		mov eax, dword ptr[esp + 4]
+		cmp eax, 40
+		je original_done
 		cmp eax, 26
 		je move_up
 		cmp eax, 27

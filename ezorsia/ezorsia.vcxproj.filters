@@ -65,6 +65,19 @@
     <ClInclude Include="SkillPointSyncState.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="WardrobeWnd.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WardrobeModel.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WardrobeKeybind.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="WardrobeInput.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="WardrobeLayout.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="WardrobePreview.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="WardrobeClip.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="MineralBagWnd.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -469,6 +482,12 @@
     <ClCompile Include="SecondPendantSlot.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="WardrobeWnd.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="WardrobeInput.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="WardrobePreview.cpp"><Filter>Source Files</Filter></ClCompile>
+    <ClCompile Include="WardrobeClip.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClCompile Include="MineralBagWnd.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

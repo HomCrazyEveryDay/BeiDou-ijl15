@@ -2,6 +2,8 @@
 #include "ReactorTimingDiagnostics.h"
 #include "MineralBagWnd.h"
 #include "MixedDyeWnd.h"
+#include "WardrobeWnd.h"
+#include "WardrobePreview.h"
 #include "MonthlyShop.h"
 #include "AbsoluteDefenseSync.h"
 #include "HpMpAlert.h"
@@ -791,6 +793,8 @@ static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen, true);
     if (packet && MineralBagWnd::HandlePacket(
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
+    if (packet && WardrobeWnd::HandlePacket(
+        reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet && MixedDyeWnd::HandlePacket(
         reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet && ClientDiagnostics::HandleIncoming(
@@ -834,12 +838,16 @@ static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
         AbsoluteDefenseSync::EndIncomingAttackPacket();
     }
 }
+static void ProcessPacketInField(void* pThis,void* edx,CInPacket* packet) {
+    WardrobePreview::ExternalScope field;
+    ProcessPacketBody(pThis,edx,packet);
+}
 static void __fastcall ProcessPacket_Hook(void* pThis, void* edx, CInPacket* packet) {
     const bool reactorTracked=packet && ReactorTimingDiagnostics::Receive(
         reinterpret_cast<const unsigned char*>(packet->Data),packet->DataLen);
     const DWORD reactorStart=GetTickCount();
     __try {
-        ProcessPacketBody(pThis, edx, packet);
+        ProcessPacketInField(pThis, edx, packet);
     } __except (DisconnectDiagnostics::PacketException(GetExceptionInformation())) {
         // The observer always returns CONTINUE_SEARCH; native exception handling is unchanged.
     }

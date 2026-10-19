@@ -30,6 +30,7 @@
 #include "PetPotionSettings.h"
 #include "MineralBagWnd.h"
 #include "MixedDyeWnd.h"
+#include "WardrobeWnd.h"
 #include "MonthlyShop.h"
 #include "EvanCreation.h"
 #include "EvanRuntime.h"
@@ -1272,6 +1273,7 @@ namespace
 		NpcShopCurrency::Install();
 		MineralBagWnd::Install();
 		MixedDyeWnd::Install();
+		if(!WardrobeWnd::Install())CrashReporter::RecordEvent("wardrobe.install","disabled: signature or hook installation failed");
 		if (!MonthlyShop::Install()) CrashReporter::RecordEvent("monthly.shop", "install_failed");
 		PrivateCleanSlateHook::Install();
 		SecondPendantSlot::Install(enableEquipmentSlotLog);

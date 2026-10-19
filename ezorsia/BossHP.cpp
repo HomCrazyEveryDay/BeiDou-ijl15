@@ -1,10 +1,11 @@
 #include "stdafx.h"
 #include "MineralBagWnd.h"
 #include "MixedDyeWnd.h"
+#include "WardrobeWnd.h"
 #include "BossHP.h"
-#include "AranCombatStep.h"
 #include "HpMpAlert.h"
 #include "StackedBuffIcons.h"
+#include "AranCombatStep.h"
 
 const DWORD dw_TSingleton_CUIMiniMap___ms_pInstance = 0x00BED788;
 const DWORD dwCField__ShowMobHpTag = 0x005336CA;
@@ -40,6 +41,7 @@ void BossHP::HookUpdate() {
 		StackedBuffIcons::OnFieldUpdate();
 		MineralBagWnd::OnFieldUpdate();
 		MixedDyeWnd::OnFieldUpdate(pThis);
+		WardrobeWnd::OnFieldUpdate(pThis);
 		UpdateQueuedMobDamageDisplay();
 		DrawBossHpNumberIfNeed();
 	};
@@ -88,6 +90,7 @@ void BossHP::HookDisposeField() {
 		StackedBuffIcons::OnFieldDispose();
 		MineralBagWnd::OnFieldDispose();
 		MixedDyeWnd::OnFieldDispose();
+		WardrobeWnd::OnFieldDispose();
 		DisposeBossHpNumber();
 		_Field__Dispose(pThis, edx);
 	};
