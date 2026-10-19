@@ -6,25 +6,19 @@
 
 本分支主要服务于BeiDou的客户端。
 
-客户端闪退排查参考：[Write.dll 多功能辅助特征与 RichEdit 退出崩溃](docs/third-party-write-richedit-crash-20261013.md)，包含文件指纹、现场调用链及首次异常和退出二次崩溃的判定边界。
-
-非 RichEdit 首次崩溃：[暴击、Property 工厂与龙王血条取证](docs/logs9-resource-first-failure-20261013.md)，含本地诊断交付及已验证/未闭环范围。
+文档索引见 [docs/README.md](docs/README.md)（崩溃排查记录在 `docs/records/`）；构建、同步与交付规则见 workspace 根 `../AGENTS.md` 的 ijl15 Rules。
 
 ## 使用方法
 
-已测试的开发工具 VS 2019，SDK 10，工具集 VS2019（v142）
-
-使用vs打开的时候注意，要使用 Release x86 的模式生成解决方案
-
-生成后可在 out/Release 目录下找到 ijl15.dll
-
-先把客户端原本的ijl15.dll重命名成2ijl15.dll，然后把生成的ijl15.dll拷贝到客户端目录下，然后把项目根目录下的config.ini同样复制到客户端目录下，具体配置都在config.ini中
+- 方案 `ezorsia.sln`，配置 `Release|x86`，平台工具集以 `ezorsia/*.vcxproj` 为准（当前 v142；本机缺少时按根 AGENTS.md 定位已安装的 MSBuild 与工具集）。
+- 产物 `out/Release/ijl15.dll`；交付时同步到 `BeiDou-Client/ijl15.dll` 并核对 SHA-256，原版 DLL 以 `2ijl15.dll` 名称保留在客户端。
+- 连接线路与诊断开关由启动器下发（见 [endpoint-override.md](docs/endpoint-override.md)）；`ezorsia/config.ini` 只是本地开发示例，不提交个人配置。
 
 ## 推荐服务端
 
 北斗 https://github.com/SleepNap/BeiDou
 
-## 更新记录
+## 更新记录（早期，相比主分支 v1；后续变更见 docs 与 Git 历史）
 
 相比主分支 v1
 

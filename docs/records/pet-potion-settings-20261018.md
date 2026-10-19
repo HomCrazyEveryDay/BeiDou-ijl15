@@ -2,7 +2,7 @@
 
 ## 行为与兼容策略
 
-原生 083 从 `HKLM\SOFTWARE\Wizet\MapleStory` 读取 HP/MP 警戒线。其他使用同一位置的客户端可能改变北斗下一次启动读到的值。前置排查及验证边界见[服务端排查记录](../../myself_BeiDou_Server/docs/pet-autopot-investigation-20261018.md)。
+原生 083 从 `HKLM\SOFTWARE\Wizet\MapleStory` 读取 HP/MP 警戒线。其他使用同一位置的客户端可能改变北斗下一次启动读到的值。前置排查及验证边界见[服务端排查记录](../../../BeiDou-Server/docs/records/pet-autopot-investigation-20261018.md)。
 
 本次只接管 HP/MP 警戒线，使用当前 Windows 用户的 `HKCU\Software\BeiDou\MapleStory\PetPotion`，值名 `AlertStepsV1`。不会删除原版注册表，不再把北斗的 HP/MP 调整写回共享位置；其他原生设置继续沿用既有流程。
 
@@ -25,18 +25,18 @@
 
 ## 实现
 
-- [`PetPotionSettings.cpp`](../ezorsia/PetPotionSettings.cpp) 校验 EXE 的 PE 身份和三处原始 call 指令，整组通过后才安装；范围仅 15 字节。
+- [`PetPotionSettings.cpp`](../../ezorsia/PetPotionSettings.cpp) 校验 EXE 的 PE 身份和三处原始 call 指令，整组通过后才安装；范围仅 15 字节。
 - `0049C2FF`：在原生 `CConfig::LoadGlobal` 返回后装载独立设置。即使原生因 HKLM 打开失败而提前返回，也会初始化 HP/MP 内存值。
 - 首次迁移读取 CConfig `+0xC0` 的原生注册表句柄，沿用客户端实际打开的视图，避免自行猜测 WOW64 或虚拟化位置。
 - `0049CBE2`、`0049CC23`：只跳过 SaveGlobal 内两处 HP/MP 共享键写入，保留其他选项保存。
-- [`HpMpAlert.cpp`](../ezorsia/HpMpAlert.cpp) 在既有 SaveGlobal hook 内保存独立值，再执行原有警戒线上报。安装必须先成功挂上此保存 hook，才允许跳过原生 HP/MP 写入。
+- [`HpMpAlert.cpp`](../../ezorsia/HpMpAlert.cpp) 在既有 SaveGlobal hook 内保存独立值，再执行原有警戒线上报。安装必须先成功挂上此保存 hook，才允许跳过原生 HP/MP 写入。
 - 两个档位和格式标识合并为一个 REG_DWORD：`0x01000000 | hp | (mp << 8)`，一次写入，避免分别保存时留下半次迁移。
 - 有效的独立记录是迁移完成标记。后续主动保存 0 保持关闭，不再做零值修复；不变的值跳过重复写入。
 - 读取和保存保留 GetLastError，诊断事件 `pet_potion_settings` 每进程最多 32 条，不记录账号或凭据。
 
 ## 验证
 
-[`PetPotionSettingsTest.ps1`](../tests/PetPotionSettingsTest.ps1) 编译 x86 隔离测试，映射真实 `BeiDou.exe`，执行安装后的原生调用点；不运行游戏入口。注册表操作重定向到当前测试专属的 HKCU 临时子树，使用真实 Windows 读写 API，测试结束删除该子树，不读取或改写玩家的北斗/原版键。
+[`PetPotionSettingsTest.ps1`](../../tests/PetPotionSettingsTest.ps1) 编译 x86 隔离测试，映射真实 `BeiDou.exe`，执行安装后的原生调用点；不运行游戏入口。注册表操作重定向到当前测试专属的 HKCU 临时子树，使用真实 Windows 读写 API，测试结束删除该子树，不读取或改写玩家的北斗/原版键。
 
 已验证：
 

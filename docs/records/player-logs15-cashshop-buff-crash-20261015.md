@@ -8,7 +8,7 @@
 
 玩家已加载高地址字符串修复，`string.conversion.fix ready=1`。此次空指针来自地图角色生命周期，与此前资源名称转换失败的指纹不同。两份 dump 是同一 PID、同一异常前后两阶段捕获，不是两次崩溃。
 
-初次分析仅保存证据；用户随后授权修复。现已实现服务端商城/增益处理隔离与客户端 `TemporaryStatGuard`，通过 23 项服务端测试、原生故障指令与分派隔离测试，完成 `Release|x86` 构建及本地 DLL 同步。未运行游戏，未写生产，未发布，未提交推送；尚未完成实机验收。实现与测试边界见 [配套修复记录](../../myself_BeiDou_Server/docs/cashshop-buff-transition-fix-20261015.md)。
+初次分析仅保存证据；用户随后授权修复。现已实现服务端商城/增益处理隔离与客户端 `TemporaryStatGuard`，通过 23 项服务端测试、原生故障指令与分派隔离测试，完成 `Release|x86` 构建及本地 DLL 同步。未运行游戏，未写生产，未发布，未提交推送；尚未完成实机验收。实现与测试边界见 [配套修复记录](../../../BeiDou-Server/docs/records/cashshop-buff-transition-fix-20261015.md)。
 
 ## 样本、版本与范围
 

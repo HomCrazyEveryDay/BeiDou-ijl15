@@ -8,7 +8,7 @@
 
 1. `Client.cpp`：`004D59B2` 的高度立即数写入改为 `+2`；删除落在 `0064061D` 除法上的重复写入；删除将 `00A5FC2B` 的 `mov eax,SEH-handler` 改成 `add eax,SEH-handler` 的字节写入。后两者不是资源字符串根因的证明。
 2. `PoolGuard.cpp/.h`、`PoolGuardCore.h`：检查匿名、char、wide 三个原生小块池，以及 DLL 的 `ZAllocEx` 复刻池。启动时校验 EXE 标识和六个入口签名，再以同一事务安装。DLL 项目文件、启动入口和 CrashReporter 接口均已接好。
-3. 服务端 `Client.announceBossHpBar`：对同一连接、同一 Boss 合并 100 ms 内的更新；保留窗口内最新一次血量并安排尾次发送。首次显示、选中另一个 Boss、死亡通知立即发送。继续使用原来的五秒目标选择规则，限流计时独立于攻击更新的 aggro 时间。详见 [服务端记录](../../myself_BeiDou_Server/docs/boss-hp-throttle-20261013.md)。
+3. 服务端 `Client.announceBossHpBar`：对同一连接、同一 Boss 合并 100 ms 内的更新；保留窗口内最新一次血量并安排尾次发送。首次显示、选中另一个 Boss、死亡通知立即发送。继续使用原来的五秒目标选择规则，限流计时独立于攻击更新的 aggro 时间。详见 [服务端记录](../../../BeiDou-Server/docs/records/boss-hp-throttle-20261013.md)。
 
 ## 诊断边界及开关
 

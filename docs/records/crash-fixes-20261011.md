@@ -36,7 +36,7 @@
 
 ## 10 月 11 日原始实施记录
 
-本次接续 [生产崩溃审计](../../myself_BeiDou_Server/docs/production-crash-status-20261011.md)，处理退出 `004031FE`、空画布 `Canvas+ED28` 和属性包 `00A1FBA2`。以下是本地实现、离线验证和 DLL 同步结果，**不是已经发布或生产验收通过**。服务端脚本结果见 [配套记录](../../myself_BeiDou_Server/docs/production-script-fixes-20261011.md)。
+本次接续生产崩溃审计（原链接的服务端 `production-crash-status-20261011.md` 未入库），处理退出 `004031FE`、空画布 `Canvas+ED28` 和属性包 `00A1FBA2`。以下是本地实现、离线验证和 DLL 同步结果，**不是已经发布或生产验收通过**。服务端脚本结果见 [配套记录](../../../BeiDou-Server/docs/records/production-script-fixes-20261011.md)。
 
 ## 状态与修复边界
 

@@ -1,0 +1,69 @@
+# 记录索引
+
+带日期的排查、实现、评审与上线记录；按文件名排序，同主题前缀相邻。现行结论以上级 [docs/README.md](../README.md) 标注的文档为准。本文件由 `tools/docs-index.py index` 生成，勿手改。
+
+- [boss-hp-shared-page-crash.md](boss-hp-shared-page-crash.md) — Boss 血量百分比显示的共享页写入崩溃
+- [captain-resource-crash-guards.md](captain-resource-crash-guards.md) — 船长玩家资源读取异常：第一版防崩溃修复
+- [chair-3015759-inlinks-20261004.md](chair-3015759-inlinks-20261004.md) — 超星魔导椅子（3015759）动画闪烁排查与修复
+- [crash-claims-verification-20261013.md](crash-claims-verification-20261013.md) — 2026-10-13 闪退调查结论复核
+- [crash-fix-delivery-20261008.md](crash-fix-delivery-20261008.md) — 玩家崩溃修复交付（2026-10-08）
+- [crash-fixes-20261011.md](crash-fixes-20261011.md) — 2026-10-11 生产崩溃首批修复与本地交付
+- [death-dialog-investigation-20260930.md](death-dialog-investigation-20260930.md) — 2026-09-30 黑龙死亡后无复活框排查
+- [evan-breath-observer-crash.md](evan-breath-observer-crash.md) — 火焰喷射旁观崩溃（2026-09-22）
+- [evan-creation-cancel-focus.md](evan-creation-cancel-focus.md) — 取消创建角色：失效焦点与重复窗口登记（2026-09-25）
+- [evan-dragon-equipment-double-click.md](evan-dragon-equipment-double-click.md) — 龙装备双击卸下（2026-09-23）
+- [evan-flame-wheel-path-crash.md](evan-flame-wheel-path-crash.md) — 火焰轮延时特效 /1 异常修复（2026-09-15）
+- [evan-mount-saddle.md](evan-mount-saddle.md) — 龙神骑乘兼容排查（2026-09-23）
+- [evan-observer-actions-20260922.md](evan-observer-actions-20260922.md) — 龙神动作与旁观显示检查（2026-09-22）
+- [evan-observer-disconnect-20260922.md](evan-observer-disconnect-20260922.md) — 2026-09-22 旁观龙神时的资源异常现场
+- [exit-004031fe-investigation-20261008.md](exit-004031fe-investigation-20261008.md) — 004031FE 退出崩溃：历史修复核对与 dump 分析
+- [exit-trigger-investigation-20261008.md](exit-trigger-investigation-20261008.md) — 退出前触发原因续查（2026-10-08）
+- [five-crash-families-investigation-20261008.md](five-crash-families-investigation-20261008.md) — 五类客户端崩溃深入调查（2026-10-08）
+- [flash-renderer-fix.md](flash-renderer-fix.md) — Flash 渲染与退出异常修复（2026-09-13）
+- [gz-crash-rootcause-20261008.md](gz-crash-rootcause-20261008.md) — 玩家崩溃逐案复核与 gz 日志深查（2026-10-08）
+- [henesys-boss-disconnect-investigation-20261013.md](henesys-boss-disconnect-investigation-20261013.md) — 2026-10-12 晚射手村集中掉线调查
+- [high-address-string-conversion-fix-20261014.md](high-address-string-conversion-fix-20261014.md) — 2026-10-14：高地址字符串转换失败的根因与修复
+- [high-id-hair-preview-crash.md](high-id-hair-preview-crash.md) — 高编号发型染色预览崩溃排查记录
+- [horntail-additional-attachments-20261013.md](horntail-additional-attachments-20261013.md) — 黑龙活动补充附件调查（2026-10-13）
+- [ime-focus-20261018.md](ime-focus-20261018.md) — 2026-10-18 输入框失焦后残留 IME 关联
+- [lifecycle-logging-validation.md](lifecycle-logging-validation.md) — 极光恢复复现前的日志修复（2026-09-15）
+- [local-face-accessory-crash-20261014.md](local-face-accessory-crash-20261014.md) — 2026-10-14 本地怪物攻城闪退：脸饰画布为空
+- [logs9-resource-first-failure-20261013.md](logs9-resource-first-failure-20261013.md) — 2026-10-13 logs(9)：继续排查非 RichEdit 的首次崩溃
+- [macos-attack-exit-20261009.md](macos-attack-exit-20261009.md) — 2026-10-09 macOS 攻击中异常退出
+- [macos-display-font-match-20261009.md](macos-display-font-match-20261009.md) — Windows 原图与 Mac 字体对齐
+- [macos-font-antialias-20261009.md](macos-font-antialias-20261009.md) — macOS 游戏文字灰度抗锯齿
+- [macos-font-family-fallback-20261009.md](macos-font-family-fallback-20261009.md) — 游戏实际字体家族与 Windows 回退
+- [macos-guild-medal-fonts-20261009.md](macos-guild-medal-fonts-20261009.md) — Wine 家族／勋章名牌字体
+- [macos-runtime-font-diagnostics-20261009.md](macos-runtime-font-diagnostics-20261009.md) — 字体改动未改善后的运行时取证
+- [macos-small-ui-fonts-20261009.md](macos-small-ui-fonts-20261009.md) — Wine 小字号界面文字修正（2026-10-09）
+- [main-pet-inventory-mark-20261016.md](main-pet-inventory-mark-20261016.md) — 背包主宠物标识（2026-10-16）
+- [mixed-dye-mouse-input-20261003.md](mixed-dye-mouse-input-20261003.md) — 混染窗口关闭后阻挡物品栏鼠标
+- [mixed-dye-ordinary-hair-count-20261004.md](mixed-dye-ordinary-hair-count-20261004.md) — 普通发型攀爬与混合美瞳券数量显示（2026-10-04）
+- [mixed-face-preview-crash-20261003.md](mixed-face-preview-crash-20261003.md) — 混合美瞳选双色后预览崩溃
+- [modern-equipment-compatibility-20261002.md](modern-equipment-compatibility-20261002.md) — 现代时装兼容：083 本地验证版（2026-10-02）
+- [monster-magnet-crash.md](monster-magnet-crash.md) — 磁石失败动画崩溃
+- [monthly-shop-20261006.md](monthly-shop-20261006.md) — 原生商店月份控件
+- [mount-rope-alignment-20261018.md](mount-rope-alignment-20261018.md) — 骑宠皮肤抓绳横向身位修正（2026-10-18）
+- [nametag-origin-20261006.md](nametag-origin-20261006.md) — 名片戒指右边框断层兼容（2026-10-06）
+- [npc-dialog-focus-20261013.md](npc-dialog-focus-20261013.md) — NPC 对话关闭后的方向键焦点恢复（2026-10-13）
+- [pcom-pool-lifetime-20261012.md](pcom-pool-lifetime-20261012.md) — PCOM 退出内存池生命周期修复
+- [pet-action-uol-20261011.md](pet-action-uol-20261011.md) — 宠物水下动作 UOL 兼容修复（2026-10-11）
+- [pet-chaos-scroll-20261012.md](pet-chaos-scroll-20261012.md) — 三宠装备混沌卷轴兼容修复（2026-10-12）
+- [pet-loot-timing.md](pet-loot-timing.md) — 掉落物静态拾取属性缓存与诊断
+- [pet-potion-settings-20261018.md](pet-potion-settings-20261018.md) — 宠物补药警戒线独立存储（2026-10-18）
+- [player-four-archives-analysis-20261008.md](player-four-archives-analysis-20261008.md) — 四份玩家日志包续查（2026-10-08）
+- [player-logs15-cashshop-buff-crash-20261015.md](player-logs15-cashshop-buff-crash-20261015.md) — 2026-10-15 logs(15)：进入商城后晚到的神圣之火增益包导致闪退
+- [player-logs2-7z-crashes-20261014.md](player-logs2-7z-crashes-20261014.md) — 2026-10-14 logs(2).7z：射手村八次闪退与空资源名称证据
+- [player-logs6-crashes-20261014.md](player-logs6-crashes-20261014.md) — 2026-10-14 logs(6)：空类名与混染发型 info 为空的两次闪退
+- [player-sound-font-allocation-crash-20261016.md](player-sound-font-allocation-crash-20261016.md) — 2026-10-16：logs (2)(1).zip 战斗中音效与画布资源分配失败
+- [pool-guard-handoff-20261013.md](pool-guard-handoff-20261013.md) — 2026-10-13 Claude 闪退调查接续与本地交付
+- [pool-guard-startup-crash-20261014.md](pool-guard-startup-crash-20261014.md) — 授权成功后游戏窗口未出现：内存池探针启动时序（2026-10-14）
+- [remaining-crashes-followup-20261008.md](remaining-crashes-followup-20261008.md) — 剩余四类崩溃续查（2026-10-08）
+- [resource-lookup-diagnostics-20261013.md](resource-lookup-diagnostics-20261013.md) — 资源查询异常的低开销观察日志
+- [resource-string-allocator-fix-20261013.md](resource-string-allocator-fix-20261013.md) — 资源字符串分配器错配：复现与修复
+- [third-party-write-richedit-crash-20261013.md](third-party-write-richedit-crash-20261013.md) — Write.dll 多功能辅助特征与 RichEdit 退出崩溃排查
+- [trade-pet-dialog-crash-20261008.md](trade-pet-dialog-crash-20261008.md) — 交易入口、宠物用药设置及其他弹窗崩溃排查（2026-10-08）
+- [wardrobe-entry-delivery-20261018.md](wardrobe-entry-delivery-20261018.md) — 衣柜入口再次消失：本机 DLL 版本混用（2026-10-18）
+- [wardrobe-preview-ownership-20261018.md](wardrobe-preview-ownership-20261018.md) — 衣柜预览关闭后的图层退场
+- [wardrobe-preview-polish-20261018.md](wardrobe-preview-polish-20261018.md) — 衣柜关闭、名片戒指与完整搭配详情
+- [zhiyuan-horntail-crash-20261013.md](zhiyuan-horntail-crash-20261013.md) — 纸鸢逐风 / 蔡徐坤：10 月 12 日晚射手村异常退出

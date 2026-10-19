@@ -4,14 +4,14 @@
 
 ## 本轮最终状态
 
-本机后续切换 Wine 11.18，关闭异步渲染线程后用户反馈运行恢复正常；100% 显示下的局部字体修正得到“这次好像对了”的反馈。原生 Windows 自动化数据路径测试通过，完整 Windows 游戏和长期稳定性尚未验收。最终字体范围及验证见 [macos-small-ui-fonts-20261009.md](macos-small-ui-fonts-20261009.md)，崩溃证据及规避边界见 [macos-attack-exit-20261009.md](macos-attack-exit-20261009.md)。下文早期版本、哈希和实验记录保留作历史，不代表当前推荐运行时。
+本机后续切换 Wine 11.18，关闭异步渲染线程后用户反馈运行恢复正常；100% 显示下的局部字体修正得到“这次好像对了”的反馈。原生 Windows 自动化数据路径测试通过，完整 Windows 游戏和长期稳定性尚未验收。最终字体范围及验证见 [macos-small-ui-fonts-20261009.md](records/macos-small-ui-fonts-20261009.md)，崩溃证据及规避边界见 [macos-attack-exit-20261009.md](records/macos-attack-exit-20261009.md)。下文早期版本、哈希和实验记录保留作历史，不代表当前推荐运行时。
 
 ## 实现边界
 
 - `WineCompatibility` 通过 `ntdll!wine_get_version` 识别 Wine。原生 Windows 不安装新增编码或网卡 hook。
 - Wine 的系统代码页不是 936 时，把默认 ANSI/OEM/线程代码页映射为 GBK，修正双字节前导字节和默认字体字符集。显式 UTF-8 等代码页与显式字体字符集保持原样。相关 hook 以一个 Detours 事务安装，失败会终止初始化并记录生命周期日志。
-- 2026-10-09 字体修正：Wine 下字体 hook 无论 ACP 是否为 936 都安装，将非符号字体的显式禁用抗锯齿请求改为灰度抗锯齿；原字号、字重和颜色不变。证据、对比图和待同步状态见 [macos-font-antialias-20261009.md](macos-font-antialias-20261009.md)。
-- 后续运行时取证修正：Windows 字体模式保留原质量；默认字符集仅在原 ACP 非 936 时映射，避免中文环境的 Arial 被错误选成 Arial Unicode MS。真实游戏样本与验证见 [macos-runtime-font-diagnostics-20261009.md](macos-runtime-font-diagnostics-20261009.md)。
+- 2026-10-09 字体修正：Wine 下字体 hook 无论 ACP 是否为 936 都安装，将非符号字体的显式禁用抗锯齿请求改为灰度抗锯齿；原字号、字重和颜色不变。证据、对比图和待同步状态见 [macos-font-antialias-20261009.md](records/macos-font-antialias-20261009.md)。
+- 后续运行时取证修正：Windows 字体模式保留原质量；默认字符集仅在原 ACP 非 936 时映射，避免中文环境的 Arial 被错误选成 Arial Unicode MS。真实游戏样本与验证见 [macos-runtime-font-diagnostics-20261009.md](records/macos-runtime-font-diagnostics-20261009.md)。
 - 原客户端在 `GetAdaptersInfo` 失败后仍遍历栈缓冲区。补丁仅在失败且调用方空间足够时提供合法的单节点以太网适配器；成功结果、空缓冲区尺寸查询和不足一条记录的调用保持原结果。地址由 Wine C 盘卷序列号与计算机名确定，为本地管理单播地址；它是兼容标识，不是真实网卡身份，复制相同环境也可能复制此标识。
 - 复用既有 `D3D8DisplayModeHook` 的分辨率规则。在 Wine 下替换 COM vtable 槽位，避免旧 Detours 依赖 Wine 方法入口指令布局；原生 Windows 沿用原拦截路径。不引入第二套 `ModeTableFix`。
 - 不引入 PR 中的音频流池。先在固定的 Wine 11 构建上实测跳跃/技能音效，出现卡顿再定位。
