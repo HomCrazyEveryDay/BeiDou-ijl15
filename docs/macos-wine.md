@@ -45,3 +45,15 @@ Mac 使用同一 Wine 和独立测试 prefix 运行生成的 `out/wine-tests/Win
 - 新 DLL 已同步到客户端，两处 SHA-256 均为 `33ee27c20110dea4288d792162aea14811572b54039fd9bfa77ef40446c7449c`。本地备份与完整交付记录位于 workspace `exports/macos/`。
 
 编译和独立 API 测试不等于客户端已能正常游玩。完整的启动器授权、选角色、地图、中文输入、音效及长时间游玩仍需要用户实机验收。交付时记录实际构建工具集、DLL 哈希与测试结果，不能把未执行的客户端测试写成通过。
+
+## 帧率：DrawPrimitiveUP 合批（2026-10-20）
+
+用户反馈 M5 / 16 GB 上 720p 很卡、1080p 像幻灯片。根因：Apple Silicon 只能用新 WoW64 运行 32 位客户端，32 位进程映射 GL 缓冲区时 Wine 会复制整块缓冲区（日志 `wow64_map_buffer: Doing a copy of a mapped buffer`）；`Gr2D_DX8.dll` 只有一处绘制调用且为 `DrawPrimitiveUP`（设备虚表 72），wined3d 每画一个精灵都映射一次流式缓冲区，每次约 90 µs，精灵数随分辨率增长。
+
+诊断用合成基准（本机 M4 / 16 GB、打包 Wine 11.18，`.tmp/mac-fps/sprite-bench`，每帧 2.5 倍屏幕面积的 64×64 精灵）：720p 约 19 fps、1080p 约 8 fps，与反馈一致；同负载改为每帧一次上传顶点后约 118 / 110 fps。已排除：`csmt=1`（几乎无变化）、`renderer=vulkan`（WoW64 下 MoltenVK 不支持所需外部内存，建缓冲区失败退出）、wine-staging 11.18（同样复制）、贴图切换与上传。
+
+`ezorsia/D3D8Batch.cpp` 在 Wine 下接管首个 D3D8 设备，只在创建设备的线程上合批：`DrawPrimitiveUP` 的顶点先暂存，其间的 `SetTexture`（仅 2D 贴图）、`SetRenderState`、`SetTextureStageState`、`SetTransform`、`SetMaterial`、`SetClipPlane`（按设备能力）、`SetVertexShader`（仅已成功设置过的 FVF）在参数检查通过时按顺序记录；视口、首次出现的 FVF 及未通过检查的调用先提交再直接调用并返回真实结果。被延迟的 `DrawPrimitiveUP` 返回 `D3D_OK`，实际执行失败只计入统计并退回原路径。其余所有设备方法（经运行时生成的转发桩）、贴图 `LockRect`/`SetLOD`、表面 `LockRect` 前先提交：一次 `D3DLOCK_DISCARD` 写入动态顶点缓冲区后按原顺序重放 `DrawPrimitive`，结束时将流 0 置空（失败则停用合批）。命令数与字节容量在写入本次顶点前检查。状态块录制期间、绑定立方体/体积贴图期间、其他线程调用时不合批；状态块结束/应用与 `Reset` 后用 `GetTexture` 重算真实绑定。上传、`Unlock`、流绑定或绘制失败后剩余绘制退回原 `DrawPrimitiveUP`；`Reset` 前释放 DEFAULT 池缓冲区；设备最终释放前释放自建缓冲区；安装失败逆序恢复已改槽位，恢复不完整则保留转发桩并不再接管。原生 Windows 不启用；`BEIDOU_D3D8_BATCH=0` 可在 Wine 下关闭以便对照。Lifecycle 日志记录 `event=d3d8_batch install`，第 1200 帧记录一次 `draws_per_flush` 统计。
+
+`tests/D3D8BatchTest.cpp` 先在挂接前画出各场景作为基线，挂接后合批重画，比较后台缓冲区 RGB 哈希与场景内状态/绘制调用（不含资源加锁与 Present）的返回值序列哈希：混合场景（状态/步长切换、扇形与折线、带变换和四个用户裁剪平面的几何、帧中 `GetRenderState` 断言、视口、帧中修改已用贴图、有暂存绘制时的非法参数）、裁剪、命令数上限、字节上限（大块绘制先于命令上限触发 2 MB 提交，含 512 KB 扩容与超过 256 KB 的直通绘制）、状态块（录制中绘制，并通过应用状态块恢复立方体绑定后采样与修改）、立方体贴图采样与修改，各 3 组种子；另测 `Reset` 后、释放后新设备重新挂接，断言 `GetStats()` 有合批且无回退、无越界，并测帧率。Windows 运行 `tests/D3D8BatchTest.ps1`；macOS 用 zig 交叉编译（命令见源文件头）后在 Wine 下运行。
+
+2026-10-20 本机 Wine 11.18、1280×720、每帧 720 个 16～48 像素精灵：20 项全部一致（字节场景每帧 4 次提交，确认 2 MB 上限触发），回退 0、越界 0，设备引用归零，帧率 14.3～15.5 → 117～120 fps（早期一版同条件 1920×1080、1620 精灵为 6.8 → 58.5 fps，接近 60 Hz 刷新上限）。测试进程偶发异常退出（`wow64cpu.dll+0x1239` 读取 `0x2DC1`，与 2026-10-09 记录同族）：可判定阶段的均发生在挂接合批之前，其中一次在创建窗口后、创建 D3D 设备前，因此玩家启动阶段也可能遇到；根因尚未证实，不归因于本改动。实际客户端提升取决于每帧精灵数与状态切换模式，仍需实机验收；MSVC 正式构建尚待 Windows 完成。未覆盖：设备方法失败注入、多线程并发调用（设计上非创建线程一律直通）。

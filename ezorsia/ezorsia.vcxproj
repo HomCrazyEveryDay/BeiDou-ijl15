@@ -208,6 +208,7 @@
     <ClInclude Include="NativeExitDiagnostics.h" />
     <ClInclude Include="NativeLoopCleanupFix.h" />
     <ClInclude Include="ClientLog.h" />
+    <ClInclude Include="D3D8Batch.h" />
     <ClInclude Include="ClientDiagnostics.h" />
     <ClInclude Include="ModuleAudit.h" />
     <ClInclude Include="ModuleAuditCrypto.h" />
@@ -327,6 +328,9 @@
     <ClCompile Include="NativeExitDiagnostics.cpp" />
     <ClCompile Include="NativeLoopCleanupFix.cpp" />
     <ClCompile Include="ClientLog.cpp" />
+    <ClCompile Include="D3D8Batch.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="ClientDiagnostics.cpp" />
     <ClCompile Include="ModuleAudit.cpp">
       <ExceptionHandling>Sync</ExceptionHandling>

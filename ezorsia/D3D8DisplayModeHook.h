@@ -1,6 +1,7 @@
-﻿#pragma once
+#pragma once
 #include "ClientLog.h"
 #include "WineCompatibility.h"
+#include "D3D8Batch.h"
 #include <strsafe.h>
 
 namespace D3D8DisplayModeHook {
@@ -239,6 +240,22 @@ static HRESULT WINAPI GetDeviceCaps_Hook(void* self, UINT adapter, int deviceTyp
 	return hr;
 }
 
+static void LogBatch(const char* line) {
+	ClientLog::Append(ClientLog::Component::Lifecycle, "%s", line);
+}
+
+// 仅 Wine 下合批 DrawPrimitiveUP（见 D3D8Batch.h）；BEIDOU_D3D8_BATCH=0 可关闭以便对照。
+static void AttachBatch(void* device) {
+	if (!device || !WineCompatibility::IsWine()) return;
+	char value[8]{};
+	if (GetEnvironmentVariableA("BEIDOU_D3D8_BATCH", value, ARRAYSIZE(value)) && value[0] == '0') {
+		ClientLog::Append(ClientLog::Component::Lifecycle, "event=d3d8_batch disabled=env");
+		return;
+	}
+	D3D8Batch::SetLogger(LogBatch);
+	D3D8Batch::Attach(device);
+}
+
 static HRESULT WINAPI CreateDevice_Hook(
 	void* self,
 	UINT adapter,
@@ -285,6 +302,7 @@ static HRESULT WINAPI CreateDevice_Hook(
 		"d3d8.CreateDevice end hr=0x%08lX device=0x%08lX\r\n",
 		static_cast<unsigned long>(hr),
 		returnedDeviceInterface ? reinterpret_cast<unsigned long>(*returnedDeviceInterface) : 0);
+	if (SUCCEEDED(hr) && returnedDeviceInterface) AttachBatch(*returnedDeviceInterface);
 	return hr;
 }
 
