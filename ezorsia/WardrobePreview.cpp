@@ -86,10 +86,10 @@ HRESULT __stdcall DisplaySnapshot(void* self,LONG* x,LONG* y,LONG* rx,LONG* ry,L
     using Get=HRESULT(__stdcall*)(void*,LONG*);
     result=Method<Get>(p.overlay,0x20)(p.overlay,&left);if(FAILED(result))return result;
     result=Method<Get>(p.overlay,0x28)(p.overlay,&top);if(FAILED(result))return result;
-    // Original shop artwork starts at world (-376,-260). Translate all positional
-    // outputs just for this preview; native physics and other actors stay untouched.
-    left+=p.visible?WardrobeLayout::Preview.x+WardrobeLayout::PreviewArtX-WardrobeLayout::PreviewWorldX:-32000;
-    top+=p.visible?WardrobeLayout::Preview.y+WardrobeLayout::PreviewArtY-WardrobeLayout::PreviewWorldY:-32000;
+    // Original shop artwork starts at world (-376,-260) and fills the viewport 1:1. Translate
+    // all positional outputs just for this preview; native physics and other actors stay untouched.
+    left+=p.visible?WardrobeLayout::Preview.x-WardrobeLayout::PreviewWorldX:-32000;
+    top+=p.visible?WardrobeLayout::Preview.y-WardrobeLayout::PreviewWorldY:-32000;
     if(x)*x+=left;if(y)*y+=top;if(rx)*rx+=left;if(ry)*ry+=top;
     return result;
 }

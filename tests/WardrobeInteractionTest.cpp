@@ -4,13 +4,13 @@
 #include <iostream>
 #include <windows.h>
 using namespace WardrobeModel;
-enum class Dialog {None,Save,Rename,Delete,Binding,Overwrite,Details};
+enum class Dialog {None,Save,Rename,Delete,Binding,Overwrite};
 struct Control {int id,x,y,w,h;bool enabled;std::uint64_t uid;};
 struct State {
     unsigned char* window=nullptr;
     Model model;bool pending=false,avatarDirty=false,shown=true,ready=true,deferredClose=false,dragging=false;
     int selectedSource=0,selected=0,applyingPreset=-1,preset=-1,dropdown=-1,page=0,pressed=-1,dragX=0,dragY=0,hover=-1;
-    int detailSlot=0,saveSlot=0,menuPreset=-1,source=0,category=0,gridPage[3]{},edit=-1;
+    int saveSlot=0,menuPreset=-1,source=3,category=0,gridPage[4]{},edit=-1,outfit=0;
     std::uint64_t clickUid=0;std::vector<Control> controls;std::vector<Scope> saveScope;
     std::map<short,std::uint64_t> applyDraft;std::wstring status,search,outfitName,dialogMessage;Dialog dialog=Dialog::None;
 } state;
@@ -26,7 +26,10 @@ static bool Send(unsigned action,const std::vector<unsigned char>& bytes){
 static void Fail(const char*){assert(false);}
 static std::vector<int> drawnIcons;
 static void Image(void*,const wchar_t*,int,int){}
-static void Text(void*,const std::wstring&,int,int,unsigned=0,int=536){}
+static void Text(void*,const std::wstring&,int,int,unsigned=0,bool=false){}
+static std::vector<std::wstring> drawnLines;
+#include "WardrobeWrapUnderTest.h"
+static int TextLines(void*,const std::wstring& s,int,int,int width,unsigned=0,bool=false,int=13){auto lines=Wrap(s,width);drawnLines.insert(drawnLines.end(),lines.begin(),lines.end());return int(lines.size());}
 static void Rect(void*,int,int,int,int,unsigned){}
 static void Icon(void*,int id,int,int){drawnIcons.push_back(id);}
 static void Add(int id,int x,int y,int w,int h,bool enabled=true){state.controls.push_back({id,x,y,w,h,enabled,0});}
@@ -94,21 +97,23 @@ int main(){
     Reset();state.model.current.items[0]={Make(61,1000000,-101)};assert(state.model.Toggle(61));
     Activate(4);assert(state.page==1&&state.model.original&&state.model.draft.at(-101)==61);
     Activate(3);assert(state.page==0&&!state.model.original&&state.model.draft.at(-101)==61);
-    state.model.draft[-101]=999;Activate(4);Activate(105);assert(state.dialog==Dialog::Save&&state.saveSlot==5); // Hidden invalid preview does not block saving actual wear.
+    state.model.draft[-101]=999;Activate(4);Activate(105);assert(state.outfit==5&&state.dialog==Dialog::None&&sends==0); // Selecting only previews.
+    Activate(25);assert(state.dialog==Dialog::Save&&state.saveSlot==5); // Hidden invalid preview does not block saving actual wear.
     Activate(400);assert(state.dialog==Dialog::None);
-    state.menuPreset=2;Activate(13);Activate(402);assert(sends==1&&lastAction==Delete&&sent[0]==3);
+    Activate(13);assert(state.dialog==Dialog::None); // Empty position cannot be deleted.
+    state.model.current.outfits[2].defined=true;Activate(102);Activate(13);Activate(402);assert(sends==1&&lastAction==Delete&&sent[0]==3);
     Reset();state.model.current.items[0]={Make(91,1000000,-101)};
     state.model.current.items[2]={Make(90,1100000,-109,-109)};
     Outfit legacy;legacy.defined=true;legacy.entries=state.model.SaveScope();
     for(auto& e:legacy.entries){if(e.slot==-101)e={e.slot,2,900,1000000,false};if(e.slot==-109)e={e.slot,2,901,1109999,false};}
     state.model.current.outfits[1]=legacy;state.page=1;state.model.original=true;
-    Activate(101);assert(sends==0&&state.applyingPreset==-1&&!state.status.empty());
+    Activate(101);assert(sends==0&&state.outfit==1);Activate(26);assert(sends==0&&state.applyingPreset==-1&&!state.status.empty());
     assert(state.model.Base(-109)==90&&state.preset==-1); // Missing cape blocks the full outfit; no silent mixing.
     Reset();state.page=1;state.model.original=true;
     state.model.current.items[2]={Make(101,1002186,-101,-101),Make(102,1050000,-105,-105),Make(103,1070000,-107,-107),Make(104,1080000,-108,-108),Make(105,1100000,-109,-109)};
     Outfit five;five.defined=true;five.entries=state.model.SaveScope();state.model.current.outfits[0]=five;state.preset=0;
     Outfit one=five;for(auto& e:one.entries)if(e.slot!=-101)e={e.slot,0,0,0,true}; // Reproduce old stored KEEP fields.
-    state.model.current.outfits[1]=one;Activate(101);
+    state.model.current.outfits[1]=one;Activate(101);Activate(26);
     assert(sends==1&&lastAction==Apply&&state.applyingPreset==1&&state.preset==0);
     Reader full{sent.data(),sent.data()+sent.size()};assert(full.number(1)==0&&full.number(1)==4);
     std::map<short,std::uint64_t> removals;
@@ -137,13 +142,46 @@ int main(){
     state.page=2;state.selectedSource=1;socketAvailable=false;state.status.clear();
     Activate(20);assert(sends==3&&!state.status.empty());state.status.clear();
     Activate(22);assert(sends==3&&!state.status.empty());
-    Reset();state.page=1;Outfit detailed;detailed.defined=true;detailed.name="Full outfit";
-    for(int i=0;i<int(Slots.size());i++)detailed.entries.push_back({Slots[i],2,std::uint64_t(400+i),1000000+i,true});
-    state.model.current.outfits[2]=detailed;Activate(212);assert(state.dialog==Dialog::Details&&state.detailSlot==2&&sends==0);
-    DrawDialog(nullptr);assert(drawnIcons.size()==15&&state.controls.size()==16);
-    const auto cell=state.controls[0];
-    Mouse(nullptr,nullptr,WM_LBUTTONDOWN,0,cell.x,cell.y);Mouse(nullptr,nullptr,WM_LBUTTONDBLCLK,0,cell.x,cell.y);
-    assert(sends==0&&state.model.draft.empty()); // Detail cells never select/apply a catalog item.
-    Activate(400);assert(state.dialog==Dialog::None&&sends==0);
-    std::cout<<"PASS actual Mouse/Hit/Activate/Save callbacks, complete 15-slot details and read-only detail interactions\n";
+    // Wear the try-on directly: one APPLY with exactly the changed slots.
+    Reset();state.model.current.items[0]={Make(301,1000000,-101)};state.model.current.items[2]={Make(300,1000001,-101,-101)};
+    assert(state.model.Toggle(301));Activate(24);
+    assert(sends==1&&lastAction==Apply&&state.applyingPreset==6&&state.applyDraft==state.model.draft);
+    Reader tryOn{sent.data(),sent.data()+sent.size()};assert(tryOn.number(1)==0&&tryOn.number(1)==1&&short(tryOn.number(2))==-101&&tryOn.number(8)==301);
+    Reset();state.model.current.items[0]={Make(302,1000000,-101)};state.model.current.items[0][0].flags|=8;
+    assert(state.model.Toggle(302));Activate(24);assert(sends==0&&state.dialog==Dialog::Binding);
+    ApplyDraft(true);assert(sends==1&&sent[0]==1);
+    // Strip cells undo one slot; restore clears all; overall/pants conflicts are refused, not mixed.
+    Reset();state.model.current.items[0]={Make(311,1000000,-101),Make(322,1050000,-105)};
+    state.model.current.items[2]={Make(320,1040000,-105,-105),Make(321,1060000,-106,-106)};
+    assert(state.model.Toggle(311)&&state.model.Toggle(322)&&state.model.draft.size()==3);
+    Activate(5105);assert(state.model.draft.size()==3&&!state.status.empty()); // Worn pants cannot return under an overall.
+    state.hover=5104;Activate(5104);assert(state.model.draft.size()==1&&state.model.Desired(-106)==321&&state.model.Valid()&&state.hover==-1); // Next hover rebuilds the changed cell tooltip.
+    Activate(5100);assert(state.model.draft.empty()&&sends==0);
+    assert(state.model.Toggle(311));Activate(23);assert(state.model.draft.empty()&&sends==0);
+    state.page=1;assert(state.model.Toggle(311));Activate(5100);assert(state.model.draft.size()==1); // Only the wardrobe page edits the try-on.
+    // "All" source: the worn piece replaced by a try-on stays listed; double-clicking it restores it.
+    Reset();state.model.current.items[0]={Make(341,1000000,-101)};state.model.current.items[2]={Make(340,1000001,-101,-101)};
+    Activate(7);assert(state.dropdown==7);Activate(40);assert(state.source==0&&state.dropdown==-1);Activate(43);assert(state.source==3);
+    Activate(37);assert(state.gridPage[3]==1);Activate(36);assert(state.gridPage[3]==0);
+    DoubleClick(1000);assert(state.model.Desired(-101)==341&&state.model.draft.size()==1);
+    DoubleClick(1000+2*1024);assert(state.model.Desired(-101)==340&&state.model.draft.empty()&&sends==0);
+    // Worn pet equipment / pet skill items never enter the catalog; unwearable fashion explains why.
+    Reset();state.model.current.items[2]={Make(350,1000000,-101,-101),Make(351,1802896,-114,-114,0),Make(352,1812000,-121,-121,0)};
+    {auto worn=Filter(2);assert(worn.size()==1&&worn[0]==0);}
+    state.model.current.items[0]={Make(353,1000001,-101,1,2)};state.model.current.items[0][0].reason=2;
+    DoubleClick(1000);assert(state.model.draft.empty()&&state.status.find(L"\u9650\u65f6")!=std::wstring::npos);
+    // Outfit page: click selects/previews, double-click wears.
+    Reset();state.page=1;state.model.original=true;
+    state.model.current.items[0]={Make(331,1000000,-101)};state.model.current.items[2]={Make(330,1000001,-101,-101)};
+    Outfit wear;wear.defined=true;wear.name="Look";wear.entries=state.model.SaveScope();
+    for(auto& e:wear.entries)if(e.slot==-101){e.mode=2;e.uid=331;e.itemId=1000000;}
+    state.model.current.outfits[4]=wear;state.controls={{104,10,300,112,34,true,0}};
+    Mouse(nullptr,nullptr,WM_LBUTTONDOWN,0,20,310);Mouse(nullptr,nullptr,WM_LBUTTONUP,0,20,310);assert(state.outfit==4&&sends==0);
+    Mouse(nullptr,nullptr,WM_LBUTTONDBLCLK,0,20,310);assert(sends==1&&lastAction==Apply&&state.applyingPreset==4);
+    // Long binding lists wrap to two lines and are summarised, never cut with an ellipsis.
+    Reset();
+    for(int i=0;i<8;i++){Item item=Make(400+i,1000000+i,-101);item.flags|=8;item.name="ABCDEFGHIJKL";state.model.current.items[0].push_back(item);state.applyDraft[short(-101-i)]=400+i;}
+    auto names=BindingNames(230);auto lines=Wrap(names,230);
+    assert(lines.size()<=2&&names.find(L"\u7b49 8 \u4ef6")!=std::wstring::npos&&names.find(L"\u2026")==std::wstring::npos);
+    std::cout<<"PASS actual Mouse/Hit/Activate/Save callbacks, try-on apply/undo, outfit select/double-click and wrapped dialog text\n";
 }

@@ -21,7 +21,7 @@ using namespace MixedDyeResources;
 using namespace WardrobeModel;
 using WardrobeLayout::Width;
 using WardrobeLayout::Height;
-enum class Dialog {None,Save,Rename,Delete,Binding,Overwrite,Details};
+enum class Dialog {None,Save,Rename,Delete,Binding,Overwrite};
 struct Control {int id,x,y,w,h;bool enabled;std::uint64_t uid;};
 struct State {
     Model model;bool installed=false,ready=false,shown=false,field=false,opening=false,pending=false,avatarDirty=false,deferredClose=false;
@@ -33,11 +33,11 @@ struct State {
     std::map<std::wstring,Object> assets,texts;std::map<int,Object> icons;
     DWORD lastHeartbeat=0,lastHeartbeatReply=0;
     std::vector<Control> controls;int hover=-1,pressed=-1,selected=-1,selectedSource=0,preset=-1;
-    int page=0,source=0,category=0,gridPage[3]{},edit=-1,dropdown=-1,menuPreset=-1,applyingPreset=-1;
+    int page=0,source=3,category=0,gridPage[4]{},edit=-1,dropdown=-1,menuPreset=-1,applyingPreset=-1,outfit=0;
     std::map<short,std::uint64_t> applyDraft;
     std::uint64_t clickUid=0;
     std::wstring search,outfitName,status,dialogMessage;Dialog dialog=Dialog::None;std::vector<Scope> saveScope;
-    int detailSlot=0,saveSlot=0,requests=0,pendingRequest=0,pendingAction=0,windowX=120,windowY=60,dragX=0,dragY=0;
+    int saveSlot=0,requests=0,pendingRequest=0,pendingAction=0,windowX=120,windowY=60,dragX=0,dragY=0;
     bool dragging=false;DWORD sentAt=0,lastStatusTick=0;void* localUser=nullptr;
 };
 State& state=*new State;
@@ -140,25 +140,42 @@ Object TextCanvas(const std::wstring& text,unsigned color) {
     }
     return out;
 }
+// Palette sampled from the native 083 Item/Trunk windows and the CashShop.
+constexpr unsigned Ink=0x111111,Muted=0x556677,Label=0x3355cc,Alert=0xcc0000,Hint=0xa0a5af,Rim=0x557799,Gutter=0xbbccdd,CardRim=0x88aacc,Orange=0xee7711;
 int TextWidth(const std::wstring& s){int n=0;for(wchar_t c:s)n+=c<128?6:12;return n;}
-std::wstring Fit(std::wstring s,int width){while(!s.empty() && TextWidth(s)>width-12)s.pop_back();return s;}
-void Text(void* dst,const std::wstring& s,int x,int y,unsigned color=0x394e5d,int width=536) {
-    auto text=TextWidth(s)>width?Fit(s,width)+L"…":s;auto key=std::to_wstring(color)+L":"+text;auto found=state.texts.find(key);
-    if(found==state.texts.end()){if(state.texts.size()>192)state.texts.clear();found=state.texts.emplace(key,TextCanvas(text,color)).first;}
-    Copy(dst,found->second.p,x,y);
+// Never truncate with an ellipsis: callers size their areas or wrap with TextLines.
+void Text(void* dst,const std::wstring& s,int x,int y,unsigned color=Ink,bool bold=false) {
+    if(s.empty())return;auto key=std::to_wstring(color)+L":"+s;auto found=state.texts.find(key);
+    if(found==state.texts.end()){if(state.texts.size()>192)state.texts.clear();found=state.texts.emplace(key,TextCanvas(s,color)).first;}
+    Copy(dst,found->second.p,x,y);if(bold)Copy(dst,found->second.p,x+1,y);
 }
-void Line(void* dst,int x,int y,int w){Rect(dst,x,y,w,1,0xb5c4cf);Rect(dst,x,y+1,w,1,0xffffff);}
+void TextRight(void* dst,const std::wstring& s,int right,int y,unsigned color=Ink,bool bold=false){Text(dst,s,right-TextWidth(s),y,color,bold);}
+std::vector<std::wstring> Wrap(const std::wstring& s,int width){
+    std::vector<std::wstring> lines(1);int used=0;
+    for(wchar_t c:s){int w=c<128?6:12;if(used+w>width && !lines.back().empty()){lines.emplace_back();used=0;}lines.back()+=c;used+=w;}
+    return lines;
+}
+int TextLines(void* dst,const std::wstring& s,int x,int y,int width,unsigned color=Ink,bool bold=false,int lineHeight=13){
+    auto lines=Wrap(s,width);for(std::size_t i=0;i<lines.size();i++)Text(dst,lines[i],x,y+int(i)*lineHeight,color,bold);return int(lines.size());
+}
 void Add(int id,int x,int y,int w,int h,bool enabled=true,std::uint64_t uid=0){state.controls.push_back({id,x,y,w,h,enabled,uid});}
+const wchar_t* Variant(int id,bool enabled){return !enabled?L"disabled":state.pressed==id?L"pressed":state.hover==id?L"mouseOver":L"normal";}
+// Native CashShop orange avatar button, label cleared (button{w}/state/0), 19px high.
 void Button(void* dst,int id,int x,int y,int w,const std::wstring& text,bool enabled=true) {
-    const wchar_t* variant=!enabled?L"disabled":state.pressed==id?L"pressed":state.hover==id?L"mouseOver":L"normal";
-    auto path=root+L"button"+std::to_wstring(w)+L"/"+variant+L"/0";Copy(dst,Canvas(path),x,y);
-    Text(dst,text,x+(w-TextWidth(text))/2,y+6,enabled?0xffffff:0xbfc4c8,w);Add(id,x,y,w,24,enabled);
+    Copy(dst,Canvas(root+L"button"+std::to_wstring(w)+L"/"+Variant(id,enabled)+L"/0"),x,y);
+    Text(dst,text,x+(w-TextWidth(text))/2,y+4,enabled?0xffffff:0xe6e6e6);Add(id,x,y,w,19,enabled);
 }
-void Field(void* dst,int id,int x,int y,int w,const std::wstring& text,bool editable=false) {
-    Rect(dst,x,y,w,24,0x8d9da6);Rect(dst,x+1,y+1,w-2,22,0xffffff);Rect(dst,x+1,y+1,w-2,1,0xd3d9dd);
-    int reserve=id==8&&state.page==0?24:0;
-    Text(dst,text,x+8,y+6,editable?0x303a40:0x83929d,w-18-reserve);Add(id,x,y,w,24);
-    if(state.edit==id)Rect(dst,x+8+(std::min)(TextWidth(text),w-20-reserve),y+5,1,14,0x33556b);
+// Native UIWindow Item/New/Tab pink (on) or grey (off) tab, 9-sliced to the given width.
+void Tab(void* dst,int id,WardrobeLayout::Bounds r,const std::wstring& label,bool on,bool enabled=true){
+    Copy(dst,Canvas(root+L"tab"+std::to_wstring(r.w)+(on?L"On":L"Off")),r.x,r.y+(on?0:1));
+    Text(dst,label,r.x+(r.w-TextWidth(label))/2,r.y+4,on?0xffffff:0x555555,on);Add(id,r.x,r.y,r.w,r.h,enabled);
+}
+void Field(void* dst,int id,int x,int y,int w,const std::wstring& text,bool editable=false,int reserve=0) {
+    Rect(dst,x,y,w,18,Rim);Rect(dst,x+1,y+1,w-2,16,0xffffff);
+    // Like a native edit box, a long entry scrolls to keep its end (and the caret) visible.
+    auto shown=text;while(TextWidth(shown)>w-12-reserve)shown.erase(shown.begin());
+    Text(dst,shown,x+5,y+3,editable?Ink:Hint);Add(id,x,y,w,18);
+    if(state.edit==id)Rect(dst,x+5+TextWidth(shown),y+3,1,12,0x33556b);
 }
 void Icon(void* dst,int id,int x,int y) {
     auto found=state.icons.find(id);
@@ -176,85 +193,184 @@ const wchar_t* SlotName(short slot) {
     case -113:return L"戒指2";case -115:return L"戒指3";case -116:return L"戒指4";default:return L"其他";}
 }
 const wchar_t* Reason(unsigned reason){static const wchar_t* values[]={L"可穿",L"仅查看",L"限时时装仅查看",L"关系物品，保持原状",L"唯一道具，保持原状",L"不可共享",L"不满足穿戴条件",L"物品已锁定"};return reason<8?values[reason]:L"仅查看";}
+const wchar_t* SourceName(int source){return source==0?L"衣柜":source==1?L"背包":source==2?L"身上":L"全部";}
+const wchar_t* SlotLabel(int index){static const wchar_t* values[]={L"帽子",L"脸饰",L"眼饰",L"耳饰",L"衣服",L"裤裙",L"鞋子",L"手套",L"披风",L"盾牌",L"武器",L"戒指",L"戒指",L"戒指",L"戒指"};return values[index];}
 std::wstring Lower(std::wstring s){std::transform(s.begin(),s.end(),s.begin(),[](wchar_t c){return wchar_t(towlower(c));});return s;}
 std::vector<int> Filter(int source,bool deposit=false) {
     std::vector<int> result;auto query=Lower(state.search);const auto& items=state.model.current.items[source];
     for(std::size_t i=0;i<items.size();i++) {
-        const auto& item=items[i];if(source==2 && item.position>=-100)continue;if(deposit && !(item.flags&2))continue;
+        // Only the 15 managed fashion slots belong here: worn pet equipment and pet skill items are another system.
+        const auto& item=items[i];if(std::find(Slots.begin(),Slots.end(),item.slot)==Slots.end())continue;if(deposit && !(item.flags&2))continue;
         if(state.category && Category(item.id)!=state.category)continue;
         if(!query.empty() && Lower(Wide(item.name)).find(query)==std::wstring::npos)continue;result.push_back(int(i));
     }
     return result;
 }
-void Grid(void* dst,int source,int x,int y,int columns,bool deposit=false) {
-    auto indices=Filter(source,deposit);int count=columns*WardrobeLayout::GridRows,pages=(std::max)(1,(int(indices.size())+count-1)/count);
-    auto& page=state.gridPage[source];page=(std::min)(page,pages-1);
+// Catalog sources: 0 locker, 1 bag, 2 worn, 3 all of them. "All" keeps a stable order (worn,
+// bag, locker) so the piece replaced by a try-on stays visible where it was.
+constexpr int AllSources=3;
+std::vector<std::pair<int,int>> Entries(int source,bool deposit=false){
+    std::vector<std::pair<int,int>> result;
+    for(int from:source==AllSources?std::vector<int>{2,1,0}:std::vector<int>{source})for(int index:Filter(from,deposit))result.emplace_back(from,index);
+    return result;
+}
+// CashShop item well: #666 rim and #BBCCDD gutter around 32px cells at a 35px pitch.
+void Well(void* dst,int x,int y,int columns,int rows){
+    const int p=WardrobeLayout::CellPitch;Rect(dst,x-3,y-3,columns*p+5,rows*p+5,0x666666);Rect(dst,x-2,y-2,columns*p+3,rows*p+3,Gutter);
+}
+void Arrow(void* dst,int x,int y,bool left,unsigned color){for(int k=0;k<5;k++){int h=left?2*k+1:9-2*k;Rect(dst,x+k,y+6-h/2,1,h,color);}}
+void Pager(void* dst,int source,int pages,int x,int y){
+    int page=state.gridPage[source];
+    Arrow(dst,x-4,y,true,page>0?Label:Gutter);Add(30+source*2,x-8,y-2,14,16,page>0);
+    auto text=std::to_wstring(page+1)+L" / "+std::to_wstring(pages);Text(dst,text,x+26-TextWidth(text)/2,y,Ink);
+    Arrow(dst,x+52,y,false,page+1<pages?Label:Gutter);Add(31+source*2,x+48,y-2,14,16,page+1<pages);
+}
+int Grid(void* dst,int source,int x,int y,int columns,int rows,bool deposit=false) {
+    auto entries=Entries(source,deposit);int count=columns*rows,pages=(std::max)(1,(int(entries.size())+count-1)/count);
+    auto& page=state.gridPage[source];page=(std::min)(page,pages-1);Well(dst,x,y,columns,rows);
     for(int cell=0;cell<count;cell++) {
-        int gx=x+cell%columns*36,gy=y+cell/columns*36;Image(dst,L"cell",gx,gy);
-        int index=page*count+cell;if(index>=int(indices.size()))continue;index=indices[index];
-        const auto& item=state.model.current.items[source][index];Icon(dst,item.id,gx,gy);
-        if(state.selected==index && state.selectedSource==source)Image(dst,L"select",gx-2,gy-2);
-        if(state.model.IsPreviewed(item.uid)) {
-            Rect(dst,gx+24,gy+24,8,8,0xdbeedc);Text(dst,L"v",gx+25,gy+23,0x376f4e,8);
-        } else if(!(item.flags&1) && !(deposit && item.flags&2))Text(dst,L"-",gx+25,gy+23,0x976e6e,8);
-        Add(1000+source*1024+index,gx,gy,32,32,true,item.uid);
+        int gx=x+cell%columns*WardrobeLayout::CellPitch,gy=y+cell/columns*WardrobeLayout::CellPitch;
+        int position=page*count+cell;if(position>=int(entries.size())){Image(dst,L"cell",gx,gy);continue;}
+        const int from=entries[position].first,index=entries[position].second;
+        const auto& item=state.model.current.items[from][index];
+        // Everything in the preview look gets the peach cell with an orange frame and the tick;
+        // a piece taken off simply returns to a plain cell.
+        const bool previewed=state.model.IsPreviewed(item.uid);
+        Image(dst,previewed?L"cellTried":L"cell",gx,gy);Icon(dst,item.id,gx,gy);
+        if(state.selected==index && state.selectedSource==from)Image(dst,L"select",gx-2,gy-2);
+        if(previewed)Image(dst,L"tried",gx+22,gy+2);
+        else if(!(item.flags&1) && !(deposit && item.flags&2))Image(dst,L"unavailable",gx,gy);
+        Add(1000+from*1024+index,gx,gy,32,32,true,item.uid);
     }
-    Text(dst,(state.search.empty()?L"共 ":L"找到 ")+std::to_wstring(indices.size())+L" 件",x,WardrobeLayout::PageY+4,0x788b96,110);
-    int right=x+columns*36-4;
-    Text(dst,L"<",right-80,WardrobeLayout::PageY+4,page?0x335571:0xa0aeb8);Add(30+source*2,right-86,WardrobeLayout::PageY,20,18,page>0);
-    Text(dst,std::to_wstring(page+1)+L" / "+std::to_wstring(pages),right-54,WardrobeLayout::PageY+4,0x536c7e,44);
-    Text(dst,L">",right-6,WardrobeLayout::PageY+4,0x335571);Add(31+source*2,right-16,WardrobeLayout::PageY,20,18,page+1<pages);
+    return pages;
 }
 const Item* Selected(){const auto& list=state.model.current.items[state.selectedSource];return state.selected>=0 && state.selected<int(list.size())?&list[state.selected]:nullptr;}
 int CurrentPreset(){return state.model.CurrentPreset(state.preset);}
 bool Writable(){return !state.deferredClose && !state.pending && !state.model.current.busy;}
 void DialogButton(void* dst,int id,int x,int y,bool ok,bool enabled=true){
-    const wchar_t* variant=!enabled?L"disabled":state.pressed==id?L"pressed":state.hover==id?L"mouseOver":L"normal";
-    auto key=std::wstring(L"UI/Basic.img/")+(ok?L"BtOK/":L"BtCancel/")+variant+L"/0";
+    auto key=std::wstring(L"UI/Basic.img/")+(ok?L"BtOK/":L"BtCancel/")+Variant(id,enabled)+L"/0";
     auto canvas=Canvas(key);Copy(dst,canvas,x,y);Add(id,x,y,Int(canvas,0x40),Int(canvas,0x48),enabled);
+}
+std::wstring PreviewStatus(){
+    if(state.page==0){
+        if(!state.model.Valid())return L"试穿有冲突，不能保存";
+        return state.model.draft.empty()?L"当前穿着":L"试穿 "+std::to_wstring(state.model.draft.size())+L" 件，尚未穿上";
+    }
+    const auto& outfit=state.model.current.outfits[state.outfit];
+    if(!outfit.defined)return L"空位，可保存当前穿着";
+    auto name=Wide(outfit.name)+L" · ";
+    if(CurrentPreset()==state.outfit)return name+L"穿着中";
+    auto resolved=state.model.Resolve(outfit);
+    if(resolved.missing)return name+L"缺 "+std::to_wstring(resolved.missing)+L" 件";
+    if(resolved.ambiguous)return name+L"同款多件";
+    if(resolved.restricted)return name+L"无法切换";
+    return name+L"可穿上";
+}
+void DrawPreview(void* dst){
+    using namespace WardrobeLayout;
+    Text(dst,L"预览",14,60,Ink,true);
+    for(int i=0;i<int(Scenes.size());i++)Tab(dst,80+i,Scene(i),Scenes[i],WardrobePreview::Scene()==i,!state.pending);
+    Image(dst,L"bezel",BezelX,BezelY);
+    // The native shop scene, 1:1. The actual CUserPreview draws avatar, name tag and effects on top.
+    Copy(dst,Canvas(L"UI/CashShop.img/Base/Preview/"+std::to_wstring(WardrobePreview::Scene())),Preview.x,Preview.y);
+    if(!state.pending)Text(dst,PreviewStatus(),BezelX+40,BezelY+184,Label);
+}
+// Try-on by slot: empty cells name their slot; a tried slot can be clicked to undo it.
+void DrawStrip(void* dst){
+    using namespace WardrobeLayout;Well(dst,StripX,StripY,StripColumns,3);
+    for(int i=0;i<int(Slots.size());i++){
+        const int x=StripX+i%StripColumns*CellPitch,y=StripY+i/StripColumns*CellPitch;const short slot=Slots[i];
+        Image(dst,state.model.draft.count(slot)?L"cellTried":L"cell",x,y);
+        if(auto item=state.model.Find(state.model.Desired(slot)))Icon(dst,item->id,x,y);
+        else Text(dst,SlotLabel(i),x+4,y+10,Gutter);
+        auto change=state.model.draft.find(slot);
+        if(change!=state.model.draft.end())Image(dst,change->second?L"tried":L"takenOff",x+22,y+2);
+        Add(5100+i,x,y,32,32);
+    }
+}
+void Outline(void* dst,int x,int y,int w,int h,unsigned color){Rect(dst,x,y,w,2,color);Rect(dst,x,y+h-2,w,2,color);Rect(dst,x,y,2,h,color);Rect(dst,x+w-2,y,2,h,color);}
+void DrawOutfits(void* dst){
+    using namespace WardrobeLayout;const int current=CurrentPreset();
+    for(int i=0;i<6;i++){
+        const auto r=OutfitCard(i);const auto& outfit=state.model.current.outfits[i];const bool selected=state.outfit==i;
+        // Same blue-grey family as the item wells; orange is reserved for selection, red for problems.
+        Rect(dst,r.x,r.y,r.w,r.h,CardRim);Rect(dst,r.x+1,r.y+1,r.w-2,r.h-2,outfit.defined?0xffffff:0xf2f5f8);
+        Rect(dst,r.x+2,r.y+2,30,30,outfit.defined?Gutter:0xdde6ee);
+        auto number=std::to_wstring(i+1);Text(dst,number,r.x+17-TextWidth(number)/2,r.y+11,outfit.defined?0xffffff:Gutter,true);
+        if(outfit.defined){
+            // Names are at most 8 characters; long ones take two lines instead of being cut.
+            // A two-line name keeps its first line clear of the status mark in the top-right corner.
+            auto lines=Wrap(Wide(outfit.name),70);if(lines.size()>1)lines=Wrap(Wide(outfit.name),60);
+            const int top=lines.size()>1?r.y+4:r.y+11;
+            for(std::size_t k=0;k<lines.size() && k<2;k++)Text(dst,lines[k],r.x+38,top+int(k)*14,Ink,selected);
+            if(current==i)Rect(dst,r.x+r.w-10,r.y+4,6,6,0xff8800);
+            else if(state.model.Resolve(outfit).Blocked())Rect(dst,r.x+r.w-10,r.y+4,6,6,Alert);
+        } else Text(dst,L"空",r.x+38,r.y+11,Gutter);
+        if(selected)Outline(dst,r.x-1,r.y-1,r.w+2,r.h+2,Orange);
+        Add(100+i,r.x,r.y,r.w,r.h);
+    }
+}
+// Every managed slot of the selected outfit (an empty position shows what would be saved now):
+// white slot cards on the CashShop well, each named by a native Equip-cell coloured label.
+void DrawOutfitDetail(void* dst){
+    using namespace WardrobeLayout;const auto& outfit=state.model.current.outfits[state.outfit];int pieces=0;
+    Rect(dst,SlotWellX,SlotWellY,SlotWellW,SlotWellH,0x666666);Rect(dst,SlotWellX+1,SlotWellY+1,SlotWellW-2,SlotWellH-2,Gutter);
+    for(int n=0;n<int(Slots.size());n++){
+        const int i=SlotOrder[n];const auto c=SlotCard(n);const short slot=Slots[i];const int x=c.x+20,y=c.y+16;bool missing=false;
+        Rect(dst,c.x,c.y,c.w,c.h,CardRim);Rect(dst,c.x+1,c.y+1,c.w-2,c.h-2,0xffffff);
+        Rect(dst,x,y,32,32,0xe6edf3);Rect(dst,x+1,y+1,30,30,0xffffff);
+        if(outfit.defined){
+            auto e=std::find_if(outfit.entries.begin(),outfit.entries.end(),[&](const Scope& s){return s.slot==slot;});
+            if(e!=outfit.entries.end() && e->mode==2){
+                ++pieces;
+                if(state.model.DetailItem(*e))Icon(dst,e->itemId,x,y);
+                else {missing=true;Outline(dst,x,y,32,32,Alert);Text(dst,L"缺",x+10,y+10,Alert);}
+            } else if(e!=outfit.entries.end() && e->mode==0)Rect(dst,x+1,y+1,30,30,Gutter);
+        } else if(auto worn=state.model.Worn(slot)){++pieces;Icon(dst,worn->id,x,y);}
+        const wchar_t* label=SlotLabel(i);
+        Rect(dst,c.x+8,c.y+66,56,19,0x99aabb);Rect(dst,c.x+9,c.y+67,54,17,Gutter);Rect(dst,c.x+9,c.y+67,54,1,0xdde6ee);
+        Text(dst,label,c.x+36-TextWidth(label)/2,c.y+70,missing?Alert:0x445566,missing);
+        Add(5000+i,c.x,c.y,c.w,c.h);
+    }
+    Text(dst,outfit.defined?Wide(outfit.name):L"空位 "+std::to_wstring(state.outfit+1),RightX,60,Ink,true);
+    TextRight(dst,std::to_wstring(pieces)+L" / "+std::to_wstring(Slots.size())+L" 件",Width-14,60,Muted);
+}
+void SearchField(void* dst,int x,int w){
+    Field(dst,8,x,57,w,state.search.empty()&&state.edit!=8?L"搜索时装名称":state.search,state.edit==8||!state.search.empty(),state.search.empty()?0:16);
+    if(!state.search.empty()){Text(dst,L"×",x+w-13,60,Muted);Add(9,x+w-18,57,18,18);}
+}
+std::wstring BindingNames(int width){
+    std::wstring names;int count=0,shown=0;
+    for(const auto& e:state.applyDraft){auto item=state.model.Find(e.second);if(item && item->flags&8)++count;}
+    for(const auto& e:state.applyDraft){
+        auto item=state.model.Find(e.second);if(!item || !(item->flags&8))continue;
+        auto next=names.empty()?Wide(item->name):names+L"、"+Wide(item->name);
+        std::wstring rest=count-shown-1?L" 等 "+std::to_wstring(count)+L" 件":std::wstring();
+        if(Wrap(next+rest,width).size()>2)return names+L" 等 "+std::to_wstring(count)+L" 件";
+        names=next;++shown;
+    }
+    return names;
 }
 void DrawDialog(void* dst) {
     const auto r=WardrobeLayout::Modal;const int x=r.x,y=r.y;Image(dst,L"modal",x,y);state.controls.clear();
-    if(state.dialog==Dialog::Details){
-        const auto& outfit=state.model.current.outfits[state.detailSlot];
-        Text(dst,Wide(outfit.name),x+18,y+20,0xffffff,230);
-        const wchar_t* slots[]={L"帽子",L"脸饰",L"眼饰",L"耳饰",L"衣服",L"裤子",L"鞋子",L"手套",L"披风",L"盾牌",L"武器",L"戒指",L"戒指",L"戒指",L"戒指"};
-        for(int i=0;i<int(Slots.size());i++){
-            const int xx=x+18+(i%5)*46,yy=y+40+(i/5)*35;
-            auto entry=std::find_if(outfit.entries.begin(),outfit.entries.end(),[&](const Scope& e){return e.slot==Slots[i];});
-            bool present=entry!=outfit.entries.end()&&entry->mode==2;
-            Rect(dst,xx,yy,32,32,present?0xeef0df:0x315471);
-            if(present){Icon(dst,entry->itemId,xx,yy);if(!state.model.DetailItem(*entry)){Rect(dst,xx,yy+30,32,2,0xd9887c);}}
-            else Text(dst,slots[i],xx+4,yy+10,0x9eafbb,28);
-            Add(5000+i,xx,yy,32,32);
-            if(state.hover==5000+i){
-                std::wstring caption=slots[i];
-                if(present)caption+=L"："+Wide(ItemName(entry->itemId));
-                else caption+=entry!=outfit.entries.end()&&entry->mode==0?L"：不参与搭配":L"：未穿点装";
-                Text(dst,caption,x+18,y+146,0xffffff,230);
-            }
-        }
-        DialogButton(dst,400,x+103,y+r.h-28,true);return;
-    }
     const bool editing=state.dialog==Dialog::Save || state.dialog==Dialog::Rename;
-    Text(dst,editing?(state.dialog==Dialog::Save?L"保存搭配":L"重命名"):L"确认",x+18,y+22,0xffffff,230);
+    Text(dst,editing?(state.dialog==Dialog::Save?L"保存搭配":L"重命名"):L"确认",x+18,y+22,0xffffff);
     if(editing) {
         Field(dst,450,x+18,y+46,230,state.outfitName,true);
         if(state.dialog==Dialog::Save)for(int i=0;i<6;i++) {
             const int xx=x+18+i*39;
             Rect(dst,xx,y+82,35,24,state.saveSlot==i?0xe7f2ff:state.model.current.outfits[i].defined?0x365b7d:0x244e78);
-            Text(dst,std::to_wstring(i+1),xx+14,y+88,state.saveSlot==i?0x183d63:0xffffff,20);
+            Text(dst,std::to_wstring(i+1),xx+14,y+88,state.saveSlot==i?0x183d63:0xffffff);
             Add(460+i,xx,y+82,35,24);
         }
-        if(!state.dialogMessage.empty())Text(dst,state.dialogMessage,x+18,y+116,0xffdbbf,230);
+        if(!state.dialogMessage.empty())TextLines(dst,state.dialogMessage,x+18,y+116,230,0xffdbbf);
     } else {
         const wchar_t* message=state.dialog==Dialog::Delete?L"删除这套搭配？":state.dialog==Dialog::Overwrite?L"覆盖这个位置的搭配？":L"此搭配含穿上后绑定的时装。";
-        Text(dst,message,x+18,y+56,0xffffff,230);
+        Text(dst,message,x+18,y+56,0xffffff);
         if(state.dialog==Dialog::Binding){
-            std::wstring names;for(const auto& e:state.applyDraft){auto item=state.model.Find(e.second);if(item && item->flags&8){if(!names.empty())names+=L"、";names+=Wide(item->name);}}
-            Text(dst,names,x+18,y+77,0xffe4b7,230);
-            Text(dst,L"绑定后不能交易或存回账号衣柜。",x+18,y+102,0xffffff,230);
-            Text(dst,L"确认穿上？",x+18,y+122,0xffffff,230);
+            TextLines(dst,BindingNames(230),x+18,y+77,230,0xffe4b7);
+            Text(dst,L"绑定后不能交易或存回账号衣柜。",x+18,y+108,0xffffff);
+            Text(dst,L"确认穿上？",x+18,y+126,0xffffff);
         }
     }
     DialogButton(dst,editing?401:402,x+52,y+r.h-34,true,!state.pending&&(!editing||!state.outfitName.empty()));
@@ -265,85 +381,72 @@ void DrawBody(void* window,const RECT* rect) {
     reinterpret_cast<void(__thiscall*)(void*,const RECT*)>(0x009E0502)(window,rect);
     DWORD canvas=0;reinterpret_cast<DWORD*(__thiscall*)(void*,DWORD*)>(0x00425C4C)(window,&canvas);
     Object owned(reinterpret_cast<void*>(canvas));if(!canvas)return;auto dst=owned.p;
-    state.controls.clear();Text(dst,L"北斗衣柜",12,5,0x111111);
-    Copy(dst,Canvas(L"UI/Basic.img/BtClose/normal/0"),Width-20,5);Add(1,Width-24,2,20,20);
-    for(int page=0;page<3;page++) {
-        int x=16+page*78;Image(dst,state.page==page?L"tabOn":L"tabOff",x,30);
-        const wchar_t* label=page==0?L"衣柜":page==1?L"搭配":L"存取";
-        Text(dst,label,x+25,37,state.page==page?0xffffff:0x566774);Add(page==0?3:page==1?4:19,x,30,74,26,!state.pending);
-    }
-    Text(dst,L"账号衣柜  "+std::to_wstring(state.model.current.items[0].size())+L" / "+std::to_wstring(state.model.current.capacity),575,38,0x687b88,187);
-    Line(dst,14,56,752);
-    if(state.page!=2) {
-        for(int i=0;i<int(Scenes.size());i++) {
-            auto r=Scene(i);bool selected=WardrobePreview::Scene()==i;
-            Image(dst,selected?L"tabOn":L"tabOff",r.x,r.y);
-            Text(dst,Scenes[i],r.x+25,r.y+7,selected?0xffffff:0x566774);Add(80+i,r.x,r.y,r.w,r.h,!state.pending);
-        }
-        Copy(dst,Canvas(root+L"scene/"+std::to_wstring(WardrobePreview::Scene())),Preview.x,Preview.y);
-        // The actual CUserPreview draws its avatar, name tag, ring effects and animations.
-        // This canvas contains no painted substitute for a character/rope/ladder.
-        Rect(dst,18,Preview.y-2,300,1,0x8d9da6);Rect(dst,18,Preview.y+Preview.h,300,1,0x8d9da6);
-        // Preview changes happen only by double-clicking an item.
-    }
+    state.controls.clear();Text(dst,L"北斗衣柜",12,6,Ink,true);
+    Copy(dst,Canvas(std::wstring(L"UI/Basic.img/BtClose/")+Variant(1,true)+L"/0"),Width-24,6);Add(1,Width-26,4,16,16);
+    const wchar_t* pages[]={L"衣柜",L"搭配",L"存取"};const int pageIds[]={3,4,19};
+    for(int i=0;i<3;i++)Tab(dst,pageIds[i],PageTab(i),pages[i],state.page==i,!state.pending);
+    TextRight(dst,std::to_wstring(state.model.current.items[0].size())+L" / "+std::to_wstring(state.model.current.capacity),Width-14,34);
+    TextRight(dst,L"衣柜容量",Width-80,34,Muted);
+    int statusX=12,statusW=436;
+    if(state.page!=2)DrawPreview(dst);
     if(state.page==0) {
-        Field(dst,7,338,66,80,state.source==0?L"衣柜 ▾":state.source==1?L"背包 ▾":L"身上 ▾",true);
-        Field(dst,8,426,66,338,state.search.empty()&&state.edit!=8?L"搜索时装名称……":state.search,state.edit==8||!state.search.empty());
-        Add(9,742,66,22,24);Text(dst,L"×",747,71,0x8a959e);
-        Line(dst,338,121,426);
-        // Draw inactive tabs first; the raised active tab joins the panel border last.
-        for(int pass=0;pass<2;pass++)for(int i=0;i<8;i++) {
-            bool on=state.category==i;if(on!=(pass==1))continue;auto r=WardrobeLayout::Category(i);
-            Image(dst,on?L"categoryOn":L"categoryOff",r.x,r.y+(on?0:2));
-            Text(dst,Categories[i],r.x+15,r.y+8,on?0xffffff:0x657783);Add(CategoryId(i),r.x,r.y,r.w,r.h);
+        DrawStrip(dst);
+        Text(dst,L"时装",RightX,60,Ink,true);
+        Rect(dst,288,57,70,18,Rim);Rect(dst,289,58,68,16,0xffffff);
+        Text(dst,SourceName(state.source),293,60);
+        Copy(dst,Canvas(std::wstring(L"UI/Basic.img/BtComboBox/")+Variant(7,true)+L"/0"),340,58);Add(7,288,57,70,18);
+        SearchField(dst,364,Width-14-364);
+        for(int i=0;i<int(Categories.size());i++)Tab(dst,CategoryId(i),CategoryTab(i),Categories[i],state.category==i);
+        Rect(dst,RightX,99,Width-14-RightX,2,Alert);
+        const int pages=Grid(dst,state.source,GridX,GridY,GridColumns,GridRows),infoY=GridY+GridRows*CellPitch+6;
+        if(auto item=Selected()){
+            const std::wstring reason=Reason(item->reason);const int room=Width-90-GridX-TextWidth(reason)-12;
+            auto lines=Wrap(Wide(item->name),room);const int top=lines.size()>1?infoY-6:infoY;
+            for(std::size_t k=0;k<lines.size() && k<2;k++)Text(dst,lines[k],GridX-3,top+int(k)*13,Ink,true);
+            Text(dst,reason,GridX-3+(std::min)(TextWidth(lines[0]),room)+13,top,Label);
         }
-        Grid(dst,state.source,GridX,GridY,GridColumns);Line(dst,338,436,426);
-        auto item=Selected();
-        if(item){Text(dst,Wide(item->name),342,444,0x273c4c,235);Text(dst,Reason(item->reason),584,444,0x7b8b94,92);}
-        if(state.dropdown==7){Rect(dst,338,90,80,62,0x8d9da6);Rect(dst,339,91,78,60,0xffffff);for(int i=0;i<3;i++){Text(dst,i==0?L"衣柜":i==1?L"背包":L"身上",349,95+i*20);Add(40+i,339,91+i*20,78,20);}}
+        Pager(dst,state.source,pages,Width-74,infoY);
+        Button(dst,23,454,FooterY,60,L"还原",Writable()&&!state.model.draft.empty());
+        Button(dst,18,520,FooterY,80,L"保存搭配",Writable()&&state.model.Valid());
+        Button(dst,24,606,FooterY,60,L"穿上",Writable()&&!state.model.draft.empty()&&state.model.Valid());
+        if(state.dropdown==7){
+            Rect(dst,288,75,70,74,Rim);Rect(dst,289,76,68,72,0xffffff);
+            for(int i=0;i<4;i++){Text(dst,SourceName(i==0?AllSources:i-1),294,79+i*18);Add(i==0?43:39+i,289,76+i*18,68,18);}
+        }
     } else if(state.page==1) {
-        Text(dst,L"我的搭配",344,74,0x456276);
-        for(int i=0;i<6;i++) {
-            const auto& outfit=state.model.current.outfits[i];int y=94+i*55;
-            Rect(dst,338,y,426,52,state.preset==i?0xdcecf8:state.pending&&state.applyingPreset==i?0xe5edf4:0xf0f2f3);
-            if(state.preset==i){Rect(dst,337,y-1,428,2,0x2f78a8);Rect(dst,337,y+51,428,2,0x2f78a8);Rect(dst,337,y,2,52,0x2f78a8);Rect(dst,763,y,2,52,0x2f78a8);}
-            Text(dst,std::to_wstring(i+1),348,y+20,0x6b8291);
-            Text(dst,outfit.defined?Wide(outfit.name):L"空搭配",373,y+12,0x4a6375,135);
-            int pieces=int(std::count_if(outfit.entries.begin(),outfit.entries.end(),[](const Scope& e){return e.mode==2;}));
-            if(outfit.defined)Text(dst,std::to_wstring(pieces)+L" 件",534,y+20,0x637f90,60);
-            const auto resolved=state.model.Resolve(outfit);
-            if(resolved.missing)Text(dst,L"缺 "+std::to_wstring(resolved.missing)+L" 件",373,y+31,0x966c62,135);
-            else if(resolved.ambiguous)Text(dst,L"同款多件",373,y+31,0x966c62,135);
-            else if(resolved.restricted)Text(dst,L"受限，无法切换",373,y+31,0x966c62,135);
-            if(state.preset==i)Text(dst,L"当前",683,y+20,0x236b9c,42);
-            Add(100+i,338,y,426,52,Writable());
-            if(outfit.defined){Text(dst,L"详情",620,y+20,0x376f97,40);Add(210+i,610,y+9,55,34,Writable());}
-            if(outfit.defined){Text(dst,L"…",738,y+20,0x526f84,20);Add(200+i,728,y+9,32,34,Writable());}
-        }
-        if(state.dropdown>=200 && state.dropdown<206) {
-            int yy=94+(state.dropdown-200)*55+34;
-            Rect(dst,672,yy,92,50,0x8198a8);Rect(dst,673,yy+1,90,48,0xf1f6fa);
-            Text(dst,L"重命名",686,yy+6);Add(12,673,yy+1,90,24);
-            Text(dst,L"删除",686,yy+30);Add(13,673,yy+25,90,24);
-        }
+        DrawOutfits(dst);DrawOutfitDetail(dst);
+        const auto& outfit=state.model.current.outfits[state.outfit];
+        Button(dst,12,12,FooterY,56,L"改名",Writable()&&outfit.defined);
+        Button(dst,13,74,FooterY,56,L"删除",Writable()&&outfit.defined);
+        Button(dst,25,540,FooterY,60,L"保存",Writable());
+        Button(dst,26,606,FooterY,60,L"穿上",Writable()&&outfit.defined&&!state.model.Resolve(outfit).Blocked()&&CurrentPreset()!=state.outfit);
+        statusX=140;statusW=392;
     } else {
-        Text(dst,L"角色背包",30,74,0x456276);
-        Text(dst,L"账号共享衣柜",438,74,0x456276);
-        Field(dst,8,554,66,210,state.search.empty()&&state.edit!=8?L"搜索时装名称……":state.search,state.edit==8||!state.search.empty());
-        Grid(dst,1,30,GridY,9,true);Grid(dst,0,438,GridY,9);
+        Text(dst,L"角色背包",14,60,Ink,true);
+        TextRight(dst,std::to_wstring(Filter(1,true).size())+L" 件",BagX+BagColumns*CellPitch-4,60,Muted);
+        Text(dst,L"账号衣柜",LockerX-3,60,Ink,true);
+        SearchField(dst,LockerX+60,Width-14-LockerX-60);
+        const int bagPages=Grid(dst,1,BagX,StorageY,BagColumns,StorageRows,true);
+        const int lockerPages=Grid(dst,0,LockerX,StorageY,LockerColumns,StorageRows);
+        const int pagerY=StorageY+StorageRows*CellPitch+6;
+        Pager(dst,1,bagPages,BagX+BagColumns*CellPitch-64,pagerY);
+        Pager(dst,0,lockerPages,LockerX+LockerColumns*CellPitch-64,pagerY);
+        auto selected=Selected();bool transferable=selected && selected->uid && (selected->flags&2);
+        const int middle=(BagX+BagColumns*CellPitch+LockerX)/2-38;
+        Button(dst,20,middle,170,76,L"存入 →",Writable()&&state.selectedSource==1&&transferable);
+        Button(dst,21,middle,200,76,L"← 取出",Writable()&&state.selectedSource==0&&transferable);
+        Button(dst,22,12,FooterY,80,L"全部存入",Writable()&&state.model.StorableCount()>0);
+        statusX=100;statusW=440;
     }
     std::wstring status=state.status;
-    if(state.pending)status=GetTickCount()-state.sentAt>=10000?L"正在核对结果…":L"";
-    else if(state.page==0 && !state.model.Valid())status=L"试穿中有缺失或受限的时装";
-    else if(status.empty() && state.page==1 && std::any_of(Slots.begin(),Slots.end(),[](short slot){return state.model.Locked(slot);}))status=L"受保护的装备不参与搭配切换。";
-    Text(dst,status,16,StatusY,0x52728a,748);Line(dst,6,FooterY-7,768);
-    if(state.page==0)Button(dst,18,128,FooterY,80,L"保存搭配",Writable()&&state.model.Valid());
-    if(state.page==2){
-        auto selected=Selected();bool transferable=selected && selected->uid && (selected->flags&2);
-        Button(dst,20,354,232,80,L"存入 →",Writable()&&state.selectedSource==1&&transferable);
-        Button(dst,21,354,272,80,L"← 取出",Writable()&&state.selectedSource==0&&transferable);
-        Button(dst,22,354,312,80,L"全部存入 →",Writable()&&state.model.StorableCount()>0);
+    if(status.empty() && state.page==0 && state.hover>=5100 && state.hover<5115 && state.model.draft.count(Slots[state.hover-5100])){
+        auto worn=state.model.Worn(Slots[state.hover-5100]);
+        status=worn?L"单击换回："+Wide(worn->name):L"单击撤下这件试穿";
     }
+    if(state.pending)status=GetTickCount()-state.sentAt>=10000?L"正在核对结果":L"";
+    else if(status.empty() && state.page==1 && std::any_of(Slots.begin(),Slots.end(),[](short slot){return state.model.Locked(slot);}))status=L"受保护的装备不参与搭配切换。";
+    auto lines=Wrap(status,statusW);const int top=lines.size()>1?FooterY-2:FooterY+4;
+    for(std::size_t k=0;k<lines.size() && k<2;k++)Text(dst,lines[k],statusX,top+int(k)*13,Muted);
     if(state.dialog!=Dialog::None)DrawDialog(dst);
 }
 
@@ -435,8 +538,24 @@ void Popup(Dialog dialog){Edit(-1);TooltipClear();state.hover=state.pressed=-1;s
 void ResetSelection(){state.selected=state.hover=state.pressed=-1;state.clickUid=0;TooltipClear();}
 void PreviewSelected(){
     if(!Writable())return;auto item=Selected();if(!item)return;
+    if(!(item->flags&1)){state.status=std::wstring(L"不能试穿：")+Reason(item->reason);Invalidate();return;}
     if(!state.model.Toggle(item->uid)){state.status=L"这件时装暂时不能试穿。";Invalidate();return;}
     state.status.clear();state.avatarDirty=true;Invalidate();
+}
+void RevertSlot(int index){
+    if(!Writable() || state.page!=0 || index<0 || index>=int(Slots.size()))return;
+    const short slot=Slots[index];if(!state.model.draft.count(slot))return;
+    if(!state.model.Revert(slot)){state.status=L"撤下后与其他试穿冲突，请先撤下套服或另一件。";Invalidate();return;}
+    // The cell now shows another item: drop the old tooltip and let the next hover rebuild it.
+    TooltipClear();state.hover=-1;state.status.clear();state.avatarDirty=true;Invalidate();
+}
+void RestoreLook(){
+    if(!Writable() || state.model.draft.empty())return;
+    state.model.Restore();state.status.clear();state.avatarDirty=true;Invalidate();
+}
+void SelectOutfit(int index){
+    if(index<0 || index>=6 || state.outfit==index)return;
+    state.outfit=index;state.status.clear();state.avatarDirty=true;Invalidate();
 }
 void TransferSelected(){
     if(!Writable() || (state.selectedSource!=0 && state.selectedSource!=1))return;
@@ -467,13 +586,20 @@ void ApplyDraft(bool binding){
     Popup(Dialog::None);if(!Send(Apply,bytes)){state.applyingPreset=-1;state.applyDraft.clear();state.status=L"发送失败，请重新打开衣柜。";}
     Invalidate();
 }
+void ApplyTryOn(){
+    if(!Writable() || state.page!=0 || state.model.draft.empty() || !state.model.Valid())return;
+    state.applyingPreset=6;state.applyDraft=state.model.draft;
+    bool binding=false;for(const auto& e:state.applyDraft){auto item=state.model.Find(e.second);if(item && item->flags&8)binding=true;}
+    if(binding)Popup(Dialog::Binding);else ApplyDraft(false);
+}
 void SaveOutfit(){
     if(state.pending || state.outfitName.empty() || state.outfitName.size()>8)return;
     std::string name;try{name=Narrow(state.outfitName);}catch(...){state.dialogMessage=L"名称含不支持的字符，请修改。";Invalidate();return;}
     std::vector<unsigned char> bytes;Number(bytes,state.saveSlot+1,1);String(bytes,name);
     if(state.dialog!=Dialog::Rename){Number(bytes,state.saveScope.size(),1);for(const auto& e:state.saveScope){Number(bytes,e.slot,2);Number(bytes,e.mode,1);Number(bytes,e.mode==2?e.uid:0,8);}}
     auto action=state.dialog==Dialog::Rename?Rename:Save;
-    if(Send(action,bytes))Popup(Dialog::None);else state.status=L"发送失败，请重新打开衣柜。";
+    // The outfit page follows the position actually written (the save dialog can pick another).
+    if(Send(action,bytes)){if(state.page==1)state.outfit=state.saveSlot;Popup(Dialog::None);}else state.status=L"发送失败，请重新打开衣柜。";
 }
 void BeginSave(int slot=-1){
     if(!Writable() || !state.model.original && !state.model.Valid())return;state.saveScope=state.model.SaveScope();state.saveSlot=slot>=0?slot:0;
@@ -519,25 +645,29 @@ void Activate(int id){
     if(id>=1000 && id<4072){state.selectedSource=(id-1000)/1024;state.selected=(id-1000)%1024;}
     else if(id==3 || id==4){
         state.page=id-3;state.dropdown=-1;
-        state.model.original=state.page==1;if(state.page==1)state.preset=state.model.CurrentPreset();
+        state.model.original=state.page==1;
+        if(state.page==1){state.preset=state.model.CurrentPreset();if(state.preset>=0)state.outfit=state.preset;}
         ResetSelection();state.avatarDirty=true;
     }
     else if(id==7)state.dropdown=state.dropdown==7?-1:7;
     else if(id==9){state.search.clear();std::fill(std::begin(state.gridPage),std::end(state.gridPage),0);ResetSelection();}
-    else if(id==12 && state.menuPreset>=0){state.saveSlot=state.menuPreset;state.outfitName=Wide(state.model.current.outfits[state.menuPreset].name);Popup(Dialog::Rename);Edit(450);}
-    else if(id==13 && state.menuPreset>=0)Popup(Dialog::Delete);
-    else if(id==18)BeginSave();
+    else if(id==12 && state.page==1 && state.model.current.outfits[state.outfit].defined){state.menuPreset=state.saveSlot=state.outfit;state.outfitName=Wide(state.model.current.outfits[state.outfit].name);Popup(Dialog::Rename);Edit(450);}
+    else if(id==13 && state.page==1 && state.model.current.outfits[state.outfit].defined){state.menuPreset=state.outfit;Popup(Dialog::Delete);}
+    else if(id==18 && state.page==0)BeginSave();
+    else if(id==23 && state.page==0)RestoreLook();
+    else if(id==24)ApplyTryOn();
+    else if(id==25 && state.page==1)BeginSave(state.outfit);
+    else if(id==26 && state.page==1)LoadPreset(state.outfit);
     else if(id==19){state.page=2;state.model.original=false;state.category=0;state.dropdown=-1;ResetSelection();state.avatarDirty=true;}
     else if(id==20 && state.page==2 && state.selectedSource==1)TransferSelected();
     else if(id==21 && state.page==2 && state.selectedSource==0)TransferSelected();
     else if(id==22)StoreAll();
     else if(id>=300 && id<=307){state.category=id-300;std::fill(std::begin(state.gridPage),std::end(state.gridPage),0);ResetSelection();}
-    else if(id>=30 && id<=35){state.gridPage[(id-30)/2]+=(id%2)?1:-1;ResetSelection();}
-    else if(id>=40 && id<=42){state.source=id-40;state.dropdown=-1;ResetSelection();}
+    else if(id>=30 && id<=37){state.gridPage[(id-30)/2]+=(id%2)?1:-1;ResetSelection();}
+    else if(id>=40 && id<=43){state.source=id-40;state.dropdown=-1;ResetSelection();}
     else if(id>=80 && id<=82)WardrobePreview::SetScene(id-80);
-    else if(id>=100 && id<106){if(state.model.current.outfits[id-100].defined)LoadPreset(id-100);else BeginSave(id-100);}
-    else if(id>=200 && id<206){state.menuPreset=id-200;state.dropdown=state.dropdown==id?-1:id;}
-    else if(id>=210 && id<216){state.detailSlot=id-210;Popup(Dialog::Details);}
+    else if(id>=100 && id<106 && state.page==1)SelectOutfit(id-100);
+    else if(id>=5100 && id<5115)RevertSlot(id-5100);
     else if(id==401){
         try{Narrow(state.outfitName);}catch(...){state.dialogMessage=L"名称含不支持的字符，请修改。";Invalidate();return;}
         if(state.dialog==Dialog::Save && state.model.current.outfits[state.saveSlot].defined)Popup(Dialog::Overwrite);else SaveOutfit();
@@ -570,10 +700,13 @@ void Hover(int id,int x,int y){
     if((previous>=0 && previous<1000)||(id>=0 && id<1000)||previous>=5000||id>=5000)Invalidate();
     if(state.pending)return;
     const Item* hovered=nullptr;
-    if(id>=5000 && id<5015 && state.dialog==Dialog::Details){
-        const auto& outfit=state.model.current.outfits[state.detailSlot];
-        auto entry=std::find_if(outfit.entries.begin(),outfit.entries.end(),[&](const Scope& e){return e.slot==Slots[id-5000];});
-        if(entry!=outfit.entries.end())hovered=state.model.DetailItem(*entry);
+    if(id>=5000 && id<5015 && state.page==1){
+        const auto& outfit=state.model.current.outfits[state.outfit];const short slot=Slots[id-5000];
+        auto entry=std::find_if(outfit.entries.begin(),outfit.entries.end(),[&](const Scope& e){return e.slot==slot;});
+        if(!outfit.defined)hovered=state.model.Worn(slot);
+        else if(entry!=outfit.entries.end())hovered=state.model.DetailItem(*entry);
+    } else if(id>=5100 && id<5115 && state.page==0){
+        hovered=state.model.Find(state.model.Desired(Slots[id-5100]));
     } else if(id>=1000 && id<4072){
         int source=(id-1000)/1024,index=(id-1000)%1024;
         if(index<int(state.model.current.items[source].size()))hovered=&state.model.current.items[source][index];
@@ -603,13 +736,16 @@ void __fastcall Mouse(void*,void*,unsigned message,unsigned,int x,int y){
         int hit=Hit(x,y);
         if(message==WM_LBUTTONDOWN){
             Focus(true);state.pressed=hit;state.clickUid=hit>=1000&&hit<4072?state.model.current.items[(hit-1000)/1024][(hit-1000)%1024].uid:0;
-            if(hit<0){Edit(-1);state.dropdown=-1;if(y>=0 && y<23 && state.dialog==Dialog::None){state.dragging=true;state.dragX=x;state.dragY=y;}}Invalidate();
+            if(hit<0){Edit(-1);state.dropdown=-1;if(y>=0 && y<22 && state.dialog==Dialog::None){state.dragging=true;state.dragX=x;state.dragY=y;}}Invalidate();
         }
         else if(message==WM_LBUTTONUP){state.dragging=false;int pressed=state.pressed;state.pressed=-1;if(pressed>=0 && pressed==hit)Activate(hit);Invalidate();}
         else if(message==WM_LBUTTONDBLCLK && hit>=1000 && hit<4072 && !state.pending){
             auto uid=state.model.current.items[(hit-1000)/1024][(hit-1000)%1024].uid;
             if(!uid || uid!=state.clickUid)return;
             state.clickUid=0;state.pressed=-1;Activate(hit);if(state.page==0)PreviewSelected();else if(state.page==2)TransferSelected();
+        }
+        else if(message==WM_LBUTTONDBLCLK && hit>=100 && hit<106 && state.page==1 && !state.pending){
+            state.pressed=-1;SelectOutfit(hit-100);if(state.model.current.outfits[hit-100].defined)LoadPreset(hit-100);
         }
     }catch(...){Fail("mouse");}
 }
@@ -629,7 +765,13 @@ int __fastcall MouseMove(void*,void*,int x,int y){try{
 int __fastcall Wheel(void*,void*,int x,int y,int delta){
     // IUIMsgHandler::OnMouseWheel(x, y, delta), confirmed against CWnd forwarding.
     if(!state.shown || state.pending || state.deferredClose)return 0;try{
-        if(state.dialog==Dialog::None && state.page!=1){int source=state.page==2?(x<390?1:0):state.source;int columns=state.page==2?9:WardrobeLayout::GridColumns;auto count=Filter(source,state.page==2&&source==1).size();int last=(std::max)(0,(int(count)-1)/(columns*WardrobeLayout::GridRows));state.gridPage[source]=(std::max)(0,(std::min)(last,state.gridPage[source]+(delta<0?1:-1)));ResetSelection();}
+        if(state.dialog==Dialog::None && state.page!=1){
+            using namespace WardrobeLayout;
+            int source=state.page==2?(x<LockerX-40?1:0):state.source;
+            int cells=state.page==2?(source==1?BagColumns:LockerColumns)*StorageRows:GridColumns*GridRows;
+            auto count=Entries(source,state.page==2&&source==1).size();int last=(std::max)(0,(int(count)-1)/cells);
+            state.gridPage[source]=(std::max)(0,(std::min)(last,state.gridPage[source]+(delta<0?1:-1)));ResetSelection();
+        }
         Invalidate();
     }catch(...){Fail("wheel");}return 1;
 }
@@ -722,10 +864,13 @@ void Tables(){
     state.uiTable[17]=(DWORD)&RTTI;state.uiTable[18]=(DWORD)&KindOf;state.refTable[0]=(DWORD)&RefDestructor;
 }
 void PreloadWardrobeSkin(){
-    for(const wchar_t* key:{L"backgrnd",L"modal",L"cell",L"select",L"tabOn",L"tabOff",L"categoryOn",L"categoryOff",L"scene/0",L"scene/1",L"scene/2"})Canvas(root+key);
-    for(int width:{48,65,80,96})for(const wchar_t* variant:{L"normal",L"pressed",L"disabled",L"mouseOver"})Canvas(root+L"button"+std::to_wstring(width)+L"/"+variant+L"/0");
-    Canvas(L"UI/Basic.img/BtClose/normal/0");
-    for(const wchar_t* name:{L"BtOK",L"BtCancel"})for(const wchar_t* variant:{L"normal",L"pressed",L"disabled",L"mouseOver"})Canvas(std::wstring(L"UI/Basic.img/")+name+L"/"+variant+L"/0");
+    for(const wchar_t* key:{L"backgrnd",L"modal",L"cell",L"cellTried",L"select",L"tried",L"takenOff",L"unavailable",L"bezel"})Canvas(root+key);
+    for(int width:{40,49,56})for(const wchar_t* side:{L"On",L"Off"})Canvas(root+L"tab"+std::to_wstring(width)+side);
+    for(const wchar_t* variant:{L"normal",L"pressed",L"disabled",L"mouseOver"}){
+        for(int width:{56,60,76,80})Canvas(root+L"button"+std::to_wstring(width)+L"/"+variant+L"/0");
+        for(const wchar_t* name:{L"BtOK",L"BtCancel",L"BtClose",L"BtComboBox"})Canvas(std::wstring(L"UI/Basic.img/")+name+L"/"+variant+L"/0");
+    }
+    for(int scene=0;scene<int(WardrobeLayout::Scenes.size());scene++)Canvas(L"UI/CashShop.img/Base/Preview/"+std::to_wstring(scene));
 }
 void CreateWardrobeWindow(){
     if(!state.window){state.window=new unsigned char[0x100]{};reinterpret_cast<void*(__thiscall*)(void*)>(0x009DE383)(state.window);}
@@ -739,7 +884,7 @@ void CreateWardrobeWindow(){
 void OpenWindow(){
     if(!state.field || state.opening || state.shown || state.deferredClose)return;state.status.clear();state.model=Model{};
     WardrobePreview::Stop();WardrobePreview::SetScene(0);
-    state.page=state.source=state.category=0;std::fill(std::begin(state.gridPage),std::end(state.gridPage),0);state.search.clear();state.preset=state.menuPreset=state.applyingPreset=-1;state.applyDraft.clear();
+    state.page=state.category=state.outfit=0;state.source=AllSources;std::fill(std::begin(state.gridPage),std::end(state.gridPage),0);state.search.clear();state.preset=state.menuPreset=state.applyingPreset=-1;state.applyDraft.clear();
     PreloadWardrobeSkin();
     WardrobeInput::Lock();
     state.opening=Send(Open);if(state.opening)CreateWardrobeWindow();else WardrobeInput::Unlock();
@@ -747,7 +892,12 @@ void OpenWindow(){
 void RebuildAvatar(){
     state.avatarDirty=false;if(!state.ready || !state.shown || state.opening)return;
     unsigned char look[0x1c5]{};reinterpret_cast<void(__thiscall*)(void*,const void*)>(0x00451541)(look,state.look);
-    if(!state.model.original)for(const auto& e:state.model.draft){
+    std::map<short,std::uint64_t> view;
+    if(state.page==1){
+        const auto& outfit=state.model.current.outfits[state.outfit];
+        view=state.model.PreviewOutfit(outfit);
+    } else if(!state.model.original)view=state.model.draft;
+    for(const auto& e:view){
         int slot=-e.first-100;auto item=state.model.Find(e.second);int cash=item?item->id:0;
         auto base=state.model.Worn(short(-slot));int normal=base?base->id:0;
         if(slot==11)std::memcpy(look+0x15,&cash,4);

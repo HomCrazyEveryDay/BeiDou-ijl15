@@ -25,7 +25,7 @@
 | 主题 | 依据 |
 | --- | --- |
 | 崩溃修复 | 无单篇总表；按日期取最新：10-08 系列以 [remaining-crashes-followup-20261008](records/remaining-crashes-followup-20261008.md) 汇总，10-11 [crash-fixes-20261011](records/crash-fixes-20261011.md)，之后见 records 中 10-13 ~ 10-16 的 `*-crash*`、`pool-guard-*`、`player-logs*` |
-| 衣柜客户端 | [wardrobe-entry-delivery-20261018](records/wardrobe-entry-delivery-20261018.md)、[wardrobe-preview-ownership-20261018](records/wardrobe-preview-ownership-20261018.md) |
+| 衣柜客户端 | [wardrobe-entry-delivery-20261018](records/wardrobe-entry-delivery-20261018.md)、[wardrobe-preview-ownership-20261018](records/wardrobe-preview-ownership-20261018.md)；2026-10-20 界面重做见服务端仓库 docs/records/wardrobe-redesign-20261020.md |
 | 宠物 | [pet-potion-settings-20261018](records/pet-potion-settings-20261018.md)、[main-pet-inventory-mark-20261016](records/main-pet-inventory-mark-20261016.md) |
 
 记录中的 SHA-256、Windows 路径（含旧目录名 `BeiDou-ijl15`）与“当前/待验证”措辞均为当时状态。

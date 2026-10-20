@@ -156,7 +156,8 @@ struct Model {
         }
         auto top=Find(Desired(-105));return !(top && top->id/10000==105 && Desired(-106));
     }
-    ResolvedOutfit Resolve(const Outfit& outfit)const {
+    // partial keeps the resolvable pieces of a blocked outfit; only for previewing, never applying.
+    ResolvedOutfit Resolve(const Outfit& outfit,bool partial=false)const {
         ResolvedOutfit result;if(!outfit.defined)return result;
         std::set<short> slots;
         for(const auto& e:outfit.entries)
@@ -210,8 +211,49 @@ struct Model {
         auto top=desired(-105);
         if(top && top->id/10000==105 && desired(-106))++result.restricted;
         // Never apply half an outfit or silently label that mixture as current.
-        if(result.Blocked())result.choices.clear();
+        if(result.Blocked() && !partial)result.choices.clear();
         return result;
+    }
+    // Undo the try-on of one slot (back to what is worn). Refuse if that breaks the look,
+    // e.g. restoring worn pants under a previewed overall.
+    bool Revert(short slot) {
+        if(!draft.count(slot) || Locked(slot))return false;
+        auto old=draft;bool oldAuto=pantsAuto;draft.erase(slot);
+        if(slot==-105 && pantsAuto){auto top=Find(Desired(-105));if(!top || top->id/10000!=105){Set(-106,pantsBeforeOverall);pantsAuto=false;}}
+        if(!Valid()){draft=std::move(old);pantsAuto=oldAuto;return false;}
+        original=false;return true;
+    }
+    void Restore(){draft.clear();original=false;pantsAuto=false;}
+    // Look of a saved outfit, for preview only. Unavailable pieces show as empty, never as the
+    // current wear; only protected/excluded slots keep what is worn. One instance per slot, and
+    // never an overall over pants.
+    std::map<short,std::uint64_t> PreviewOutfit(const Outfit& outfit)const {
+        std::map<short,std::uint64_t> view;if(!outfit.defined)return view;
+        const auto resolved=Resolve(outfit,true);std::set<short> kept,fallback;
+        for(const auto& e:outfit.entries){
+            if(std::find(Slots.begin(),Slots.end(),e.slot)==Slots.end())continue;
+            std::uint64_t uid=0;auto choice=resolved.choices.find(e.slot);
+            if(choice!=resolved.choices.end())uid=choice->second;
+            else if(e.mode==2 && !Locked(e.slot)){auto item=DetailItem(e);uid=item?item->uid:0;if(uid)fallback.insert(e.slot);}
+            else {kept.insert(e.slot);continue;}
+            if(uid!=Base(e.slot))view[e.slot]=uid;
+        }
+        auto pick=[&](short slot){auto i=view.find(slot);return i==view.end()?Base(slot):i->second;};
+        auto set=[&](short slot,std::uint64_t uid){if(uid==Base(slot))view.erase(slot);else view[slot]=uid;};
+        // Each instance is shown once: kept wear first, then resolved choices, then fallbacks.
+        std::set<std::uint64_t> seen;
+        for(int pass=0;pass<3;pass++)for(short slot:Slots){
+            if((pass==0)!=(kept.count(slot)!=0) || pass>0 && (pass==2)!=(fallback.count(slot)!=0))continue;
+            auto uid=pick(slot);if(uid && !seen.insert(uid).second)set(slot,0);
+        }
+        // Worn pieces can be protected with uid 0, so read what each slot actually shows.
+        auto shown=[&](short slot)->const Item*{auto i=view.find(slot);return i==view.end()?Worn(slot):Find(i->second);};
+        auto top=shown(-105);
+        if(top && top->id/10000==105 && shown(-106)){
+            if(kept.count(-106) || Locked(-106))set(-105,0);   // protected pants stay; the overall cannot
+            else set(-106,0);
+        }
+        return view;
     }
     bool Load(const Outfit& outfit) {
         if(!outfit.defined)return false;

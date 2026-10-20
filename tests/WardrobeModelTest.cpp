@@ -194,6 +194,44 @@ int main(int argc,char** argv){
     assert(complete.Load(emptyOutfit())&&complete.Desired(-101)==0&&complete.draft.size()==1);
     for(const auto& e:complete.SaveScope())assert(e.slot==-112?e.mode==0:e.mode==1); // Empty presets explicitly store no cash equipment.
     auto invalid=one;invalid.entries.pop_back();assert(!complete.Load(invalid));
+    {
+        // Outfit-page preview: a missing coat shows empty (never the worn overall), pants are kept,
+        // protected slots stay as worn, and an outfit's overall drops worn pants.
+        Model m;m.current.items[2]={item(900,1050000,-105,-105),item(901,1002000,-101,-101)};m.current.items[0]={item(902,1060000,-106),item(903,1051000,-105)};
+        Outfit o;o.defined=true;for(short slot:Slots)o.entries.push_back({slot,1,0,0,true});
+        for(auto& e:o.entries){if(e.slot==-105)e={e.slot,2,950,1040000,true};if(e.slot==-106)e={e.slot,2,902,1060000,true};if(e.slot==-101)e={e.slot,0,0,0,true};}
+        m.current.items[2][1].flags=0;   // worn hat is not manageable: excluded, keeps showing
+        auto v=m.PreviewOutfit(o);assert(v.at(-105)==0&&v.at(-106)==902&&!v.count(-101));
+        assert(m.Resolve(o).Blocked()&&m.Resolve(o).choices.empty()); // Applying stays all-or-nothing.
+        for(auto& e:o.entries){if(e.slot==-105)e={e.slot,2,903,1051000,true};if(e.slot==-106)e={e.slot,1,0,0,true};}
+        m.current.items[2].push_back(item(904,1060001,-106,-106));
+        v=m.PreviewOutfit(o);assert(v.at(-105)==903&&v.at(-106)==0);
+        Outfit empty;assert(m.PreviewOutfit(empty).empty());
+        // Two rings saved as different instances of one ID, only one left: the second slot stays empty.
+        Model r;r.current.items[0]={item(960,1112000,-112)};
+        Outfit rings;rings.defined=true;for(short slot:Slots)rings.entries.push_back({slot,1,0,0,true});
+        for(auto& e:rings.entries){if(e.slot==-112)e={e.slot,2,960,1112000,true};if(e.slot==-113)e={e.slot,2,961,1112000,true};}
+        v=r.PreviewOutfit(rings);assert(v.at(-112)==960&&(!v.count(-113)||v.at(-113)==0));
+        // Overall over protected (locked) or excluded worn pants: pants stay, the overall is not shown.
+        for(unsigned flags:{7u,0u}){
+            Model q;q.current.items[2]={item(970,1060000,-106,-106,flags)};q.current.items[0]={item(971,1050000,-105)};
+            Outfit over;over.defined=true;for(short slot:Slots)over.entries.push_back({slot,1,0,0,true});
+            for(auto& e:over.entries){if(e.slot==-105)e={e.slot,2,971,1050000,true};if(e.slot==-106)e={e.slot,0,0,0,true};}
+            v=q.PreviewOutfit(over);assert(!v.count(-106)&&(!v.count(-105)||v.at(-105)==0));
+        }
+        {   // Protected pants without an instance id (uid 0) still block the overall.
+            Model q;q.current.items[2]={item(0,1060000,-106,-106,1)};q.current.items[0]={item(971,1050000,-105)};
+            Outfit over;over.defined=true;for(short slot:Slots)over.entries.push_back({slot,1,0,0,true});
+            for(auto& e:over.entries){if(e.slot==-105)e={e.slot,2,971,1050000,true};if(e.slot==-106)e={e.slot,0,0,0,true};}
+            v=q.PreviewOutfit(over);assert(!v.count(-106)&&(!v.count(-105)||v.at(-105)==0));
+        }
+        {   // A kept (locked) worn ring is not shown again in the slot the outfit points at.
+            Model q;q.current.items[2]={item(960,1112000,-112,-112,7)};
+            Outfit dup;dup.defined=true;for(short slot:Slots)dup.entries.push_back({slot,1,0,0,true});
+            for(auto& e:dup.entries){if(e.slot==-112)e={e.slot,0,0,0,true};if(e.slot==-113)e={e.slot,2,960,1112000,true};}
+            v=q.PreviewOutfit(dup);assert(!v.count(-112)&&(!v.count(-113)||v.at(-113)==0));
+        }
+    }
     std::cout<<"PASS complete outfit replacement (five to one and back), legacy KEEP normalization, protected equipment, missing rejection and exact selection\n";
     std::cout<<"PASS double-click UID toggles, ring scope, overall/pants restoration and actual outfit selection\n";
     std::vector<unsigned char> bytes(4);Number(bytes,0x1005,2);Number(bytes,Magic,2);Number(bytes,Version,1);Number(bytes,0,1);Number(bytes,0,1);

@@ -100,13 +100,13 @@ static void NativeInterpolation(){
     auto table=methods;p.overlay=&table;p.visible=true;snapshot=&NativePosition;
     LONG x=0,y=0,rx=0,ry=0;VARIANT time{};time.vt=VT_I4;time.lVal=123;
     assert(SUCCEEDED(DisplaySnapshot(controller,&x,&y,&rx,&ry,nullptr,nullptr,nullptr,nullptr,time)));
-    assert(x==148 && y==351 && rx==x && ry==y);
+    assert(x==106 && y==239 && rx==x && ry==y); // The 212x165 scene fills the preview viewport 1:1.
     nativeX=-297;nativeY=-126; // A second native render sample, with no physics/UI update between.
     assert(SUCCEEDED(DisplaySnapshot(controller,&x,&y,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,time)));
-    assert(x==151 && y==350 && positionCalls==2);
+    assert(x==109 && y==238 && positionCalls==2);
     windowX+=50;windowY+=30;
     assert(SUCCEEDED(DisplaySnapshot(controller,nullptr,nullptr,&rx,&ry,nullptr,nullptr,nullptr,nullptr,time)));
-    assert(rx==201 && ry==380); // Name/effect origin follows a dragged window immediately.
+    assert(rx==159 && ry==268); // Name/effect origin follows a dragged window immediately.
     DisplaySnapshot(reinterpret_cast<void*>(0x9999),&x,&y,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,time);
     assert(x==nativeX && y==nativeY); // Every other player/controller uses the untouched original.
     p.visible=false;DisplaySnapshot(controller,&x,&y,nullptr,nullptr,nullptr,nullptr,nullptr,nullptr,time);
