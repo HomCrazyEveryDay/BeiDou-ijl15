@@ -1,9 +1,10 @@
 ﻿// D3D8Batch 回归测试：先在挂接前画出各场景作为基线，挂接后用合批重画，比较后台缓冲区 RGB 哈希
 // 与场景内状态/绘制调用的返回值序列；覆盖状态/步长切换、扇形与折线、带变换与用户裁剪平面的几何、帧中查询断言、
-// 帧中修改已用贴图、非法参数的同步错误、命令数与字节容量阈值、大绘制直通、状态块（含恢复立方体
-// 绑定）、立方体贴图采样与修改、Reset 以及释放后新设备重新挂接，并断言合批统计，最后测帧率。
+// 帧中修改已用贴图、非法/边界参数的同步结果（零图元绘制、SCRATCH 贴图、删除后的偶数着色器句柄）、
+// 命令数与字节容量阈值、大绘制直通、状态块（含恢复立方体绑定）、立方体贴图采样与修改、Reset、释放后
+// 新设备重新挂接、设备/贴图槽位被改写后的停用与重新挂接、并发释放，并断言合批统计，最后测帧率。
 // 正式只在 Wine 下启用；原生 Windows 运行用于回归（状态块会使原生 d3d8 改写虚表，合批随之自动停用，
-// 非法参数段跳过）。Windows 用 D3D8BatchTest.ps1；macOS 可用 zig 交叉编译后在 Wine 下运行：
+// 非法参数段与整表替换跳过）。Windows 用 D3D8BatchTest.ps1；macOS 可用 zig 交叉编译后在 Wine 下运行：
 //   zig c++ -target x86-windows-gnu -O2 -std=c++17 tests/D3D8BatchTest.cpp ezorsia/D3D8Batch.cpp -luser32 -lgdi32 -o D3D8BatchTest.exe
 #include "../ezorsia/D3D8Batch.h"
 #include <stdio.h>
@@ -17,10 +18,11 @@ template<class R, class... A> R Call(void* object, unsigned slot, A... args) {
 }
 // IDirect3DDevice8 及资源槽位（mingw-w64 d3d8.h）。
 enum : unsigned {
-	Release = 2, Reset = 14, CreateDevice = 15, Present = 15, GetBackBuffer = 16, CreateTexture = 20, CreateCubeTexture = 22,
+	AddRef = 1, Release = 2, Reset = 14, CreateDevice = 15, Present = 15, GetBackBuffer = 16, CreateTexture = 20, CreateCubeTexture = 22,
 	BeginScene = 34, EndScene = 35, Clear = 36, SetTransform = 37, SetViewport = 40, SetClipPlane = 48, SetRenderState = 50,
 	GetRenderState = 51, BeginStateBlock = 52, EndStateBlock = 53, ApplyStateBlock = 54, DeleteStateBlock = 56,
-	SetTexture = 61, SetTextureStageState = 63, DrawPrimitiveUP = 72, SetVertexShader = 76,
+	SetTexture = 61, SetTextureStageState = 63, DrawPrimitiveUP = 72, CreateVertexShader = 75, SetVertexShader = 76,
+	DeleteVertexShader = 78,
 	TexLockRect = 16, TexUnlockRect = 17, CubeLockRect = 16, CubeUnlockRect = 17, SurfLockRect = 9, SurfUnlockRect = 10
 };
 enum : DWORD { AlphaBlend = 27, ClipPlaneEnable = 152, Lighting = 137, SrcBlend = 19, DestBlend = 20 };
@@ -39,6 +41,8 @@ void* d3d = nullptr;
 void* device = nullptr;
 void* textures[Textures]{};
 void* cube = nullptr;
+void* scratch = nullptr;  // Wine 下的 SCRATCH 池贴图（不可绑定）
+void* noAccess = nullptr; // 不可访问页：零图元绘制的顶点指针
 HWND window = nullptr;
 DWORD present[13]{};
 int width = 0, height = 0, failures = 0;
@@ -76,6 +80,8 @@ void SetupDevice() {
 	for (int i = 0; i < Textures; i++)
 		if (FAILED(Call<HRESULT>(device, CreateTexture, static_cast<UINT>(TexSize), static_cast<UINT>(TexSize), 1u, 0ul, 21ul, 1ul, &textures[i]))) Fail("CreateTexture");
 	if (FAILED(Call<HRESULT>(device, CreateCubeTexture, static_cast<UINT>(CubeSize), 1u, 0ul, 21ul, 1ul, &cube))) Fail("CreateCubeTexture");
+	if (wine && FAILED(Call<HRESULT>(device, CreateTexture, static_cast<UINT>(TexSize), static_cast<UINT>(TexSize), 1u, 0ul, 21ul, 3ul, &scratch)))
+		scratch = nullptr; // D3DPOOL_SCRATCH；创建失败只跳过该项
 }
 
 void SetupStates() {
@@ -90,12 +96,35 @@ void SetupStates() {
 	Call<HRESULT>(device, SetRenderState, 22ul, 1ul); // CULLMODE none
 }
 
-void ReleaseDevice() {
+HANDLE releaseStart = nullptr;
+DWORD WINAPI ReleaseThread(void* result) {
+	WaitForSingleObject(releaseStart, INFINITE);
+	*static_cast<ULONG*>(result) = Call<ULONG>(device, Release);
+	return 0;
+}
+
+// concurrent：最后两个外部引用由两个线程同时释放（合批的引用计数判断须与 Release 串行，否则两边都
+// 跳过清理，自建缓冲区持有的设备引用会残留）。竞态窗口很小，这里只是冒烟覆盖。
+void ReleaseDevice(bool concurrent = false) {
 	for (int i = 0; i < Textures; i++) if (textures[i]) Call<ULONG>(textures[i], Release), textures[i] = nullptr;
 	if (cube) Call<ULONG>(cube, Release), cube = nullptr;
-	const ULONG remaining = Call<ULONG>(device, Release);
+	if (scratch) Call<ULONG>(scratch, Release), scratch = nullptr;
+	ULONG remaining = 0;
+	if (concurrent) {
+		Call<ULONG>(device, AddRef);
+		ULONG results[2] = {99, 99};
+		releaseStart = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+		HANDLE threads[2] = {CreateThread(nullptr, 0, ReleaseThread, &results[0], 0, nullptr), CreateThread(nullptr, 0, ReleaseThread, &results[1], 0, nullptr)};
+		SetEvent(releaseStart);
+		WaitForMultipleObjects(2, threads, TRUE, INFINITE);
+		for (HANDLE thread : threads) CloseHandle(thread);
+		CloseHandle(releaseStart);
+		remaining = results[0] < results[1] ? results[0] : results[1];
+	} else {
+		remaining = Call<ULONG>(device, Release);
+	}
 	device = nullptr;
-	printf("device_release_remaining=%lu\n", remaining);
+	printf("device_release_remaining=%lu%s\n", remaining, concurrent ? " (concurrent)" : "");
 	if (remaining != 0) Fail("device refcount");
 }
 
@@ -163,8 +192,8 @@ void FanAndStrip(int i, DWORD seed) {
 	Draw(3, 4, line, sizeof(VertexA));
 }
 
-// 有暂存绘制时的非法参数：返回值须与未挂接时一致。
-void InvalidCalls() {
+// 有暂存绘制时的非法/边界参数：返回值须与未挂接时一致；结束时恢复调用方的顶点格式。
+void InvalidCalls(bool formatB) {
 	if (!wine) return;
 	const DWORD outside[6] = {static_cast<DWORD>(width), 0, 1, 1, 0, 0x3f800000};
 	Chk(Call<HRESULT>(device, SetViewport, static_cast<const void*>(outside)));
@@ -173,6 +202,36 @@ void InvalidCalls() {
 	Chk(Call<HRESULT>(device, SetTextureStageState, 9ul, 1ul, 4ul));
 	Chk(Call<HRESULT>(device, SetTexture, 9ul, textures[0]));
 	Chk(Call<HRESULT>(device, SetRenderState, 9999ul, 1ul));
+	// 零图元的折线/条带/扇形不读取顶点：顶点指向不可访问页，合批若照常复制会崩溃。
+	SetFvf(FvfA);
+	Quad(1, 1, false);
+	for (DWORD type = 3; type <= 6; type++)
+		if (type != 4) Chk(Call<HRESULT>(device, DrawPrimitiveUP, type, 0u, static_cast<const void*>(noAccess), static_cast<UINT>(sizeof(VertexA))));
+	// SCRATCH 池贴图不可绑定：须同步拿到真实结果，不能被延迟后报告成功。随后恢复可用绑定。
+	if (scratch) {
+		Quad(2, 1, false);
+		Chk(Call<HRESULT>(device, SetTexture, 0ul, scratch));
+		SetTex(0, textures[0]);
+	}
+	// 可编程顶点着色器句柄在 Wine 下可为偶数：不能当作 FVF 缓存，删除后再设置须同步报错。
+	const DWORD declaration[3] = {0x20000000, 0x40020000, 0xffffffff}; // STREAM(0), REG(POSITION, FLOAT3), END
+	DWORD shaders[2]{};
+	for (DWORD& shader : shaders)
+		Chk(Call<HRESULT>(device, CreateVertexShader, static_cast<const DWORD*>(declaration), static_cast<const DWORD*>(nullptr), &shader, 0ul));
+	const DWORD even = !(shaders[0] & 1) ? shaders[0] : !(shaders[1] & 1) ? shaders[1] : 0;
+	if (even) {
+		Quad(3, 1, false);
+		SetFvf(even);
+		SetFvf(FvfA);
+		Quad(4, 1, false);
+		Chk(Call<HRESULT>(device, DeleteVertexShader, even));
+		Quad(5, 1, false);
+		SetFvf(even); // 已删除
+		SetFvf(FvfA);
+	}
+	for (DWORD shader : shaders)
+		if (shader && shader != even) Chk(Call<HRESULT>(device, DeleteVertexShader, shader));
+	SetFvf(formatB ? FvfB : FvfA);
 }
 
 void BeginFrame() {
@@ -183,7 +242,6 @@ void BeginFrame() {
 	SetFvf(FvfA);
 	Set(SetRenderState, AlphaBlend, 1);
 	SetTex(1, nullptr);
-	Set(SetTextureStageState, 0, 0); // 占位，保持序列稳定（stage 0 / type 0 为非法，两边一致）
 }
 
 void SceneMixed(DWORD seed, int sprites) {
@@ -210,7 +268,7 @@ void SceneMixed(DWORD seed, int sprites) {
 			Chk(Call<HRESULT>(device, SetViewport, static_cast<const void*>(viewport)));
 		}
 		if (i == sprites / 2) FillTexture((seed * 3) % Textures, seed + 1); // 修改已画过、后面还要用的贴图
-		if (i == sprites / 3) InvalidCalls();
+		if (i == sprites / 3) InvalidCalls(formatB);
 		if (i % 53 == 20) { ClippedQuad(i, seed); SetFvf(formatB ? FvfB : FvfA); }
 		if (i % 41 == 10) { SetFvf(FvfA); FanAndStrip(i, seed); SetFvf(formatB ? FvfB : FvfA); }
 		Quad(i, seed, formatB);
@@ -353,11 +411,40 @@ double MeasureFps(int sprites, double seconds) {
 }
 
 void PrintLog(const char* line) { printf("log: %s\n", line); }
+
+// 改写槽位用的转发函数：行为与原指针一致，只是不再是合批的钩子。
+void* savedSetRenderState = nullptr;
+void* savedTexLockRect = nullptr;
+HRESULT __stdcall ForwardSetRenderState(void* self, DWORD state, DWORD value) {
+	return reinterpret_cast<HRESULT(__stdcall*)(void*, DWORD, DWORD)>(savedSetRenderState)(self, state, value);
+}
+HRESULT __stdcall ForwardTexLockRect(void* self, UINT level, void* locked, const RECT* rect, DWORD flags) {
+	return reinterpret_cast<HRESULT(__stdcall*)(void*, UINT, void*, const RECT*, DWORD)>(savedTexLockRect)(self, level, locked, rect, flags);
+}
+
+void* WriteSlot(void** slot, void* value) {
+	DWORD old = 0;
+	VirtualProtect(slot, sizeof(void*), PAGE_EXECUTE_READWRITE, &old);
+	void* previous = InterlockedExchangePointer(slot, value);
+	DWORD ignored = 0;
+	VirtualProtect(slot, sizeof(void*), old, &ignored);
+	return previous;
+}
+
+// 改写一个已挂接槽位后重画：须检测到并停用、画面与基线一致；恢复后须能重新挂接。
+void ExpectRewriteDetected(const char* name, void** slot, void* replacement, void** saved, const Result& expected) {
+	*saved = WriteSlot(slot, replacement);
+	Compare(name, 1, expected, RenderScene(Mixed, 1));
+	WriteSlot(slot, *saved);
+	if (!D3D8Batch::GetStats().hooksBroken) { printf("FAIL %s not detected\n", name); failures++; }
+	if (!D3D8Batch::Attach(device)) { printf("FAIL %s re-Attach after restore\n", name); failures++; }
+}
 }
 
 int main(int argc, char** argv) {
 	setvbuf(stdout, nullptr, _IONBF, 0);
 	wine = GetProcAddress(GetModuleHandleA("ntdll.dll"), "wine_get_version") != nullptr;
+	noAccess = VirtualAlloc(nullptr, 4096, MEM_COMMIT | MEM_RESERVE, PAGE_NOACCESS);
 	printf("start wine=%d\n", wine ? 1 : 0);
 	width = argc > 1 ? atoi(argv[1]) : 1280;
 	height = argc > 2 ? atoi(argv[2]) : 720;
@@ -404,8 +491,9 @@ int main(int argc, char** argv) {
 	const D3D8Batch::Stats stats = D3D8Batch::GetStats();
 	printf("stats draws=%llu flushes=%llu fallbacks=%llu invalid=%llu hooks_broken=%d\n", stats.draws, stats.flushes, stats.fallbacks,
 		stats.invalid, stats.hooksBroken ? 1 : 0);
-	// 原生 d3d8 的状态块录制会改写设备虚表，合批应自动停用（画面仍须与基线一致）；Wine 不会。
+	// 原生 d3d8 的状态块录制会改写设备虚表，合批应在状态块调用处停用（画面仍须与基线一致）；Wine 不会。
 	if (wine && stats.hooksBroken) Fail("hooks unexpectedly broken under Wine");
+	if (!wine && !stats.hooksBroken) printf("note: native d3d8 did not rewrite the device vtable; batching stayed on\n");
 	if (stats.draws == 0) Fail("no draws were batched");
 	if (stats.fallbacks || stats.invalid) Fail("fallback or invalid draw range");
 
@@ -425,22 +513,38 @@ int main(int argc, char** argv) {
 	// 5. 释放后新建设备（同一虚表）须能重新挂接，结果仍与基线一致。
 	ReleaseDevice();
 	CreateTestDevice();
-	if (!D3D8Batch::Attach(device)) {
+	const bool attached = D3D8Batch::Attach(device);
+	if (!attached) {
 		if (wine) Fail("re-Attach");
 		else printf("note: re-Attach declined on native d3d8 (device vtable differs); batching stays off\n");
 	}
 	Compare("reattach", 3, baseline[Mixed][2], RenderScene(Mixed, 3));
-	// 6. 模拟他方替换设备虚表（原生 d3d8 状态块录制即如此）：合批须自动停用且画面仍一致。
-	{
-		void** original = *reinterpret_cast<void***>(device);
-		static void* copy[128];
-		memcpy(copy, original, 97 * sizeof(void*));
-		*reinterpret_cast<void***>(device) = copy;
-		Compare("vtable_swapped", 1, baseline[Mixed][0], RenderScene(Mixed, 1));
-		*reinterpret_cast<void***>(device) = original;
-		if (!D3D8Batch::GetStats().hooksBroken) Fail("vtable swap not detected");
+	// 6. 模拟他方改写已挂接的槽位（原生 d3d8 状态块录制即如此）：合批须在下一次暂存前停用并释放自建
+	//    缓冲区，画面仍与基线一致；恢复后可重新挂接。改写的槽位转发到原指针，只改变"是否仍是钩子"。
+	//    原生 d3d8 的设备虚表在 97 号槽之后还有内部方法，整表替换只在 Wine 下测试。
+	if (attached) {
+		void** deviceTable = *reinterpret_cast<void***>(device);
+		ExpectRewriteDetected("device_slot_rewritten", &deviceTable[SetRenderState], reinterpret_cast<void*>(&ForwardSetRenderState),
+			&savedSetRenderState, baseline[Mixed][0]);
+		void** textureTable = *reinterpret_cast<void***>(textures[0]);
+		ExpectRewriteDetected("texture_slot_rewritten", &textureTable[TexLockRect], reinterpret_cast<void*>(&ForwardTexLockRect),
+			&savedTexLockRect, baseline[Mixed][0]);
+		if (wine) {
+			static void* copy[128];
+			memcpy(copy, deviceTable, 97 * sizeof(void*));
+			*reinterpret_cast<void***>(device) = copy;
+			Compare("vtable_swapped", 1, baseline[Mixed][0], RenderScene(Mixed, 1));
+			*reinterpret_cast<void***>(device) = deviceTable;
+			if (!D3D8Batch::GetStats().hooksBroken) Fail("vtable swap not detected");
+			if (!D3D8Batch::Attach(device)) Fail("re-Attach after vtable swap");
+		}
+		// 重新挂接后再画一帧，使最后的并发释放时自建缓冲区确实持有设备引用。
+		Compare("after_rewrites", 2, baseline[Mixed][1], RenderScene(Mixed, 2));
+		if (D3D8Batch::GetStats().draws == 0) Fail("no draws batched after re-Attach");
+	} else {
+		printf("note: slot rewrite checks skipped (batcher not attached to this device)\n");
 	}
-	ReleaseDevice();
+	ReleaseDevice(true);
 	Call<ULONG>(d3d, Release);
 	printf(failures ? "RESULT FAIL\n" : "RESULT PASS\n");
 	return failures ? 1 : 0;

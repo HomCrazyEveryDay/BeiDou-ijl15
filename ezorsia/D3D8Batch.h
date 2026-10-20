@@ -17,7 +17,8 @@ void SetLogger(void(*logger)(const char* line));
 // 供测试使用：临时停止合批并提交已暂存内容（true 为停止）。
 void SetBypass(bool bypass);
 // 供测试与诊断：draws 已合批绘制数，fallbacks 退回原路径次数，invalid 顶点范围越界而跳过的绘制数；
-// hooksBroken 表示设备虚表被他方改写（如原生 d3d8 的状态块录制），合批已停用到下次 Attach。
+// hooksBroken 表示设备、贴图或表面虚表被他方改写（如原生 d3d8 的状态块录制），已停止接管该设备
+// （自建缓冲区已释放），直到下次 Attach。
 struct Stats { unsigned long long draws, flushes, fallbacks, invalid; bool hooksBroken; };
 Stats GetStats();
 }

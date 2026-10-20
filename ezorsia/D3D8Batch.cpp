@@ -12,7 +12,11 @@
 // 原本返回 D3D_OK），其余先提交再直接调用并返回真实结果。视口不延迟（可能因越界失败）；
 // 顶点格式首次出现时直接调用，成功后才允许延迟。被延迟的 DrawPrimitiveUP 返回 D3D_OK，
 // 实际执行失败只计入统计并退回原路径，无法回传给原调用者。其他线程、状态块录制期间、
-// 绑定了立方体/体积贴图时都不合批。
+// 绑定了立方体/体积贴图或未挂接虚表的贴图时都不合批。
+//
+// 钩子完整性在每次暂存绘制前及状态块调用后核对，失效即提交并停止接管。已知限制：若他方在
+// 两个检测点之间、已有暂存绘制时改写槽位并直接改状态，已暂存的绘制会用到新状态，无法事后补救；
+// Wine 不会改写设备虚表，原生 d3d8 只在状态块调用时改写（已在边界处理），且本模块只在 Wine 下启用。
 namespace D3D8Batch {
 namespace {
 
@@ -24,13 +28,15 @@ enum DeviceSlot : unsigned {
 	kDrawPrimitive = 70, kDrawPrimitiveUP = 72, kSetVertexShader = 76, kSetStreamSource = 83, kDeviceSlots = 97
 };
 enum : unsigned {
-	kResourceGetType = 10, kTextureSetLOD = 11, kTextureGetSurfaceLevel = 15, kTextureLockRect = 16,
+	kResourceGetType = 10, kTextureSetLOD = 11, kTextureGetLevelDesc = 14, kTextureGetSurfaceLevel = 15, kTextureLockRect = 16,
 	kSurfaceLockRect = 9, kBufferLock = 11, kBufferUnlock = 12
 };
 enum : DWORD {
 	kUsageWriteOnly = 0x8, kUsageDynamic = 0x200, kPoolDefault = 0, kPoolManaged = 1, kFormatA8R8G8B8 = 21,
 	kLockDiscard = 0x2000, kResourceTexture = 3, kMaxStages = 8, kMaxRenderState = 174, kMaxStageState = 28,
-	kFvfReserved0 = 0x1, kCapsMaxUserClipPlanes = 0xA4 / 4, kCapsDwords = 53
+	kFvfReserved0 = 0x1, kCapsMaxUserClipPlanes = 0xA4 / 4, kCapsDwords = 53,
+	kSurfaceDescDwords = 8, kSurfaceDescPool = 3, // D3DSURFACE_DESC（D3D8）：Pool 为第 4 个 DWORD
+	kHighestFvfHandle = 0xF0000000 // Wine d3d8 的 VS_HIGHESTFIXEDFXF：不大于它的句柄是 FVF，其余为可编程着色器
 };
 // 单次绘制过大时直接走原路径；暂存超过上限时提前提交。
 const unsigned long long kMaxDrawBytes = 256 * 1024;
@@ -53,13 +59,15 @@ bool s_bypass = false;
 bool s_flushing = false;
 bool s_stateBlock = false;       // 应用正在录制状态块
 bool s_releasingBuffer = false;  // 自建缓冲区释放时 Wine 会回调设备 Release
-DWORD s_non2dStages = 0;         // 绑定了立方体/体积贴图的纹理阶段
+DWORD s_untrackedStages = 0;     // 绑定了内容修改无法拦截的贴图（立方体/体积贴图、未挂接虚表）的纹理阶段
 DWORD s_maxClipPlanes = 0;
 std::vector<DWORD> s_knownFvf;   // 已直接调用成功过的 FVF
 void* s_original[kDeviceSlots]{};
 void* s_textureLockRect = nullptr;
 void* s_textureSetLOD = nullptr;
 void* s_surfaceLockRect = nullptr;
+void** s_textureTable = nullptr; // 已挂接 LockRect/SetLOD 的 2D 贴图共享虚表
+void** s_surfaceTable = nullptr; // 已挂接 LockRect 的表面共享虚表
 BYTE* s_thunks = nullptr;
 void** s_hookedTable = nullptr;
 bool s_installBroken = false; // 回滚不完整：不再接管任何设备
@@ -189,8 +197,8 @@ void Flush() {
 				buffered = false;
 				++s_fallbacks;
 			}
+			// DrawPrimitiveUP 失败时可能未清空流 0：保留 streamBound，由末尾统一解绑（重复置空无副作用）。
 			DrawUp(command);
-			streamBound = false; // DrawPrimitiveUP 会清空流 0。
 			break;
 		case Kind::Transform:
 			Original<HRESULT(__stdcall*)(void*, DWORD, const void*)>(kSetTransform)(s_device, command.a, command.f);
@@ -230,19 +238,40 @@ void Flush() {
 	s_flushing = false;
 }
 
-// 只在锁内调用：本线程、未停用、无状态块、无非 2D 贴图时才合批。
+// 只在锁内调用：本线程、未停用、无状态块、未绑定无法跟踪的贴图时才合批。
 bool CanBatch(void* device) {
 	return device == s_device && s_device && !s_bypass && !s_hooksBroken && !s_flushing && !s_stateBlock &&
-		!s_non2dStages && GetCurrentThreadId() == s_ownerThread;
+		!s_untrackedStages && GetCurrentThreadId() == s_ownerThread;
 }
 
-// 暂存绘制依赖全部钩子仍在：任一状态调用绕过记录直接生效都会打乱顺序。
+HRESULT __stdcall TextureLockRect_Hook(void* texture, UINT level, void* locked, const RECT* rect, DWORD flags);
+DWORD __stdcall TextureSetLOD_Hook(void* texture, DWORD lod);
+HRESULT __stdcall SurfaceLockRect_Hook(void* surface, void* locked, const RECT* rect, DWORD flags);
+
+// 暂存绘制依赖全部钩子仍在：任一状态调用或资源加锁绕过钩子直接生效都会打乱顺序。
 bool HooksIntact(void* device) {
 	void** table = *reinterpret_cast<void***>(device);
 	if (table != s_hookedTable) return false;
 	for (unsigned slot = 0; slot < kDeviceSlots; ++slot)
 		if (s_expected[slot] && table[slot] != s_expected[slot]) return false;
-	return true;
+	return s_textureTable[kTextureLockRect] == reinterpret_cast<void*>(&TextureLockRect_Hook) &&
+		s_textureTable[kTextureSetLOD] == reinterpret_cast<void*>(&TextureSetLOD_Hook) &&
+		s_surfaceTable[kSurfaceLockRect] == reinterpret_cast<void*>(&SurfaceLockRect_Hook);
+}
+
+void Detach();
+
+// 钩子已失效：提交已暂存内容，释放自建缓冲区并停止接管（不再依赖可能已失效的 Release 钩子清理）。
+// 已暂存的绘制只能保证在检测点之前没有状态绕过钩子；检测点见 HooksIntact 的调用处。
+void DisableBrokenHooks() {
+	Flush();
+	s_hooksBroken = true;
+	Log("event=d3d8_batch disabled=vtable_changed draws=%llu flushes=%llu", s_draws, s_flushes);
+	Detach();
+}
+
+void CheckHooks(void* device) {
+	if (device == s_device && s_device && !HooksIntact(device)) DisableBrokenHooks();
 }
 
 bool Recording(void* device) { return CanBatch(device) && !s_commands.empty(); }
@@ -290,14 +319,10 @@ HRESULT __stdcall DrawPrimitiveUP_Hook(void* device, DWORD type, UINT primitives
 	typedef HRESULT(__stdcall* Fn)(void*, DWORD, UINT, const void*, UINT);
 	if (s_lockState != 2) return Original<Fn>(kDrawPrimitiveUP)(device, type, primitives, data, stride);
 	Guard guard;
+	CheckHooks(device);
 	if (device != s_device || !s_device) return Original<Fn>(kDrawPrimitiveUP)(device, type, primitives, data, stride);
-	if (!s_hooksBroken && !HooksIntact(device)) {
-		Flush();
-		s_hooksBroken = true;
-		Log("event=d3d8_batch disabled=vtable_changed");
-	}
-	// 先按 64 位计算，避免极端参数溢出后绕过容量判断。
-	const unsigned long long vertices = primitives > 0x3fffffffu ? 0 : VertexCount(type, primitives);
+	// 先按 64 位计算，避免极端参数溢出后绕过容量判断。零图元交给原方法（不读取顶点）。
+	const unsigned long long vertices = !primitives || primitives > 0x3fffffffu ? 0 : VertexCount(type, primitives);
 	const unsigned long long bytes = vertices * stride;
 	if (!CanBatch(device) || !data || !stride || !vertices || bytes > kMaxDrawBytes) {
 		Flush();
@@ -385,8 +410,9 @@ HRESULT __stdcall SetVertexShader_Hook(void* device, DWORD handle) {
 	typedef HRESULT(__stdcall* Fn)(void*, DWORD);
 	if (s_lockState != 2) return Original<Fn>(kSetVertexShader)(device, handle);
 	Guard guard;
-	// 只延迟已成功设置过的 FVF 码；首次出现或可编程着色器句柄（最低位为 1）直接调用。
-	const bool fvf = handle && !(handle & kFvfReserved0);
+	// 只延迟已成功设置过的 FVF 码；首次出现或可编程着色器句柄直接调用。可编程句柄按 Wine 的分配规则
+	// 大于 kHighestFvfHandle（奇偶均可能），不进入缓存，删除后再设置也能同步拿到真实错误。
+	const bool fvf = handle && !(handle & kFvfReserved0) && handle <= kHighestFvfHandle;
 	if (!Recording(device) || !fvf || !KnownFvf(handle)) {
 		const bool mine = device == s_device && s_device;
 		if (mine) Flush();
@@ -402,35 +428,45 @@ HRESULT __stdcall SetVertexShader_Hook(void* device, DWORD handle) {
 }
 #undef RECORD_OR_CALL
 
-bool IsPlainTexture(void* texture) {
-	return !texture || Method<DWORD(__stdcall*)(void*)>(texture, kResourceGetType)(texture) == kResourceTexture;
+// 内容修改能被拦截的贴图：空，或虚表已挂接 LockRect/SetLOD 的 2D 贴图。
+bool TrackedTexture(void* texture) {
+	return !texture || (*reinterpret_cast<void***>(texture) == s_textureTable &&
+		Method<DWORD(__stdcall*)(void*)>(texture, kResourceGetType)(texture) == kResourceTexture);
 }
 
-// 用真实绑定重算非 2D 贴图阶段（状态块结束/应用、Reset 后调用）。
+// 能确定 SetTexture 会成功才延迟：只接受 DEFAULT/MANAGED 池（SCRATCH 等不可绑定，须同步拿到真实错误）。
+bool BindablePool(void* texture) {
+	if (!texture) return true;
+	DWORD desc[kSurfaceDescDwords]{};
+	if (FAILED(Method<HRESULT(__stdcall*)(void*, UINT, void*)>(texture, kTextureGetLevelDesc)(texture, 0, desc))) return false;
+	return desc[kSurfaceDescPool] == kPoolDefault || desc[kSurfaceDescPool] == kPoolManaged;
+}
+
+// 用真实绑定重算无法跟踪的贴图阶段（状态块结束/应用、Reset 后调用）。
 void ResyncTextureStages() {
-	s_non2dStages = 0;
+	s_untrackedStages = 0;
 	for (DWORD stage = 0; stage < kMaxStages; ++stage) {
 		void* texture = nullptr;
 		if (FAILED(Original<HRESULT(__stdcall*)(void*, DWORD, void**)>(kGetTexture)(s_device, stage, &texture)) || !texture) continue;
-		if (!IsPlainTexture(texture)) s_non2dStages |= 1u << stage;
+		if (!TrackedTexture(texture)) s_untrackedStages |= 1u << stage;
 		ReleaseObject(texture);
 	}
 }
 
-// 立方体/体积贴图的加锁接口未挂接：绑定期间停用合批，保证其内容修改前已画完。
+// 立方体/体积贴图及未挂接虚表的贴图，其加锁接口未被拦截：绑定期间停用合批，保证其内容修改前已画完。
 HRESULT __stdcall SetTexture_Hook(void* device, DWORD stage, void* texture) {
 	typedef HRESULT(__stdcall* Fn)(void*, DWORD, void*);
 	if (s_lockState != 2) return Original<Fn>(kSetTexture)(device, stage, texture);
 	Guard guard;
 	if (device != s_device || !s_device) return Original<Fn>(kSetTexture)(device, stage, texture);
-	const bool plain = stage < kMaxStages && IsPlainTexture(texture);
-	if (!Recording(device) || !plain) {
+	const bool tracked = stage < kMaxStages && TrackedTexture(texture);
+	if (!Recording(device) || !tracked || !BindablePool(texture)) {
 		Flush();
 		const HRESULT hr = Original<Fn>(kSetTexture)(device, stage, texture);
 		// 状态块录制期间的设置不改变当前绑定；结束或应用后统一重算。
 		if (SUCCEEDED(hr) && stage < kMaxStages && !s_stateBlock) {
-			if (plain) s_non2dStages &= ~(1u << stage);
-			else s_non2dStages |= 1u << stage;
+			if (tracked) s_untrackedStages &= ~(1u << stage);
+			else s_untrackedStages |= 1u << stage;
 		}
 		return hr;
 	}
@@ -438,7 +474,7 @@ HRESULT __stdcall SetTexture_Hook(void* device, DWORD stage, void* texture) {
 	command.kind = Kind::Texture; command.a = stage; command.p = texture;
 	if (texture) Method<ULONG(__stdcall*)(void*)>(texture, 1)(texture);
 	if (Append(command)) {
-		s_non2dStages &= ~(1u << stage);
+		s_untrackedStages &= ~(1u << stage);
 		return S_OK;
 	}
 	if (texture) ReleaseObject(texture);
@@ -446,6 +482,8 @@ HRESULT __stdcall SetTexture_Hook(void* device, DWORD stage, void* texture) {
 }
 
 // 状态块录制期间不合批，避免内部流绑定进入应用的状态块。
+// 状态块调用是已知的虚表改写边界（原生 d3d8 会原地替换 Set* 槽位）：调用前已提交，调用后立即核对钩子，
+// 不等到下一次绘制，避免检测前有状态调用绕过钩子。
 HRESULT __stdcall BeginStateBlock_Hook(void* device) {
 	typedef HRESULT(__stdcall* Fn)(void*);
 	if (s_lockState != 2) return Original<Fn>(kBeginStateBlock)(device);
@@ -453,7 +491,8 @@ HRESULT __stdcall BeginStateBlock_Hook(void* device) {
 	const bool mine = device == s_device && s_device;
 	if (mine) Flush();
 	const HRESULT hr = Original<Fn>(kBeginStateBlock)(device);
-	if (mine && SUCCEEDED(hr)) s_stateBlock = true;
+	if (mine) CheckHooks(device);
+	if (mine && s_device && SUCCEEDED(hr)) s_stateBlock = true;
 	return hr;
 }
 
@@ -464,7 +503,8 @@ HRESULT __stdcall EndStateBlock_Hook(void* device, DWORD* token) {
 	const bool mine = device == s_device && s_device;
 	if (mine) Flush();
 	const HRESULT hr = Original<Fn>(kEndStateBlock)(device, token);
-	if (mine && SUCCEEDED(hr)) {
+	if (mine) CheckHooks(device);
+	if (mine && s_device && SUCCEEDED(hr)) {
 		s_stateBlock = false;
 		ResyncTextureStages();
 	}
@@ -478,7 +518,8 @@ HRESULT __stdcall ApplyStateBlock_Hook(void* device, DWORD token) {
 	const bool mine = device == s_device && s_device;
 	if (mine) Flush();
 	const HRESULT hr = Original<Fn>(kApplyStateBlock)(device, token);
-	if (mine && !s_stateBlock) ResyncTextureStages();
+	if (mine) CheckHooks(device);
+	if (mine && s_device && !s_stateBlock) ResyncTextureStages();
 	return hr;
 }
 
@@ -488,21 +529,21 @@ void Detach() {
 	s_commands.clear();
 	s_vertices.clear();
 	s_stateBlock = false;
-	s_non2dStages = 0;
+	s_untrackedStages = 0;
 }
 
 // 设备最终释放前先释放自建顶点缓冲区（它持有设备引用），并停止接管该设备。
+// 引用计数判断、Detach 与原 Release 在同一临界区内完成，避免两线程并发释放时都读到旧计数而跳过清理。
 ULONG __stdcall Release_Hook(void* device) {
 	typedef ULONG(__stdcall* Fn)(void*);
-	if (s_lockState == 2) {
-		Guard guard;
-		if (device == s_device && s_device && !s_releasingBuffer && !s_flushing) {
-			Flush();
-			const ULONG own = s_buffer && s_bufferDeviceRefs > 0 ? static_cast<ULONG>(s_bufferDeviceRefs) : 0;
-			if (DeviceRefCount(device) <= 1 + own) {
-				Log("event=d3d8_batch detach draws=%llu flushes=%llu fallbacks=%llu", s_draws, s_flushes, s_fallbacks);
-				Detach();
-			}
+	if (s_lockState != 2) return Original<Fn>(kRelease)(device);
+	Guard guard;
+	if (device == s_device && s_device && !s_releasingBuffer && !s_flushing) {
+		Flush();
+		const ULONG own = s_buffer && s_bufferDeviceRefs > 0 ? static_cast<ULONG>(s_bufferDeviceRefs) : 0;
+		if (DeviceRefCount(device) <= 1 + own) {
+			Log("event=d3d8_batch detach draws=%llu flushes=%llu fallbacks=%llu", s_draws, s_flushes, s_fallbacks);
+			Detach();
 		}
 	}
 	return Original<Fn>(kRelease)(device);
@@ -687,11 +728,15 @@ bool HookTables(void* device) {
 		return false;
 	}
 	if (written == 1) {
-		VirtualFree(thunks, 0, MEM_RELEASE);
+		// 槽位虽已恢复，但发布期间其他线程可能已进入桩并阻塞在 s_lock 上，返回时仍会执行桩代码：
+		// 桩一旦发布过就不释放（约 1.5 KB），s_original 也保持有效（恢复后与原方法一致）。
+		Log("event=d3d8_batch install=rolled_back");
 		return false;
 	}
 	s_thunks = thunks;
 	s_hookedTable = table;
+	s_textureTable = textureTable;
+	s_surfaceTable = surfaceTable;
 	return true;
 }
 
@@ -734,6 +779,10 @@ bool Attach(void* device) {
 		return false;
 	}
 	if (s_installBroken) return false;
+	if (!HooksIntact(device)) {
+		Log("event=d3d8_batch skip=hooks_changed");
+		return false;
+	}
 	DWORD caps[kCapsDwords]{};
 	s_maxClipPlanes = SUCCEEDED(Method<HRESULT(__stdcall*)(void*, void*)>(device, kGetDeviceCaps)(device, caps)) ? caps[kCapsMaxUserClipPlanes] : 0;
 	s_device = device;
