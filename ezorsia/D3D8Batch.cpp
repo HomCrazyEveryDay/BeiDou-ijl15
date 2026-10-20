@@ -1,4 +1,4 @@
-#include "D3D8Batch.h"
+﻿#include "D3D8Batch.h"
 #include <new>
 #include <stdarg.h>
 #include <stdio.h>
@@ -63,6 +63,8 @@ void* s_surfaceLockRect = nullptr;
 BYTE* s_thunks = nullptr;
 void** s_hookedTable = nullptr;
 bool s_installBroken = false; // 回滚不完整：不再接管任何设备
+bool s_hooksBroken = false;   // 设备虚表被他方替换/改写（原生 d3d8 状态块录制会这样做）：停用到下次 Attach
+void* s_expected[kDeviceSlots]{};
 void(*s_logger)(const char*) = nullptr;
 std::vector<Command> s_commands;
 std::vector<BYTE> s_vertices;
@@ -230,8 +232,17 @@ void Flush() {
 
 // 只在锁内调用：本线程、未停用、无状态块、无非 2D 贴图时才合批。
 bool CanBatch(void* device) {
-	return device == s_device && s_device && !s_bypass && !s_flushing && !s_stateBlock && !s_non2dStages &&
-		GetCurrentThreadId() == s_ownerThread;
+	return device == s_device && s_device && !s_bypass && !s_hooksBroken && !s_flushing && !s_stateBlock &&
+		!s_non2dStages && GetCurrentThreadId() == s_ownerThread;
+}
+
+// 暂存绘制依赖全部钩子仍在：任一状态调用绕过记录直接生效都会打乱顺序。
+bool HooksIntact(void* device) {
+	void** table = *reinterpret_cast<void***>(device);
+	if (table != s_hookedTable) return false;
+	for (unsigned slot = 0; slot < kDeviceSlots; ++slot)
+		if (s_expected[slot] && table[slot] != s_expected[slot]) return false;
+	return true;
 }
 
 bool Recording(void* device) { return CanBatch(device) && !s_commands.empty(); }
@@ -280,6 +291,11 @@ HRESULT __stdcall DrawPrimitiveUP_Hook(void* device, DWORD type, UINT primitives
 	if (s_lockState != 2) return Original<Fn>(kDrawPrimitiveUP)(device, type, primitives, data, stride);
 	Guard guard;
 	if (device != s_device || !s_device) return Original<Fn>(kDrawPrimitiveUP)(device, type, primitives, data, stride);
+	if (!s_hooksBroken && !HooksIntact(device)) {
+		Flush();
+		s_hooksBroken = true;
+		Log("event=d3d8_batch disabled=vtable_changed");
+	}
 	// 先按 64 位计算，避免极端参数溢出后绕过容量判断。
 	const unsigned long long vertices = primitives > 0x3fffffffu ? 0 : VertexCount(type, primitives);
 	const unsigned long long bytes = vertices * stride;
@@ -653,7 +669,10 @@ bool HookTables(void* device) {
 		writes.push_back({&textureTable[kTextureSetLOD], reinterpret_cast<void*>(&TextureSetLOD_Hook)});
 		writes.push_back({&surfaceTable[kSurfaceLockRect], reinterpret_cast<void*>(&SurfaceLockRect_Hook)});
 		for (unsigned slot = 0; slot < kDeviceSlots; ++slot)
-			if (void* hook = HookFor(slot, thunks)) writes.push_back({&table[slot], hook});
+			if (void* hook = HookFor(slot, thunks)) {
+				writes.push_back({&table[slot], hook});
+				s_expected[slot] = hook;
+			}
 	} catch (const std::bad_alloc&) {
 		VirtualFree(thunks, 0, MEM_RELEASE);
 		return false;
@@ -688,6 +707,7 @@ Stats GetStats() {
 	stats.flushes = s_flushes;
 	stats.fallbacks = s_fallbacks;
 	stats.invalid = s_invalid;
+	stats.hooksBroken = s_hooksBroken;
 	return stats;
 }
 
@@ -720,6 +740,7 @@ bool Attach(void* device) {
 	s_ownerThread = GetCurrentThreadId();
 	s_stateBlock = false;
 	s_bypass = false;
+	s_hooksBroken = false;
 	s_knownFvf.clear();
 	ResyncTextureStages();
 	s_draws = s_flushes = s_fallbacks = s_frames = s_invalid = 0;

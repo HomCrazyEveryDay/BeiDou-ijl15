@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include "ClientLog.h"
 #include "WineCompatibility.h"
 #include "D3D8Batch.h"

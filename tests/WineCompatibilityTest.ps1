@@ -10,6 +10,7 @@ $output = (Resolve-Path -LiteralPath $OutputDirectory).ProviderPath
 & cl.exe /nologo /std:c++17 /O2 /EHsc /MT /Y- `
     (Join-Path $PSScriptRoot 'WineCompatibilityTest.cpp') `
     (Join-Path $PSScriptRoot '..\ezorsia\Memory.cpp') `
+    (Join-Path $PSScriptRoot '..\ezorsia\D3D8Batch.cpp') `
     "/Fo:$output\" "/Fe:$output\WineCompatibilityTest.exe" `
     /link (Join-Path $PSScriptRoot '..\detours\detours.lib') Advapi32.lib User32.lib Gdi32.lib
 if ($LASTEXITCODE -ne 0) { throw 'Wine compatibility test build failed.' }

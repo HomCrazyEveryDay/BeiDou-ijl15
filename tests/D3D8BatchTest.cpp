@@ -1,8 +1,9 @@
-// D3D8Batch 回归测试：先在挂接前画出各场景作为基线，挂接后用合批重画，比较后台缓冲区 RGB 哈希
+﻿// D3D8Batch 回归测试：先在挂接前画出各场景作为基线，挂接后用合批重画，比较后台缓冲区 RGB 哈希
 // 与场景内状态/绘制调用的返回值序列；覆盖状态/步长切换、扇形与折线、带变换与用户裁剪平面的几何、帧中查询断言、
 // 帧中修改已用贴图、非法参数的同步错误、命令数与字节容量阈值、大绘制直通、状态块（含恢复立方体
 // 绑定）、立方体贴图采样与修改、Reset 以及释放后新设备重新挂接，并断言合批统计，最后测帧率。
-// Windows 用 D3D8BatchTest.ps1；macOS 可用 zig 交叉编译后在 Wine 下运行：
+// 正式只在 Wine 下启用；原生 Windows 运行用于回归（状态块会使原生 d3d8 改写虚表，合批随之自动停用，
+// 非法参数段跳过）。Windows 用 D3D8BatchTest.ps1；macOS 可用 zig 交叉编译后在 Wine 下运行：
 //   zig c++ -target x86-windows-gnu -O2 -std=c++17 tests/D3D8BatchTest.cpp ezorsia/D3D8Batch.cpp -luser32 -lgdi32 -o D3D8BatchTest.exe
 #include "../ezorsia/D3D8Batch.h"
 #include <stdio.h>
@@ -41,6 +42,7 @@ void* cube = nullptr;
 HWND window = nullptr;
 DWORD present[13]{};
 int width = 0, height = 0, failures = 0;
+bool wine = false; // 原生 d3d8 不校验越界参数，非法调用只在 Wine 下测试
 unsigned long long resultHash = 0; // 场景内全部调用返回值的序列哈希
 
 LRESULT CALLBACK Proc(HWND w, UINT message, WPARAM wp, LPARAM lp) { return DefWindowProcA(w, message, wp, lp); }
@@ -163,6 +165,7 @@ void FanAndStrip(int i, DWORD seed) {
 
 // 有暂存绘制时的非法参数：返回值须与未挂接时一致。
 void InvalidCalls() {
+	if (!wine) return;
 	const DWORD outside[6] = {static_cast<DWORD>(width), 0, 1, 1, 0, 0x3f800000};
 	Chk(Call<HRESULT>(device, SetViewport, static_cast<const void*>(outside)));
 	const float plane[4] = {1, 0, 0, 0};
@@ -354,7 +357,8 @@ void PrintLog(const char* line) { printf("log: %s\n", line); }
 
 int main(int argc, char** argv) {
 	setvbuf(stdout, nullptr, _IONBF, 0);
-	printf("start\n");
+	wine = GetProcAddress(GetModuleHandleA("ntdll.dll"), "wine_get_version") != nullptr;
+	printf("start wine=%d\n", wine ? 1 : 0);
 	width = argc > 1 ? atoi(argv[1]) : 1280;
 	height = argc > 2 ? atoi(argv[2]) : 720;
 	const double seconds = argc > 3 ? atof(argv[3]) : 3.0;
@@ -398,7 +402,10 @@ int main(int argc, char** argv) {
 			if (scene == ByteCap) printf("byte_cap flushes=%llu\n", flushes);
 		}
 	const D3D8Batch::Stats stats = D3D8Batch::GetStats();
-	printf("stats draws=%llu flushes=%llu fallbacks=%llu invalid=%llu\n", stats.draws, stats.flushes, stats.fallbacks, stats.invalid);
+	printf("stats draws=%llu flushes=%llu fallbacks=%llu invalid=%llu hooks_broken=%d\n", stats.draws, stats.flushes, stats.fallbacks,
+		stats.invalid, stats.hooksBroken ? 1 : 0);
+	// 原生 d3d8 的状态块录制会改写设备虚表，合批应自动停用（画面仍须与基线一致）；Wine 不会。
+	if (wine && stats.hooksBroken) Fail("hooks unexpectedly broken under Wine");
 	if (stats.draws == 0) Fail("no draws were batched");
 	if (stats.fallbacks || stats.invalid) Fail("fallback or invalid draw range");
 
@@ -418,8 +425,21 @@ int main(int argc, char** argv) {
 	// 5. 释放后新建设备（同一虚表）须能重新挂接，结果仍与基线一致。
 	ReleaseDevice();
 	CreateTestDevice();
-	if (!D3D8Batch::Attach(device)) Fail("re-Attach");
+	if (!D3D8Batch::Attach(device)) {
+		if (wine) Fail("re-Attach");
+		else printf("note: re-Attach declined on native d3d8 (device vtable differs); batching stays off\n");
+	}
 	Compare("reattach", 3, baseline[Mixed][2], RenderScene(Mixed, 3));
+	// 6. 模拟他方替换设备虚表（原生 d3d8 状态块录制即如此）：合批须自动停用且画面仍一致。
+	{
+		void** original = *reinterpret_cast<void***>(device);
+		static void* copy[128];
+		memcpy(copy, original, 97 * sizeof(void*));
+		*reinterpret_cast<void***>(device) = copy;
+		Compare("vtable_swapped", 1, baseline[Mixed][0], RenderScene(Mixed, 1));
+		*reinterpret_cast<void***>(device) = original;
+		if (!D3D8Batch::GetStats().hooksBroken) Fail("vtable swap not detected");
+	}
 	ReleaseDevice();
 	Call<ULONG>(d3d, Release);
 	printf(failures ? "RESULT FAIL\n" : "RESULT PASS\n");
