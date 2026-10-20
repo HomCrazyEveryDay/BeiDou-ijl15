@@ -159,6 +159,10 @@ int main(){
     release(camera);release(windowLayer);release(purple);
     WardrobeClip::Uninstall();replace(&deviceTable[15],originalPresent);
     for(void* p:{sibling,cyan,red,blue,green})release(p);
-    hr(method<HRESULT(__stdcall*)(void*)>(gr,0x10)(gr),"graphics uninitialize");release(gr);DestroyWindow(window);CoUninitialize();
+    hr(method<HRESULT(__stdcall*)(void*)>(gr,0x10)(gr),"graphics uninitialize");release(gr);DestroyWindow(window);
+    // Shut PCOM down like BeiDou.exe does (it imports PcTermModule). Without this, PCOM's
+    // DLL_PROCESS_DETACH walks already freed module state and intermittently faults at exit.
+    auto terminate=reinterpret_cast<void(__cdecl*)()>(GetProcAddress(pc,"PcTermModule"));check(terminate!=nullptr,"PCOM terminate");terminate();
+    CoUninitialize();
     puts("PASS: native clipping, detached/retained-child teardown, zero final references, 50 close cycles without layer growth and GPU state restoration");return 0;
 }
