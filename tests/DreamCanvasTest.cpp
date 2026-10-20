@@ -24,6 +24,7 @@ int wmain(int argc,wchar_t** argv){
     HMODULE p=LoadLibraryW(L"PCOM.dll");Require(p!=nullptr);
     using Init=HRESULT(__cdecl*)();
     Require(SUCCEEDED(reinterpret_cast<Init>(GetProcAddress(p,"PcInitModule"))()));
+    std::atexit([]{if(auto term=reinterpret_cast<void(__cdecl*)()>(GetProcAddress(GetModuleHandleW(L"PCOM.dll"),"PcTermModule")))term();}); // Shut PCOM down like BeiDou.exe; skipping it faults in PCOM DLL detach.
     auto factory=reinterpret_cast<DreamCanvas::Factory>(GetProcAddress(p,"PcCreateObject"));
     const GUID iid={0x7600dc6c,0x9328,0x4bff,{0x96,0x24,0x5b,0x0f,0x5c,0x01,0x17,0x9e}};
     void* source=nullptr;Require(SUCCEEDED(factory(L"Canvas",&iid,&source,nullptr)));

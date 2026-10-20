@@ -63,6 +63,7 @@ int wmain(int argc,wchar_t** argv) {
     Require(Install(reinterpret_cast<HMODULE>(image),OnSnapshot),"observer enabled");
     HMODULE pc=LoadLibraryW(argv[1]); Require(pc!=nullptr && KnownPcom()==reinterpret_cast<DWORD>(pc),"original PCOM identity");
     const auto init=reinterpret_cast<HRESULT(__cdecl*)()>(GetProcAddress(pc,"PcInitModule"));
+    std::atexit([]{if(auto term=reinterpret_cast<void(__cdecl*)()>(GetProcAddress(GetModuleHandleW(L"PCOM.dll"),"PcTermModule")))term();}); // Shut PCOM down like BeiDou.exe; skipping it faults in PCOM DLL detach.
     using Factory=HRESULT(__cdecl*)(const wchar_t*,const GUID*,void**,void*);
     const auto create=reinterpret_cast<Factory>(GetProcAddress(pc,"PcCreateObject"));
     Require(init && create && SUCCEEDED(init()),"original PCOM initialization");

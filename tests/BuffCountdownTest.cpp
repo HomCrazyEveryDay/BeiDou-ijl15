@@ -104,6 +104,7 @@ int wmain(int argc, wchar_t** argv) {
     Check(module != nullptr, "load client PCOM.dll");
     using Init = HRESULT(__cdecl*)();
     Check(SUCCEEDED(reinterpret_cast<Init>(GetProcAddress(module, "PcInitModule"))()), "initialize PCOM");
+    std::atexit([]{if(auto term=reinterpret_cast<void(__cdecl*)()>(GetProcAddress(GetModuleHandleW(L"PCOM.dll"),"PcTermModule")))term();}); // Shut PCOM down like BeiDou.exe; skipping it faults in PCOM DLL detach.
     factory = reinterpret_cast<DreamCanvas::Factory>(GetProcAddress(module, "PcCreateObject"));
     Check(factory != nullptr, "find canvas factory");
     Gdiplus::GdiplusStartupInput input;

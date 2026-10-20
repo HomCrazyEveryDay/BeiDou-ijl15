@@ -9,6 +9,7 @@
 #include "LegacyStringConversionFix.h"
 #include "MixedDyeResources.h"
 #include "detours.h"
+#include <cstdlib>
 #pragma comment(lib, "ole32.lib")
 using namespace MixedDyeResources;
 static void Need(bool ok, const char* message) {
@@ -146,6 +147,7 @@ int wmain(int argc, wchar_t** argv) {
     Need(SetCurrentDirectoryW(argv[1]), "client directory"); Check(CoInitialize(nullptr));
     auto pc = LoadLibraryW(L"PCOM.dll"); Need(pc != nullptr, "PCOM");
     Check(reinterpret_cast<HRESULT(__cdecl*)()>(GetProcAddress(pc,"PcInitModule"))());
+    std::atexit([]{if(auto term=reinterpret_cast<void(__cdecl*)()>(GetProcAddress(GetModuleHandleW(L"PCOM.dll"),"PcTermModule")))term();}); // Shut PCOM down like BeiDou.exe; skipping it faults in PCOM DLL detach.
     auto factory = reinterpret_cast<Factory>(GetProcAddress(pc,"PcCreateObject"));
     const GUID rmId={0x57dfe40b,0x3e20,0x4dbc,{0x97,0xe8,0x80,0x5a,0x50,0xf3,0x81,0xbf}};
     const GUID nsId={0x2aeeeb36,0xa4e1,0x4e2b,{0x8f,0x6f,0x2e,0x7b,0xde,0xc5,0xc5,0x3d}};

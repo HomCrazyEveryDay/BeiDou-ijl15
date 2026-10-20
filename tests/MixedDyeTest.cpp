@@ -62,6 +62,7 @@ int wmain(int argc,wchar_t**argv){
     Require(SetCurrentDirectoryW(argv[1]),"client directory");Check(CoInitialize(nullptr));
     auto module=LoadLibraryW(L"PCOM.dll");Require(module!=nullptr,"PCOM");
     Check(reinterpret_cast<HRESULT(__cdecl*)()>(GetProcAddress(module,"PcInitModule"))());
+    std::atexit([]{if(auto term=reinterpret_cast<void(__cdecl*)()>(GetProcAddress(GetModuleHandleW(L"PCOM.dll"),"PcTermModule")))term();}); // Shut PCOM down like BeiDou.exe; skipping it faults in PCOM DLL detach.
     auto factory=reinterpret_cast<Factory>(GetProcAddress(module,"PcCreateObject"));
     using Root=HRESULT(__cdecl*)(void**,int);auto root=reinterpret_cast<Root>(GetProcAddress(module,"PcRootNameSpace"));
     const GUID rmid={0x57dfe40b,0x3e20,0x4dbc,{0x97,0xe8,0x80,0x5a,0x50,0xf3,0x81,0xbf}};

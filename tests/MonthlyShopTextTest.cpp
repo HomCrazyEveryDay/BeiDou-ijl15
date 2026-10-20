@@ -139,6 +139,7 @@ int wmain(int argc,wchar_t** argv){
     Check(CoInitialize(nullptr));
     auto module=LoadLibraryW(L"PCOM.dll");Require(module!=nullptr,"load shipped PCOM.dll");
     auto init=reinterpret_cast<HRESULT(__cdecl*)()>(GetProcAddress(module,"PcInitModule"));Require(init!=nullptr,"PCOM init export");Check(init());
+    std::atexit([]{if(auto term=reinterpret_cast<void(__cdecl*)()>(GetProcAddress(GetModuleHandleW(L"PCOM.dll"),"PcTermModule")))term();}); // Shut PCOM down like BeiDou.exe; skipping it faults in PCOM DLL detach.
     auto factory=reinterpret_cast<Factory>(GetProcAddress(module,"PcCreateObject"));Require(factory!=nullptr,"PCOM factory");
     {
     TileAllocator allocator(factory);
