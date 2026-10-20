@@ -39,7 +39,7 @@
 独立测试入口（不启动游戏）：
 
 ```powershell
-pwsh -NoProfile -File .\BeiDou-ijl15\tests\ModuleAuditTest.ps1
+pwsh -NoProfile -File .\BeiDou-ijl15-BeiDou\tests\ModuleAuditTest.ps1
 ```
 
 测试使用自己的 x86 测试进程和无行为 DLL：启动清单、两次扫描之间短暂加载／卸载、中文路径、驻留模块复查、扫描失败恢复、磁盘哈希、签名状态、AES 跨 C++／.NET 解密、错误密钥、篡改、顺序错误、截断恢复、JSONL 导出、队列溢出计数、长路径截断标志、4MiB 轮转及 16 文件保留上限。产物位于 workspace `.tmp/`。Release 目标仍执行既有启动器父进程策略检查。

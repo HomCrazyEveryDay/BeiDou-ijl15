@@ -2,7 +2,7 @@
 #include <cstdint>
 #include <cstring>
 
-// Wire contract: keep identical to BeiDou-ijl15/ezorsia/GameLaunchSettings.h.
+// Wire contract: keep identical to BeiDou-Launcher/src/game_launch_settings.h.
 namespace game_settings
 {
 enum Field : unsigned {
