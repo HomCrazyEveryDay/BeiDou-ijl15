@@ -4,12 +4,17 @@
 #include <cstring>
 #include <vector>
 
+extern "C" void WarriorRushTestSetServices(void* query, void* clear);
+
 static void Require(bool value, const char* message) {
     if (!value) { std::fprintf(stderr, "FAIL: %s\n", message); std::exit(1); }
 }
 static unsigned char* activeUser;
 static unsigned char* activeController;
 static int terrainQueries;
+static bool slopeFixture;
+static unsigned char slopeNode[0x30]{};
+static unsigned char slopeFoothold[0x60]{};
 static POINT point;
 static int __cdecl Now() { return 10000; }
 static POINT* __fastcall Position(void*, void*) {
@@ -27,6 +32,26 @@ static void* __fastcall Below(void*, void*, int, int, int* y, int, int) {
     ++terrainQueries; *y = 101; return reinterpret_cast<void*>(1);
 }
 static void* __fastcall Above(void*, void*, int, int, int*, int) { ++terrainQueries; return nullptr; }
+static void __stdcall TestQueryImpl(int, int, int, int, void* list) {
+    if (!slopeFixture) return;
+    *reinterpret_cast<unsigned char**>(static_cast<unsigned char*>(list) + 0x0C) = slopeNode + 0x10;
+    *reinterpret_cast<unsigned char**>(static_cast<unsigned char*>(list) + 0x10) = slopeNode + 0x10;
+    *reinterpret_cast<int*>(static_cast<unsigned char*>(list) + 0x08) = 1;
+    *reinterpret_cast<unsigned char**>(slopeNode + 0x14) = slopeFoothold;
+    *reinterpret_cast<unsigned char**>(slopeNode + 0x04) = nullptr;
+}
+__declspec(naked) static void TestQuery() {
+    __asm {
+        push dword ptr [esp+14h]
+        push dword ptr [esp+14h]
+        push dword ptr [esp+14h]
+        push dword ptr [esp+14h]
+        push dword ptr [esp+14h]
+        call TestQueryImpl
+        ret 14h
+    }
+}
+__declspec(naked) static void TestClear() { __asm { ret } }
 __declspec(naked) void Round() {
     __asm {
         sub esp, 12
@@ -113,7 +138,7 @@ int main(int argc, char** argv) {
     // Stop after the native store; remove its pending push 9 before returning.
     mapped[0x552F0D] = 0x59; mapped[0x552F0E] = 0xc3;
     Return(mapped + 0x550AE8, 0); Return(mapped + 0x550D38, 1);
-    alignas(8) unsigned char user[0x2B60]{}, controller[0x200]{}, space[0x40]{};
+    alignas(8) unsigned char user[0x2B60]{}, controller[0x200]{}, space[0x100]{}, spatialIndex[0x40]{}, spatialRoot[0x100]{};
     const DWORD deadlineCode = reinterpret_cast<DWORD>(mapped + 0x552EF9);
     const DWORD reuseCode = reinterpret_cast<DWORD>(mapped + 0x550D05);
     auto& deadline = *reinterpret_cast<int*>(user + 0x2B4C);
@@ -136,6 +161,7 @@ int main(int argc, char** argv) {
     auto before = std::vector<unsigned char>(mapped, mapped + nt->OptionalHeader.SizeOfImage);
     Require(WarriorRush::Install(reinterpret_cast<HMODULE>(mapped)), "install");
     Require(WarriorRush::Install(reinterpret_cast<HMODULE>(mapped)), "idempotent install");
+    WarriorRushTestSetServices(reinterpret_cast<void*>(&TestQuery), reinterpret_cast<void*>(&TestClear));
     for (size_t i = 0; i < before.size(); ++i) if (before[i] != mapped[i])
         Require(i == 0x550B5A || i == 0x550B65 || i == 0x550B70 || (i >= 0x54E762 && i < 0x54E768) ||
             i == 0x552EFB || i == 0x552EFC, "patch scope");
@@ -185,6 +211,10 @@ int main(int argc, char** argv) {
     *reinterpret_cast<void**>(mapped + 0x7EBFA0) = space;
     *reinterpret_cast<int*>(space + 0x24) = -1000;
     *reinterpret_cast<int*>(space + 0x2C) = 1000;
+    // Native AirCollision queries the map's foothold index at space+44. Keep
+    // an empty, valid tree for the movement tests that cover the no-foothold
+    // path; collision fixtures below can populate its leaf entries.
+    *reinterpret_cast<void**>(space + 0x60) = spatialRoot;
     void* userVtable[5]{}; userVtable[4] = reinterpret_cast<void*>(&Position);
     void* vectorVtable[17]{}; vectorVtable[16] = mapped + 0x5B5E7F;
     *reinterpret_cast<void**>(user + 4) = userVtable;
@@ -206,6 +236,8 @@ int main(int argc, char** argv) {
         *reinterpret_cast<void**>(user + 0x2B44) = elems;
         foothold = ground ? reinterpret_cast<void*>(1) : nullptr;
         terrainQueries = 0; x = 0; y = 100;
+        *reinterpret_cast<int*>(user + 0x116C) = 0;
+        *reinterpret_cast<int*>(user + 0x1170) = 100;
     };
     for (int skill : {1121006, 1221007, 1321003}) for (int direction : {-1, 1}) {
         reset(skill, direction * 46, false); vy = 350; previousVy = 300;
@@ -231,6 +263,22 @@ int main(int argc, char** argv) {
     reset(1221007, 46, true); tick(user);
     Require(terrainQueries == 2 && x == 46 && y == 100, "ground rush retains native terrain following");
     reset(5121004, 46, false); tick(user); Require(terrainQueries == 2, "other moving attacks retain native path");
-    std::puts("PASS: Rush signature/skill scope; all three airborne gates; native tick/duration/deceleration; native raw_Move vertical preservation; both directions; map edges; ground/unrelated terrain path");
+    // A descending foothold crosses the horizontal Rush segment at x=45.
+    // The native query list is supplied by a fixture, while the production
+    // sweep still runs the real one-way/corner geometry and then stops Rush.
+    std::memset(slopeNode, 0, sizeof(slopeNode));
+    std::memset(slopeFoothold, 0, sizeof(slopeFoothold));
+    *reinterpret_cast<int*>(slopeFoothold + 0x0C) = -10;
+    *reinterpret_cast<int*>(slopeFoothold + 0x10) = 110;
+    *reinterpret_cast<int*>(slopeFoothold + 0x14) = 100;
+    *reinterpret_cast<int*>(slopeFoothold + 0x18) = 90;
+    *reinterpret_cast<double*>(slopeFoothold + 0x30) = 1.0;
+    *reinterpret_cast<int*>(slopeFoothold + 0x20) = 0;
+    slopeFixture = true;
+    reset(1121006, 46, false); tick(user);
+    Require(x < 46 && x > 0, "air Rush stops before a descending slope");
+    Require(*reinterpret_cast<int*>(user + 0x2B34) == 0, "slope collision ends current Rush");
+    slopeFixture = false;
+    std::puts("PASS: Rush signature/skill scope; all three airborne gates; native tick/duration/deceleration; native raw_Move vertical preservation; both directions; map edges; ground/unrelated terrain path; descending-slope collision stop");
     VirtualFree(mapped, 0, MEM_RELEASE);
 }

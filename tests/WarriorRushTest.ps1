@@ -6,7 +6,7 @@ Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-ar
 $repo = Split-Path $PSScriptRoot
 $output = Join-Path (Split-Path $repo) ('.tmp/warrior-rush-test-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $output | Out-Null
-& cl.exe /nologo /O2 /EHsc /std:c++17 "$PSScriptRoot/WarriorRushTest.cpp" "$repo/ezorsia/WarriorRush.cpp" "/Fo$output\" "/Fe$output/test.exe" /link /BASE:0x20000000 /DYNAMICBASE:NO
+& cl.exe /nologo /O2 /EHsc /std:c++17 /DWARRIOR_RUSH_TEST "$PSScriptRoot/WarriorRushTest.cpp" "$repo/ezorsia/WarriorRush.cpp" "/Fo$output\" "/Fe$output/test.exe" /link /BASE:0x20000000 /DYNAMICBASE:NO
 if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 & "$output/test.exe" "$repo/../BeiDou-Client/BeiDou.exe"
 if ($LASTEXITCODE -ne 0) { throw "Warrior Rush native test failed: $LASTEXITCODE" }
