@@ -9,8 +9,8 @@ struct Control {int id,x,y,w,h;bool enabled;std::uint64_t uid;};
 struct State {
     unsigned char* window=nullptr;
     Model model;bool pending=false,avatarDirty=false,shown=true,ready=true,deferredClose=false,dragging=false;
-    int selectedSource=0,selected=0,applyingPreset=-1,preset=-1,dropdown=-1,page=0,pressed=-1,dragX=0,dragY=0,hover=-1;
-    int saveSlot=0,menuPreset=-1,source=3,category=0,gridPage[4]{},edit=-1,outfit=0;
+    int selectedSource=0,selected=0,applyingPreset=-1,preset=-1,dropdown=-1,page=0,pressed=-1,dragX=0,dragY=0,hover=-1,soundHover=-1;
+    int saveSlot=0,menuPreset=-1,source=3,category=0,gridPage[4]{},edit=-1,outfit=0,pendingAction=0;
     std::uint64_t clickUid=0;std::vector<Control> controls;std::vector<Scope> saveScope;
     std::map<short,std::uint64_t> applyDraft;std::wstring status,search,outfitName,dialogMessage;Dialog dialog=Dialog::None;
 } state;
@@ -19,7 +19,12 @@ static std::vector<unsigned char> sent;
 static const Item* Selected(){const auto& v=state.model.current.items[state.selectedSource];return state.selected>=0&&state.selected<int(v.size())?&v[state.selected]:nullptr;}
 static void Invalidate(){}static void TooltipClear(){}static void Focus(bool){}static void Edit(int id){state.edit=id;}
 static void CloseWindow(){++closes;state.shown=false;}
-namespace WardrobePreview{void SetScene(int){}}
+static void Cursor(int){}
+static const Item* tooltipItem=nullptr;
+static void ShowItemTooltip(const Item& item,int,int){tooltipItem=&item;}
+namespace WardrobePreview{int scene=0;int Scene(){return scene;}void SetScene(int value){scene=value;}}
+static std::vector<std::string> sounds;
+static void PlayUiSound(const char* name){sounds.emplace_back(name);}
 static bool Send(unsigned action,const std::vector<unsigned char>& bytes){
     if(!socketAvailable)return false;assert(!state.pending);++sends;lastAction=action;sent=bytes;state.pending=true;return true;
 }
@@ -41,7 +46,7 @@ struct RetainedLayer {void** vtable;int visible;};
 static HRESULT __stdcall PutVisible(void* p,int visible){static_cast<RetainedLayer*>(p)->visible=visible;return S_OK;}
 #include "WardrobeInteractionUnderTest.h"
 static Item Make(std::uint64_t uid,int id,short slot,short pos=1,unsigned flags=3){Item i;i.uid=uid;i.id=id;i.slot=slot;i.position=pos;i.flags=flags;return i;}
-static void Reset(){state=State{};sends=closes=0;sent.clear();socketAvailable=true;lastAction=-1;}
+static void Reset(){state=State{};sends=closes=0;sent.clear();sounds.clear();socketAvailable=true;lastAction=-1;tooltipItem=nullptr;}
 static void DrawCell(int id){const auto& item=state.model.current.items[(id-1000)/1024][(id-1000)%1024];state.controls={{id,id,150,32,32,true,item.uid}};}
 static void DoubleClick(int hit){DrawCell(hit);Mouse(nullptr,nullptr,WM_LBUTTONDOWN,0,hit,150);Mouse(nullptr,nullptr,WM_LBUTTONUP,0,hit,150);Mouse(nullptr,nullptr,WM_LBUTTONDBLCLK,0,hit,150);Mouse(nullptr,nullptr,WM_LBUTTONUP,0,hit,150);}
 int main(){
@@ -56,9 +61,11 @@ int main(){
     }
     Reset();state.model.current.items[0]={Make(11,1000000,-101)};
     DoubleClick(1000);assert(state.model.Desired(-101)==11&&sends==0);
+    assert(sounds.back()=="DragEnd");
     DoubleClick(1000);assert(!state.model.Desired(-101)&&sends==0);
     state.page=2;DoubleClick(1000);assert(sends==1&&lastAction==Take&&sent.size()==8&&sent[0]==11);
     DoubleClick(1000);assert(sends==1); // Pending double-click cannot re-send or toggle anything.
+    const auto pendingSounds=sounds.size();DoubleClick(1000);assert(sounds.size()==pendingSounds);
     Reset();state.page=2;state.model.current.items[1]={Make(21,1000000,-101)};
     DoubleClick(2024);assert(sends==1&&lastAction==Store&&sent[0]==21);
     Reset();state.model.current.items[0]={Make(31,1000000,-101)};state.model.current.items[2]={Make(30,1000001,-101,-101)};
@@ -154,8 +161,11 @@ int main(){
     Reset();state.model.current.items[0]={Make(311,1000000,-101),Make(322,1050000,-105)};
     state.model.current.items[2]={Make(320,1040000,-105,-105),Make(321,1060000,-106,-106)};
     assert(state.model.Toggle(311)&&state.model.Toggle(322)&&state.model.draft.size()==3);
+    assert(PantsBlocked());
     Activate(5105);assert(state.model.draft.size()==3&&!state.status.empty()); // Worn pants cannot return under an overall.
+    assert(sounds.back()=="DlgNotice");
     state.hover=5104;Activate(5104);assert(state.model.draft.size()==1&&state.model.Desired(-106)==321&&state.model.Valid()&&state.hover==-1); // Next hover rebuilds the changed cell tooltip.
+    assert(!PantsBlocked()&&sounds.back()=="DragEnd");
     Activate(5100);assert(state.model.draft.empty()&&sends==0);
     assert(state.model.Toggle(311));Activate(23);assert(state.model.draft.empty()&&sends==0);
     state.page=1;assert(state.model.Toggle(311));Activate(5100);assert(state.model.draft.size()==1); // Only the wardrobe page edits the try-on.
@@ -170,6 +180,7 @@ int main(){
     {auto worn=Filter(2);assert(worn.size()==1&&worn[0]==0);}
     state.model.current.items[0]={Make(353,1000001,-101,1,2)};state.model.current.items[0][0].reason=2;
     DoubleClick(1000);assert(state.model.draft.empty()&&state.status.find(L"\u9650\u65f6")!=std::wstring::npos);
+    assert(sounds.back()=="DlgNotice");
     // Outfit page: click selects/previews, double-click wears.
     Reset();state.page=1;state.model.original=true;
     state.model.current.items[0]={Make(331,1000000,-101)};state.model.current.items[2]={Make(330,1000001,-101,-101)};
@@ -183,5 +194,50 @@ int main(){
     for(int i=0;i<8;i++){Item item=Make(400+i,1000000+i,-101);item.flags|=8;item.name="ABCDEFGHIJKL";state.model.current.items[0].push_back(item);state.applyDraft[short(-101-i)]=400+i;}
     auto names=BindingNames(230);auto lines=Wrap(names,230);
     assert(lines.size()<=2&&names.find(L"\u7b49 8 \u4ef6")!=std::wstring::npos&&names.find(L"\u2026")==std::wstring::npos);
+    // Pants availability follows the selected preview, not a hidden try-on or another outfit.
+    Reset();state.model.current.items[2]={Make(501,1050000,-105,-105)};
+    assert(PantsBlocked());
+    Outfit overall;overall.defined=true;overall.entries=state.model.SaveScope();state.model.current.outfits[0]=overall;
+    Outfit empty=overall;for(auto& e:empty.entries)e={e.slot,1,0,0,true};state.model.current.outfits[1]=empty;
+    state.page=1;state.model.original=true;assert(PantsBlocked());
+    SelectOutfit(1);assert(!PantsBlocked());SelectOutfit(0);assert(PantsBlocked());
+    state.model.current.items[2].clear();assert(!PantsBlocked()); // Missing overall reserves no visible pants slot.
+    // A pending operation only plays success after the server confirms that action.
+    Reset();Snapshot reply;reply.outcome=Apply;ReplySound(reply);assert(sounds.empty());
+    state.pending=true;state.pendingAction=Apply;ReplySound(reply);assert(sounds.back()=="DragEnd");
+    state.pending=false;auto heard=sounds.size();ReplySound(reply);assert(sounds.size()==heard); // Replay/refresh stays silent.
+    state.pending=true;reply.outcome=Open;ReplySound(reply);assert(sounds.back()=="DlgNotice"); // Rejection cannot sound like success.
+    state.pendingAction=Open;ReplySound(reply);assert(sounds.back()=="MenuUp");
+    reply.busy=true;ReplySound(reply);assert(sounds.back()=="DlgNotice");
+    Reset();Activate(300);assert(sounds.empty());Activate(301);assert(sounds.back()=="Tab");
+    heard=sounds.size();Activate(301);assert(sounds.size()==heard); // Same category does not replay.
+    // Actual Hover + click invalidation: moving one pixel on the same button stays silent.
+    Reset();Hover(301,300,80);assert(sounds.size()==1&&sounds.back()=="BtMouseOver");
+    Activate(301);assert(state.hover==-1&&sounds.size()==2&&sounds.back()=="Tab");
+    Hover(301,301,80);assert(sounds.size()==2);
+    Hover(302,350,80);assert(sounds.size()==3&&sounds.back()=="BtMouseOver");
+    state.pending=true;Hover(303,400,80);assert(sounds.size()==3);
+    state.pending=false;ResetSelection();Hover(303,401,80);assert(sounds.size()==3); // Reply invalidation cannot re-arm hover.
+    MouseEnter(nullptr,nullptr,0);Hover(303,401,80);assert(sounds.size()==4); // Actual leave/re-enter can.
+    // Actual wheel callback: sound only when the page changes, never at a boundary.
+    Reset();for(int i=0;i<100;i++)state.model.current.items[0].push_back(Make(600+i,1000000,-101));
+    Wheel(nullptr,nullptr,400,150,-120);assert(state.gridPage[3]==1&&sounds.size()==1&&sounds.back()=="Tab");
+    Wheel(nullptr,nullptr,400,150,-120);assert(state.gridPage[3]==1&&sounds.size()==1);
+    // Detail and tooltip preserve excluded wear, while editable legacy KEEP still means empty.
+    for(auto item:{Make(701,1050000,-105,-105,2),Make(702,1050000,-105,-105,7),Make(0,1050000,-105,-105,0)}){
+        Reset();state.page=1;state.model.original=true;state.model.current.items[2]={item};
+        Outfit retained;retained.defined=true;retained.entries=state.model.SaveScope();state.model.current.outfits[0]=retained;
+        auto view=state.model.PreviewOutfit(retained);auto detail=OutfitSlotDetail(-105,view);
+        assert(detail.item==state.model.Worn(-105)&&!detail.missing&&PantsBlocked());
+        Hover(5004,300,180);assert(tooltipItem==detail.item);state.page=0;Hover(5104,155,285);assert(tooltipItem==detail.item);
+    }
+    state.page=1;state.model.current.items[2][0]=Make(703,1040000,-105,-105);
+    auto legacyView=state.model.PreviewOutfit(state.model.current.outfits[0]);
+    assert(!OutfitSlotDetail(-105,legacyView).item&&!HoveredItem(5004)&&!PantsBlocked());
+    // Invalid name reports exactly one notice before any overwrite confirmation.
+    Reset();state.model.current.outfits[0].defined=true;BeginSave(0);state.outfitName.clear();sounds.clear();
+    Activate(401);assert(state.dialog==Dialog::Save&&!state.dialogMessage.empty()&&sends==0&&sounds.size()==1&&sounds.back()=="DlgNotice");
     std::cout<<"PASS actual Mouse/Hit/Activate/Save callbacks, try-on apply/undo, outfit select/double-click and wrapped dialog text\n";
+    std::cout<<"PASS preview-driven pants availability and native sound routing for success, refusal and pending input\n";
+    std::cout<<"PASS hover invalidation, wheel bounds, retained equipment detail/tooltip and name validation\n";
 }

@@ -9,7 +9,7 @@ New-Item -ItemType Directory -Force $output | Out-Null
 $source=(Resolve-Path (Join-Path $PSScriptRoot '../ezorsia')).Path
 $content=[IO.File]::ReadAllText("$source/WardrobeWnd.cpp")
 $parts=@()
-foreach($bounds in @(@('std::wstring Wide(','Factory FactoryFn('),@('const wchar_t* Reason(','// Catalog sources'),@('int CurrentPreset()','void DialogButton('),@('std::wstring BindingNames(','void DrawBody('),@('void HideWindowLayers()','void CloseWindow()'),@('void Popup(','void Hover('),@('void __fastcall Mouse(','int __fastcall MouseMove('))){
+foreach($bounds in @(@('void ReplySound(','std::wstring Wide('),@('std::wstring Wide(','Factory FactoryFn('),@('const wchar_t* Reason(','// Catalog sources'),@('// Catalog sources','// CashShop item well'),@('int CurrentPreset()','void DialogButton('),@('bool PantsBlocked(','// Empty slots'),@('std::wstring BindingNames(','void DrawBody('),@('void HideWindowLayers()','void CloseWindow()'),@('void Popup(','void ShowItemTooltip('),@('void __fastcall Mouse(','int __fastcall MouseMove('),@('int __fastcall Wheel(','void InsertText('))){
     $start=$content.IndexOf($bounds[0]);$end=$content.IndexOf($bounds[1],$start)
     if($start -lt 0 -or $end -le $start){throw "Missing actual callback: $($bounds[0])"}
     $parts+=$content.Substring($start,$end-$start)
