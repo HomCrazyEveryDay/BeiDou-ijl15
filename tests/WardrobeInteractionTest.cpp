@@ -1,16 +1,19 @@
-#include "../ezorsia/WardrobeModel.h"
+﻿#include "../ezorsia/WardrobeModel.h"
 #include "../ezorsia/WardrobeLayout.h"
 #include <cassert>
 #include <iostream>
 #include <windows.h>
 using namespace WardrobeModel;
+using WardrobeLayout::Width;
+using WardrobeLayout::Height;
+namespace Client {int m_nGameWidth=1024,m_nGameHeight=768;}
 enum class Dialog {None,Save,Rename,Delete,Binding,Overwrite};
 struct Control {int id,x,y,w,h;bool enabled;std::uint64_t uid;};
 struct State {
     unsigned char* window=nullptr;
     Model model;bool pending=false,avatarDirty=false,shown=true,ready=true,deferredClose=false,dragging=false;
     int selectedSource=0,selected=0,applyingPreset=-1,preset=-1,dropdown=-1,page=0,pressed=-1,dragX=0,dragY=0,hover=-1,soundHover=-1;
-    int saveSlot=0,menuPreset=-1,source=3,category=0,gridPage[4]{},edit=-1,outfit=0,pendingAction=0;
+    int saveSlot=0,menuPreset=-1,source=3,category=0,gridPage[4]{},edit=-1,outfit=0,pendingAction=0,windowX=0,windowY=0;
     std::uint64_t clickUid=0;std::vector<Control> controls;std::vector<Scope> saveScope;
     std::map<short,std::uint64_t> applyDraft;std::wstring status,search,outfitName,dialogMessage;Dialog dialog=Dialog::None;
 } state;
@@ -23,12 +26,12 @@ static void Cursor(int){}
 static const Item* tooltipItem=nullptr;
 static void ShowItemTooltip(const Item& item,int,int){tooltipItem=&item;}
 namespace WardrobePreview{int scene=0;int Scene(){return scene;}void SetScene(int value){scene=value;}}
-static std::vector<std::string> sounds;
-static void PlayUiSound(const char* name){sounds.emplace_back(name);}
+#include "WardrobeNativeSoundHarness.h"
 static bool Send(unsigned action,const std::vector<unsigned char>& bytes){
     if(!socketAvailable)return false;assert(!state.pending);++sends;lastAction=action;sent=bytes;state.pending=true;return true;
 }
 static void Fail(const char*){assert(false);}
+static void Check(HRESULT result){assert(SUCCEEDED(result));}
 static std::vector<int> drawnIcons;
 static void Image(void*,const wchar_t*,int,int){}
 static void Text(void*,const std::wstring&,int,int,unsigned=0,bool=false){}
@@ -49,7 +52,9 @@ static Item Make(std::uint64_t uid,int id,short slot,short pos=1,unsigned flags=
 static void Reset(){state=State{};sends=closes=0;sent.clear();sounds.clear();socketAvailable=true;lastAction=-1;tooltipItem=nullptr;}
 static void DrawCell(int id){const auto& item=state.model.current.items[(id-1000)/1024][(id-1000)%1024];state.controls={{id,id,150,32,32,true,item.uid}};}
 static void DoubleClick(int hit){DrawCell(hit);Mouse(nullptr,nullptr,WM_LBUTTONDOWN,0,hit,150);Mouse(nullptr,nullptr,WM_LBUTTONUP,0,hit,150);Mouse(nullptr,nullptr,WM_LBUTTONDBLCLK,0,hit,150);Mouse(nullptr,nullptr,WM_LBUTTONUP,0,hit,150);}
-int main(){
+int wmain(int argc,wchar_t** argv){
+    assert(argc==2);InstallNativeSoundHarness(argv[1]);
+    CheckNativeSoundEncoding();
     {
         Reset();void* vtable[0x120/sizeof(void*)]{};vtable[0x11c/sizeof(void*)]=reinterpret_cast<void*>(PutVisible);
         RetainedLayer layers[3]{{vtable,1},{vtable,1},{vtable,1}};alignas(void*) unsigned char window[0x24]{};
@@ -61,7 +66,7 @@ int main(){
     }
     Reset();state.model.current.items[0]={Make(11,1000000,-101)};
     DoubleClick(1000);assert(state.model.Desired(-101)==11&&sends==0);
-    assert(sounds.back()=="DragEnd");
+    assert(sounds.back()==L"DragEnd");
     DoubleClick(1000);assert(!state.model.Desired(-101)&&sends==0);
     state.page=2;DoubleClick(1000);assert(sends==1&&lastAction==Take&&sent.size()==8&&sent[0]==11);
     DoubleClick(1000);assert(sends==1); // Pending double-click cannot re-send or toggle anything.
@@ -163,9 +168,9 @@ int main(){
     assert(state.model.Toggle(311)&&state.model.Toggle(322)&&state.model.draft.size()==3);
     assert(PantsBlocked());
     Activate(5105);assert(state.model.draft.size()==3&&!state.status.empty()); // Worn pants cannot return under an overall.
-    assert(sounds.back()=="DlgNotice");
+    assert(sounds.back()==L"DlgNotice");
     state.hover=5104;Activate(5104);assert(state.model.draft.size()==1&&state.model.Desired(-106)==321&&state.model.Valid()&&state.hover==-1); // Next hover rebuilds the changed cell tooltip.
-    assert(!PantsBlocked()&&sounds.back()=="DragEnd");
+    assert(!PantsBlocked()&&sounds.back()==L"DragEnd");
     Activate(5100);assert(state.model.draft.empty()&&sends==0);
     assert(state.model.Toggle(311));Activate(23);assert(state.model.draft.empty()&&sends==0);
     state.page=1;assert(state.model.Toggle(311));Activate(5100);assert(state.model.draft.size()==1); // Only the wardrobe page edits the try-on.
@@ -180,7 +185,7 @@ int main(){
     {auto worn=Filter(2);assert(worn.size()==1&&worn[0]==0);}
     state.model.current.items[0]={Make(353,1000001,-101,1,2)};state.model.current.items[0][0].reason=2;
     DoubleClick(1000);assert(state.model.draft.empty()&&state.status.find(L"\u9650\u65f6")!=std::wstring::npos);
-    assert(sounds.back()=="DlgNotice");
+    assert(sounds.back()==L"DlgNotice");
     // Outfit page: click selects/previews, double-click wears.
     Reset();state.page=1;state.model.original=true;
     state.model.current.items[0]={Make(331,1000000,-101)};state.model.current.items[2]={Make(330,1000001,-101,-101)};
@@ -204,24 +209,74 @@ int main(){
     state.model.current.items[2].clear();assert(!PantsBlocked()); // Missing overall reserves no visible pants slot.
     // A pending operation only plays success after the server confirms that action.
     Reset();Snapshot reply;reply.outcome=Apply;ReplySound(reply);assert(sounds.empty());
-    state.pending=true;state.pendingAction=Apply;ReplySound(reply);assert(sounds.back()=="DragEnd");
+    state.pending=true;state.pendingAction=Apply;ReplySound(reply);assert(sounds.back()==L"DragEnd");
     state.pending=false;auto heard=sounds.size();ReplySound(reply);assert(sounds.size()==heard); // Replay/refresh stays silent.
-    state.pending=true;reply.outcome=Open;ReplySound(reply);assert(sounds.back()=="DlgNotice"); // Rejection cannot sound like success.
-    state.pendingAction=Open;ReplySound(reply);assert(sounds.back()=="MenuUp");
-    reply.busy=true;ReplySound(reply);assert(sounds.back()=="DlgNotice");
-    Reset();Activate(300);assert(sounds.empty());Activate(301);assert(sounds.back()=="Tab");
-    heard=sounds.size();Activate(301);assert(sounds.size()==heard); // Same category does not replay.
-    // Actual Hover + click invalidation: moving one pixel on the same button stays silent.
-    Reset();Hover(301,300,80);assert(sounds.size()==1&&sounds.back()=="BtMouseOver");
-    Activate(301);assert(state.hover==-1&&sounds.size()==2&&sounds.back()=="Tab");
-    Hover(301,301,80);assert(sounds.size()==2);
-    Hover(302,350,80);assert(sounds.size()==3&&sounds.back()=="BtMouseOver");
-    state.pending=true;Hover(303,400,80);assert(sounds.size()==3);
-    state.pending=false;ResetSelection();Hover(303,401,80);assert(sounds.size()==3); // Reply invalidation cannot re-arm hover.
-    MouseEnter(nullptr,nullptr,0);Hover(303,401,80);assert(sounds.size()==4); // Actual leave/re-enter can.
+    state.pending=true;reply.outcome=Open;ReplySound(reply);assert(sounds.back()==L"DlgNotice"); // Rejection cannot sound like success.
+    state.pendingAction=Open;ReplySound(reply);assert(sounds.back()==L"MenuUp");
+    reply.busy=true;ReplySound(reply);assert(sounds.back()==L"DlgNotice");
+    Reset();Activate(300);assert(sounds.size()==1&&sounds.back()==L"BtMouseClick");Activate(301);assert(sounds.size()==2&&sounds.back()==L"BtMouseClick");
+    Activate(301);assert(sounds.size()==3); // Every intentional click sounds, including the selected tab.
+    // Actual MouseMove -> Hit -> Hover: redraw/tooltip resets are not pointer transitions.
+    Reset();Add(301,300,80,49,19);Add(302,350,80,49,19);Add(303,400,80,49,19);
+    MouseMove(nullptr,nullptr,300,80);assert(sounds.size()==1&&sounds.back()==L"BtMouseOver");
+    Mouse(nullptr,nullptr,WM_LBUTTONDOWN,0,300,80);Mouse(nullptr,nullptr,WM_LBUTTONUP,0,300,80);
+    assert(state.hover==-1&&sounds.size()==2&&sounds.back()==L"BtMouseClick");
+    MouseMove(nullptr,nullptr,301,80);assert(sounds.size()==2);
+    MouseMove(nullptr,nullptr,350,80);assert(sounds.size()==3&&sounds.back()==L"BtMouseOver");
+    state.controls.clear();ResetSelection();MouseMove(nullptr,nullptr,351,80);assert(sounds.size()==3);
+    Add(302,350,80,49,19);MouseMove(nullptr,nullptr,352,80);assert(sounds.size()==3); // Controls rebuilt under stationary pointer.
+    state.pending=true;MouseMove(nullptr,nullptr,353,80);assert(sounds.size()==3);
+    state.pending=false;MouseMove(nullptr,nullptr,354,80);assert(sounds.size()==4); // Re-enabled native button may sound once.
+    MouseEnter(nullptr,nullptr,0);MouseMove(nullptr,nullptr,354,80);assert(sounds.size()==5);
+    // All button families provide hover and immediate click feedback through the real mouse path.
+    std::vector<int> buttonIds={1,3,4,7,9,12,13,18,19,20,21,22,23,24,25,26,400,401,402};
+    for(auto range:{std::pair<int,int>{30,37},{40,43},{80,82},{100,105},{300,307},{460,465}})
+        for(int id=range.first;id<=range.second;++id)buttonIds.push_back(id);
+    for(int id:buttonIds){
+        Reset();state.model.current.capacity=240;
+        state.model.current.items[0]={Make(801,1000000,-101)};state.model.current.items[1]={Make(802,1000001,-101)};
+        state.model.current.items[2]={Make(803,1000002,-101,-101)};
+        Outfit saved;saved.defined=true;saved.name="Look";saved.entries=state.model.SaveScope();
+        for(auto& e:saved.entries)if(e.slot==-101){e.uid=801;e.itemId=1000000;}
+        for(auto& o:state.model.current.outfits)o=saved;
+        state.saveScope=saved.entries;state.outfitName=L"Look";state.menuPreset=0;
+        if(id==12 || id==13 || id==25 || id==26 || id>=100&&id<106)state.page=1;
+        if(id==20 || id==21 || id==22){state.page=2;state.selectedSource=id==21?0:1;}
+        if(id==23 || id==24)assert(state.model.Toggle(801));
+        if(id==400 || id==401 || id>=460&&id<466)state.dialog=Dialog::Save;
+        if(id==402)state.dialog=Dialog::Delete;
+        for(int& page:state.gridPage)page=1;
+        Add(id,20,40,49,19);MouseMove(nullptr,nullptr,21,41);
+        assert(sounds.size()==1&&sounds.back()==L"BtMouseOver");
+        MouseMove(nullptr,nullptr,22,42);assert(sounds.size()==1);
+        Mouse(nullptr,nullptr,WM_LBUTTONDOWN,0,22,42);assert(sounds.size()==1);
+        Mouse(nullptr,nullptr,WM_LBUTTONUP,0,22,42);
+        assert(sounds.size()>=2&&sounds[1]==L"BtMouseClick"&&std::count(sounds.begin(),sounds.end(),L"BtMouseClick")==1);
+    }
+    // Disabled controls, editors, and a press released outside the button do not click.
+    Reset();Add(24,20,40,49,19,false);MouseMove(nullptr,nullptr,21,41);
+    Mouse(nullptr,nullptr,WM_LBUTTONDOWN,0,21,41);Mouse(nullptr,nullptr,WM_LBUTTONUP,0,21,41);assert(sounds.empty());
+    state.controls.clear();Add(8,20,40,49,19);MouseMove(nullptr,nullptr,21,41);
+    Mouse(nullptr,nullptr,WM_LBUTTONDOWN,0,21,41);Mouse(nullptr,nullptr,WM_LBUTTONUP,0,21,41);assert(sounds.empty());
+    state.controls.clear();Add(7,20,40,49,19);MouseMove(nullptr,nullptr,21,41);
+    Mouse(nullptr,nullptr,WM_LBUTTONDOWN,0,21,41);MouseMove(nullptr,nullptr,80,41);Mouse(nullptr,nullptr,WM_LBUTTONUP,0,80,41);
+    assert(sounds.size()==1&&sounds.back()==L"BtMouseOver");
+    // A fast second button click is WM_LBUTTONDBLCLK + UP, and must also click once.
+    Reset();Add(301,20,40,49,19);
+    Mouse(nullptr,nullptr,WM_LBUTTONDOWN,0,21,41);Mouse(nullptr,nullptr,WM_LBUTTONUP,0,21,41);
+    Mouse(nullptr,nullptr,WM_LBUTTONDBLCLK,0,21,41);Mouse(nullptr,nullptr,WM_LBUTTONUP,0,21,41);
+    assert(sounds.size()==2&&std::count(sounds.begin(),sounds.end(),L"BtMouseClick")==2);
+    // Close/cancel remain interactive while waiting for the server; other buttons stay silent.
+    for(int id:{1,400}){
+        Reset();state.pending=true;Add(id,20,40,49,19);MouseMove(nullptr,nullptr,21,41);
+        Mouse(nullptr,nullptr,WM_LBUTTONDOWN,0,21,41);Mouse(nullptr,nullptr,WM_LBUTTONUP,0,21,41);
+        assert(sounds.size()>=2&&sounds[0]==L"BtMouseOver"&&sounds[1]==L"BtMouseClick");
+    }
+    Reset();state.pending=true;Add(24,20,40,49,19);MouseMove(nullptr,nullptr,21,41);
+    Mouse(nullptr,nullptr,WM_LBUTTONDOWN,0,21,41);Mouse(nullptr,nullptr,WM_LBUTTONUP,0,21,41);assert(sounds.empty());
     // Actual wheel callback: sound only when the page changes, never at a boundary.
     Reset();for(int i=0;i<100;i++)state.model.current.items[0].push_back(Make(600+i,1000000,-101));
-    Wheel(nullptr,nullptr,400,150,-120);assert(state.gridPage[3]==1&&sounds.size()==1&&sounds.back()=="Tab");
+    Wheel(nullptr,nullptr,400,150,-120);assert(state.gridPage[3]==1&&sounds.size()==1&&sounds.back()==L"Tab");
     Wheel(nullptr,nullptr,400,150,-120);assert(state.gridPage[3]==1&&sounds.size()==1);
     // Detail and tooltip preserve excluded wear, while editable legacy KEEP still means empty.
     for(auto item:{Make(701,1050000,-105,-105,2),Make(702,1050000,-105,-105,7),Make(0,1050000,-105,-105,0)}){
@@ -234,10 +289,13 @@ int main(){
     state.page=1;state.model.current.items[2][0]=Make(703,1040000,-105,-105);
     auto legacyView=state.model.PreviewOutfit(state.model.current.outfits[0]);
     assert(!OutfitSlotDetail(-105,legacyView).item&&!HoveredItem(5004)&&!PantsBlocked());
-    // Invalid name reports exactly one notice before any overwrite confirmation.
+    // Invalid name acknowledges input, then reports one notice before overwrite confirmation.
     Reset();state.model.current.outfits[0].defined=true;BeginSave(0);state.outfitName.clear();sounds.clear();
-    Activate(401);assert(state.dialog==Dialog::Save&&!state.dialogMessage.empty()&&sends==0&&sounds.size()==1&&sounds.back()=="DlgNotice");
+    Activate(401);assert(state.dialog==Dialog::Save&&!state.dialogMessage.empty()&&sends==0&&sounds.size()==2&&sounds[0]==L"BtMouseClick"&&sounds.back()==L"DlgNotice");
     std::cout<<"PASS actual Mouse/Hit/Activate/Save callbacks, try-on apply/undo, outfit select/double-click and wrapped dialog text\n";
     std::cout<<"PASS preview-driven pants availability and native sound routing for success, refusal and pending input\n";
     std::cout<<"PASS hover invalidation, wheel bounds, retained equipment detail/tooltip and name validation\n";
+    assert(nativeSoundCalls==nativeSoundReleases && nativeSoundCalls>100);
+    std::cout<<"PASS real EXE PlaySE/wcslen/WCHAR append: ANSI failure reproduced, UTF-16 paths and ABI verified\n";
+    std::cout<<"PASS all button families: mouse hover, immediate click, repeat click, disabled/editor/cancel/pending and redraw gaps\n";
 }

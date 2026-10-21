@@ -50,19 +50,19 @@ const std::wstring root=L"UI/Wardrobe.img/";
 void Invalidate();void Activate(int id);void CloseWindow();void OpenWindow();void RebuildAvatar();
 void ShowItemTooltip(const Item& item,int x,int y);
 
-void PlayUiSound(const char* name){
-    // Verified against the 083 EXE: 989596 loads StringPool 891 (Sound/UI.img/),
-    // 9895BC appends this short name; 9895CE calls CSoundMan through game settings.
-    // Pool 4CF=Tab, 4D2=DragEnd, 737=DragStart, 8FE/8FF=MenuUp/MenuDown.
-    try{reinterpret_cast<void(__cdecl*)(const char*)>(0x00989588)(name);}
+void PlayUiSound(const wchar_t* name){
+    // 083 PlaySE takes UTF-16, not char*: 9895AF calls wcslen (A60FE7),
+    // then 9895BC appends WCHARs to the wide Sound/UI.img/ prefix. An ANSI
+    // literal produces a bad resource path, silently rejected by CSoundMan.
+    try{reinterpret_cast<void(__cdecl*)(const wchar_t*)>(0x00989588)(name);}
     catch(...){static bool reported=false;if(!reported){reported=true;CrashReporter::RecordEvent("wardrobe.sound","native playback failed");}}
 }
 void ReplySound(const Snapshot& snapshot){
     if(!state.pending)return;
-    if(snapshot.busy || snapshot.outcome!=state.pendingAction){PlayUiSound("DlgNotice");return;}
+    if(snapshot.busy || snapshot.outcome!=state.pendingAction){PlayUiSound(L"DlgNotice");return;}
     switch(snapshot.outcome){
-    case Open:PlayUiSound("MenuUp");break;
-    case Store:case Take:case Apply:case Save:case Rename:case Delete:PlayUiSound("DragEnd");break;
+    case Open:PlayUiSound(L"MenuUp");break;
+    case Store:case Take:case Apply:case Save:case Rename:case Delete:PlayUiSound(L"DragEnd");break;
     }
 }
 
@@ -576,56 +576,56 @@ bool FinishDeferredClose(){
     if(!WardrobePreview::Busy())try{CloseWindow();state.deferredClose=false;}catch(...){Fail("deferred_close");}
     return true;
 }
-void Popup(Dialog dialog){Edit(-1);TooltipClear();state.hover=state.pressed=-1;state.controls.clear();state.dialog=dialog;state.dialogMessage.clear();state.dropdown=-1;state.avatarDirty=true;if(dialog==Dialog::Binding || dialog==Dialog::Overwrite)PlayUiSound("DlgNotice");Invalidate();}
+void Popup(Dialog dialog){Edit(-1);TooltipClear();state.hover=state.pressed=-1;state.controls.clear();state.dialog=dialog;state.dialogMessage.clear();state.dropdown=-1;state.avatarDirty=true;if(dialog==Dialog::Binding || dialog==Dialog::Overwrite)PlayUiSound(L"DlgNotice");Invalidate();}
 void ResetSelection(){state.selected=state.hover=state.pressed=-1;state.clickUid=0;TooltipClear();}
 void PreviewSelected(){
     if(!Writable())return;auto item=Selected();if(!item)return;
-    if(!(item->flags&1)){state.status=std::wstring(L"不能试穿：")+Reason(item->reason);PlayUiSound("DlgNotice");Invalidate();return;}
-    if(!state.model.Toggle(item->uid)){state.status=L"这件时装暂时不能试穿。";PlayUiSound("DlgNotice");Invalidate();return;}
-    PlayUiSound("DragEnd");state.status.clear();state.avatarDirty=true;Invalidate();
+    if(!(item->flags&1)){state.status=std::wstring(L"不能试穿：")+Reason(item->reason);PlayUiSound(L"DlgNotice");Invalidate();return;}
+    if(!state.model.Toggle(item->uid)){state.status=L"这件时装暂时不能试穿。";PlayUiSound(L"DlgNotice");Invalidate();return;}
+    PlayUiSound(L"DragEnd");state.status.clear();state.avatarDirty=true;Invalidate();
 }
 void RevertSlot(int index){
     if(!Writable() || state.page!=0 || index<0 || index>=int(Slots.size()))return;
     const short slot=Slots[index];if(!state.model.draft.count(slot))return;
-    if(!state.model.Revert(slot)){state.status=L"撤下后与其他试穿冲突，请先撤下套服或另一件。";PlayUiSound("DlgNotice");Invalidate();return;}
+    if(!state.model.Revert(slot)){state.status=L"撤下后与其他试穿冲突，请先撤下套服或另一件。";PlayUiSound(L"DlgNotice");Invalidate();return;}
     // The cell now shows another item: drop the old tooltip and let the next hover rebuild it.
-    PlayUiSound("DragEnd");TooltipClear();state.hover=-1;state.status.clear();state.avatarDirty=true;Invalidate();
+    PlayUiSound(L"DragEnd");TooltipClear();state.hover=-1;state.status.clear();state.avatarDirty=true;Invalidate();
 }
 void RestoreLook(){
     if(!Writable() || state.model.draft.empty())return;
-    state.model.Restore();PlayUiSound("DragEnd");state.status.clear();state.avatarDirty=true;Invalidate();
+    state.model.Restore();PlayUiSound(L"DragEnd");state.status.clear();state.avatarDirty=true;Invalidate();
 }
 void SelectOutfit(int index){
     if(index<0 || index>=6 || state.outfit==index)return;
-    state.outfit=index;PlayUiSound("Tab");state.status.clear();state.avatarDirty=true;Invalidate();
+    state.outfit=index;state.status.clear();state.avatarDirty=true;Invalidate();
 }
 void TransferSelected(){
     if(!Writable() || (state.selectedSource!=0 && state.selectedSource!=1))return;
     auto item=Selected();if(!item || !item->uid || !(item->flags&2))return;
     std::vector<unsigned char> bytes;Number(bytes,item->uid,8);
     if(Send(state.selectedSource==1?Store:Take,bytes)){TooltipClear();state.status.clear();}
-    else {state.status=L"发送失败，请重新打开衣柜。";PlayUiSound("DlgNotice");}
+    else {state.status=L"发送失败，请重新打开衣柜。";PlayUiSound(L"DlgNotice");}
     Invalidate();
 }
 void StoreAll(){
     if(!Writable() || state.page!=2)return;
     int count=state.model.StorableCount();
-    if(!count){state.status=L"背包中没有可存入的时装。";PlayUiSound("DlgNotice");Invalidate();return;}
+    if(!count){state.status=L"背包中没有可存入的时装。";PlayUiSound(L"DlgNotice");Invalidate();return;}
     if(int(state.model.current.items[0].size())+count>state.model.current.capacity){
-        state.status=L"衣柜空位不足，需要 "+std::to_wstring(count)+L" 个空位，未存入。";PlayUiSound("DlgNotice");Invalidate();return;
+        state.status=L"衣柜空位不足，需要 "+std::to_wstring(count)+L" 个空位，未存入。";PlayUiSound(L"DlgNotice");Invalidate();return;
     }
     // Real item identities are positive. STORE uid=0 requests one atomic batch
     // of eligible equipment-bag items, with the server rechecking the scope.
     std::vector<unsigned char> bytes;Number(bytes,0,8);
     if(Send(Store,bytes)){TooltipClear();state.status.clear();}
-    else {state.status=L"发送失败，请重新打开衣柜。";PlayUiSound("DlgNotice");}
+    else {state.status=L"发送失败，请重新打开衣柜。";PlayUiSound(L"DlgNotice");}
     Invalidate();
 }
 void ApplyDraft(bool binding){
     if(!Writable() || state.applyingPreset<0 || state.applyDraft.empty())return;
     std::vector<unsigned char> bytes;Number(bytes,binding?1:0,1);Number(bytes,state.applyDraft.size(),1);
     for(const auto& e:state.applyDraft){Number(bytes,e.first,2);Number(bytes,e.second,8);}
-    Popup(Dialog::None);if(!Send(Apply,bytes)){state.applyingPreset=-1;state.applyDraft.clear();state.status=L"发送失败，请重新打开衣柜。";PlayUiSound("DlgNotice");}
+    Popup(Dialog::None);if(!Send(Apply,bytes)){state.applyingPreset=-1;state.applyDraft.clear();state.status=L"发送失败，请重新打开衣柜。";PlayUiSound(L"DlgNotice");}
     Invalidate();
 }
 void ApplyTryOn(){
@@ -637,7 +637,7 @@ void ApplyTryOn(){
 bool ValidateOutfitName(std::string& name){
     if(state.outfitName.empty() || state.outfitName.size()>8)state.dialogMessage=L"请输入 1 至 8 个字的搭配名称。";
     else try{name=Narrow(state.outfitName);return true;}catch(...){state.dialogMessage=L"名称含不支持的字符，请修改。";}
-    PlayUiSound("DlgNotice");Invalidate();return false;
+    PlayUiSound(L"DlgNotice");Invalidate();return false;
 }
 void SaveOutfit(){
     if(state.pending)return;std::string name;if(!ValidateOutfitName(name))return;
@@ -645,7 +645,7 @@ void SaveOutfit(){
     if(state.dialog!=Dialog::Rename){Number(bytes,state.saveScope.size(),1);for(const auto& e:state.saveScope){Number(bytes,e.slot,2);Number(bytes,e.mode,1);Number(bytes,e.mode==2?e.uid:0,8);}}
     auto action=state.dialog==Dialog::Rename?Rename:Save;
     // The outfit page follows the position actually written (the save dialog can pick another).
-    if(Send(action,bytes)){if(state.page==1)state.outfit=state.saveSlot;Popup(Dialog::None);}else {state.status=L"发送失败，请重新打开衣柜。";PlayUiSound("DlgNotice");}
+    if(Send(action,bytes)){if(state.page==1)state.outfit=state.saveSlot;Popup(Dialog::None);}else {state.status=L"发送失败，请重新打开衣柜。";PlayUiSound(L"DlgNotice");}
 }
 void BeginSave(int slot=-1){
     if(!Writable() || !state.model.original && !state.model.Valid())return;state.saveScope=state.model.SaveScope();state.saveSlot=slot>=0?slot:0;
@@ -659,12 +659,12 @@ void LoadPreset(int index){
     const auto resolved=candidate.Resolve(candidate.current.outfits[index]);
     if(!candidate.Load(candidate.current.outfits[index])){
         state.status=resolved.missing?L"缺少 "+std::to_wstring(resolved.missing)+L" 件时装，未切换搭配。":resolved.ambiguous?L"有多件同款，请重新保存这套搭配；本次未切换。":L"有时装无法穿戴、存回衣柜或部位冲突，未切换搭配。";
-        PlayUiSound("DlgNotice");Invalidate();return;
+        PlayUiSound(L"DlgNotice");Invalidate();return;
     }
     state.status.clear();state.dropdown=-1;
     if(candidate.draft.empty()){
         if(!state.model.MatchesCurrent(candidate.current.outfits[index])){
-            state.status=L"这套搭配没有可切换的部位。";PlayUiSound("DlgNotice");
+            state.status=L"这套搭配没有可切换的部位。";PlayUiSound(L"DlgNotice");
         }
         state.preset=state.model.CurrentPreset(index);state.avatarDirty=true;Invalidate();return;
     }
@@ -672,19 +672,19 @@ void LoadPreset(int index){
     bool binding=false;for(const auto& e:state.applyDraft){auto item=state.model.Find(e.second);if(item && item->flags&8)binding=true;}
     if(binding)Popup(Dialog::Binding);else ApplyDraft(false);
 }
+bool IsButton(int id){return id>0 && id<1000 && id!=8 && id!=450;}
+bool InputEnabled(int id){return !state.pending || id==1 || id==400;}
 void Activate(int id){
-    if(state.deferredClose)return;
-    if(id==1){PlayUiSound("MenuDown");CloseWindow();return;}
+    if(state.deferredClose || !InputEnabled(id))return;
+    // Every enabled button acknowledges the click, even the selected tab. This
+    // is input feedback; confirmation, failure and server success are separate.
+    if(IsButton(id))PlayUiSound(L"BtMouseClick");
+    if(id==1){PlayUiSound(L"MenuDown");CloseWindow();return;}
     if(id==400){
-        PlayUiSound("BtMouseClick");auto dialog=state.dialog;
+        auto dialog=state.dialog;
         if(dialog==Dialog::Binding){state.applyingPreset=-1;state.applyDraft.clear();}
         Popup(dialog==Dialog::Overwrite?Dialog::Save:Dialog::None);if(dialog==Dialog::Overwrite)Edit(450);return;
     }
-    if(state.pending)return;
-    // Local buttons click immediately; mutations get one result sound, or a notice
-    // when validation/confirmation intervenes. Do not stack click and result sounds.
-    if(id==7 || id==9 || id==12 || id==13 || id==18 || id==25)
-        PlayUiSound("BtMouseClick");
     if(id==402){
         if(state.dialog==Dialog::Binding){ApplyDraft(true);return;}
         if(state.dialog==Dialog::Overwrite){SaveOutfit();return;}
@@ -694,11 +694,11 @@ void Activate(int id){
     Edit(-1);
     if(id>=1000 && id<4072){
         const int source=(id-1000)/1024,index=(id-1000)%1024;
-        if(state.selectedSource!=source || state.selected!=index)PlayUiSound("DragStart");
+        if(state.selectedSource!=source || state.selected!=index)PlayUiSound(L"DragStart");
         state.selectedSource=source;state.selected=index;
     }
     else if(id==3 || id==4){
-        if(state.page!=id-3)PlayUiSound("Tab");state.page=id-3;state.dropdown=-1;
+        state.page=id-3;state.dropdown=-1;
         state.model.original=state.page==1;
         if(state.page==1){state.preset=state.model.CurrentPreset();if(state.preset>=0)state.outfit=state.preset;}
         ResetSelection();state.avatarDirty=true;
@@ -712,14 +712,14 @@ void Activate(int id){
     else if(id==24)ApplyTryOn();
     else if(id==25 && state.page==1)BeginSave(state.outfit);
     else if(id==26 && state.page==1)LoadPreset(state.outfit);
-    else if(id==19){if(state.page!=2)PlayUiSound("Tab");state.page=2;state.model.original=false;state.category=0;state.dropdown=-1;ResetSelection();state.avatarDirty=true;}
+    else if(id==19){state.page=2;state.model.original=false;state.category=0;state.dropdown=-1;ResetSelection();state.avatarDirty=true;}
     else if(id==20 && state.page==2 && state.selectedSource==1)TransferSelected();
     else if(id==21 && state.page==2 && state.selectedSource==0)TransferSelected();
     else if(id==22)StoreAll();
-    else if(id>=300 && id<=307){if(state.category!=id-300)PlayUiSound("Tab");state.category=id-300;std::fill(std::begin(state.gridPage),std::end(state.gridPage),0);ResetSelection();}
-    else if(id>=30 && id<=37){PlayUiSound("Tab");state.gridPage[(id-30)/2]+=(id%2)?1:-1;ResetSelection();}
-    else if(id>=40 && id<=43){if(state.source!=id-40)PlayUiSound("Tab");state.source=id-40;state.dropdown=-1;ResetSelection();}
-    else if(id>=80 && id<=82){if(WardrobePreview::Scene()!=id-80)PlayUiSound("Tab");WardrobePreview::SetScene(id-80);}
+    else if(id>=300 && id<=307){state.category=id-300;std::fill(std::begin(state.gridPage),std::end(state.gridPage),0);ResetSelection();}
+    else if(id>=30 && id<=37){state.gridPage[(id-30)/2]+=(id%2)?1:-1;ResetSelection();}
+    else if(id>=40 && id<=43){state.source=id-40;state.dropdown=-1;ResetSelection();}
+    else if(id>=80 && id<=82)WardrobePreview::SetScene(id-80);
     else if(id>=100 && id<106 && state.page==1)SelectOutfit(id-100);
     else if(id>=5100 && id<5115)RevertSlot(id-5100);
     else if(id==401){
@@ -729,7 +729,7 @@ void Activate(int id){
     else if(id>=460 && id<466 && state.dialog==Dialog::Save){
         const auto& before=state.model.current.outfits[state.saveSlot];
         bool defaultName=state.outfitName==(before.defined?Wide(before.name):L"搭配"+std::to_wstring(state.saveSlot+1));
-        if(state.saveSlot!=id-460)PlayUiSound("Tab");state.saveSlot=id-460;const auto& after=state.model.current.outfits[state.saveSlot];
+        state.saveSlot=id-460;const auto& after=state.model.current.outfits[state.saveSlot];
         if(defaultName)state.outfitName=after.defined?Wide(after.name):L"搭配"+std::to_wstring(state.saveSlot+1);
     }
     Invalidate();
@@ -738,7 +738,7 @@ int Hit(int x,int y){
     if(state.deferredClose)return -1;
     if(!state.ready || !state.shown)return -1;
     for(auto i=state.controls.rbegin();i!=state.controls.rend();++i)if(x>=i->x && y>=i->y && x<i->x+i->w && y<i->y+i->h){
-        if(!i->enabled)return -1;
+        if(!i->enabled || !InputEnabled(i->id))return -1;
         if(i->id>=1000 && i->id<4072){
             const auto& items=state.model.current.items[(i->id-1000)/1024];int index=(i->id-1000)%1024;
             if(index>=int(items.size()) || items[index].uid!=i->uid)return -1;
@@ -750,8 +750,9 @@ int Hit(int x,int y){
 void HoverSound(int id){
     // Tooltip/paint invalidation clears hover after clicks and replies. Only a
     // real pointer transition should re-arm the native button hover sound.
+    if(state.controls.empty())return; // Waiting for Draw is not a pointer leave.
     if(id==state.soundHover)return;state.soundHover=id;
-    if(!state.pending && id>=0 && id<1000 && id!=8 && id!=450)PlayUiSound("BtMouseOver");
+    if(InputEnabled(id) && IsButton(id))PlayUiSound(L"BtMouseOver");
 }
 const Item* HoveredItem(int id){
     if(id>=5000 && id<5015 && state.page==1){
@@ -796,7 +797,8 @@ void ShowItemTooltip(const Item& item,int x,int y){
 void __fastcall Mouse(void*,void*,unsigned message,unsigned,int x,int y){
     if(!state.shown || state.deferredClose)return;try{
         int hit=Hit(x,y);
-        if(message==WM_LBUTTONDOWN){
+        const bool outfitCard=hit>=100 && hit<106;
+        if(message==WM_LBUTTONDOWN || message==WM_LBUTTONDBLCLK && IsButton(hit) && !outfitCard){
             Focus(true);state.pressed=hit;state.clickUid=hit>=1000&&hit<4072?state.model.current.items[(hit-1000)/1024][(hit-1000)%1024].uid:0;
             if(hit<0){Edit(-1);state.dropdown=-1;if(y>=0 && y<22 && state.dialog==Dialog::None){state.dragging=true;state.dragX=x;state.dragY=y;}}Invalidate();
         }
@@ -807,7 +809,7 @@ void __fastcall Mouse(void*,void*,unsigned message,unsigned,int x,int y){
             state.clickUid=0;state.pressed=-1;Activate(hit);if(state.page==0)PreviewSelected();else if(state.page==2)TransferSelected();
         }
         else if(message==WM_LBUTTONDBLCLK && hit>=100 && hit<106 && state.page==1 && !state.pending){
-            state.pressed=-1;SelectOutfit(hit-100);if(state.model.current.outfits[hit-100].defined)LoadPreset(hit-100);
+            state.pressed=-1;Activate(hit);if(state.model.current.outfits[hit-100].defined)LoadPreset(hit-100);
         }
     }catch(...){Fail("mouse");}
 }
@@ -833,7 +835,7 @@ int __fastcall Wheel(void*,void*,int x,int y,int delta){
             int cells=state.page==2?(source==1?BagColumns:LockerColumns)*StorageRows:GridColumns*GridRows;
             auto count=Entries(source,state.page==2&&source==1).size();int last=(std::max)(0,(int(count)-1)/cells);
             const int page=(std::max)(0,(std::min)(last,state.gridPage[source]+(delta<0?1:-1)));
-            if(page!=state.gridPage[source])PlayUiSound("Tab");state.gridPage[source]=page;ResetSelection();
+            if(page!=state.gridPage[source])PlayUiSound(L"Tab");state.gridPage[source]=page;ResetSelection();
         }
         Invalidate();
     }catch(...){Fail("wheel");}return 1;
@@ -950,7 +952,7 @@ void OpenWindow(){
     state.page=state.category=state.outfit=0;state.source=AllSources;std::fill(std::begin(state.gridPage),std::end(state.gridPage),0);state.search.clear();state.preset=state.menuPreset=state.applyingPreset=-1;state.applyDraft.clear();
     PreloadWardrobeSkin();
     WardrobeInput::Lock();
-    state.opening=Send(Open);if(state.opening)CreateWardrobeWindow();else {WardrobeInput::Unlock();PlayUiSound("DlgNotice");}
+    state.opening=Send(Open);if(state.opening)CreateWardrobeWindow();else {WardrobeInput::Unlock();PlayUiSound(L"DlgNotice");}
 }
 void RebuildAvatar(){
     state.avatarDirty=false;if(!state.ready || !state.shown || state.opening)return;
@@ -981,7 +983,7 @@ void Tick(void* localUser){
     for(auto& snapshot:received){
         if(snapshot.outcome==Close || snapshot.outcome==Heartbeat) {
             if(state.ready && snapshot.token==state.model.current.token) {
-                if(snapshot.outcome==Close){PlayUiSound("MenuDown");CloseWindow();continue;}
+                if(snapshot.outcome==Close){PlayUiSound(L"MenuDown");CloseWindow();continue;}
                 state.lastHeartbeatReply=GetTickCount();
             }
             continue;
@@ -1013,11 +1015,11 @@ void Tick(void* localUser){
     if(!state.shown)return;
     if(WardrobeInput::IsForeground())Cursor();
     DWORD now=GetTickCount();
-    if(state.opening && now-state.sentAt>=15000){PlayUiSound("DlgNotice");CloseWindow();return;}
-    if(!state.opening && now-state.lastHeartbeatReply>=20000){PlayUiSound("DlgNotice");CloseWindow();return;}
+    if(state.opening && now-state.sentAt>=15000){PlayUiSound(L"DlgNotice");CloseWindow();return;}
+    if(!state.opening && now-state.lastHeartbeatReply>=20000){PlayUiSound(L"DlgNotice");CloseWindow();return;}
     if(!state.opening && now-state.lastHeartbeat>=5000){state.lastHeartbeat=now;Send(Heartbeat);}
     if(state.pending && !state.opening && state.syncAttempts<3 && now-state.lastSync>=10000){state.lastSync=now;++state.syncAttempts;Send(Sync,{},true);}
-    if(state.pending && !state.opening && state.syncAttempts>=3 && now-state.lastSync>=10000){CrashReporter::RecordEvent("wardrobe.window","request_timeout action=%d request=%d",state.pendingAction,state.pendingRequest);PlayUiSound("DlgNotice");CloseWindow();return;}
+    if(state.pending && !state.opening && state.syncAttempts>=3 && now-state.lastSync>=10000){CrashReporter::RecordEvent("wardrobe.window","request_timeout action=%d request=%d",state.pendingAction,state.pendingRequest);PlayUiSound(L"DlgNotice");CloseWindow();return;}
     if(now-state.lastStatusTick>=1000){state.lastStatusTick=now;if(state.pending)Invalidate();}
     if(state.avatarDirty)RebuildAvatar();
     WardrobePreview::Update(state.page!=2 && state.dialog==Dialog::None,!state.pending && state.edit<0 && state.dropdown<0);
