@@ -11,6 +11,12 @@
 #include "AranComboUi.h"
 #include "AranFirstAttack.h"
 #include "AranComboCommand.h"
+#include "VisitorsMorph.h"
+#include "VisitorsScroll.h"
+#include "VisitorsMobClimb.h"
+#include "VisitorsShuttle.h"
+#include "SetItemBonus.h"
+#include "SetItemTooltip.h"
 #include "AranCombatStep.h"
 #include "WarriorRush.h"
 #include "ComboTempestCritical.h"
@@ -1291,6 +1297,16 @@ namespace
 		if (!AranComboCommand::Install()) {
 			ClientLog::Append(ClientLog::Component::Lifecycle, "aran_combo_command_install_failed");
 		}
+		if (!VisitorsMorph::Install(GetModuleHandleW(nullptr))) {
+			ClientLog::Append(ClientLog::Component::Lifecycle, "visitors_morph_install_failed");
+		}
+		if (!VisitorsScroll::Install(GetModuleHandleW(nullptr))) {
+			ClientLog::Append(ClientLog::Component::Lifecycle, "visitors_scroll_install_failed");
+		}
+		VisitorsMobClimb::Install(GetModuleHandleW(nullptr));
+		VisitorsShuttle::Install(GetModuleHandleW(nullptr));
+		SetItemBonus::Install(GetModuleHandleW(nullptr));
+		SetItemTooltip::Install(GetModuleHandleW(nullptr));
 		if (!AranFirstAttack::Install()) {
 			ClientLog::Append(ClientLog::Component::Lifecycle, "aran_first_attack_install_failed");
 		}

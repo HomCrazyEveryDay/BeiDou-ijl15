@@ -17,6 +17,7 @@
 #include "HiredMerchantClock.h"
 #include "EvanPursuit.h"
 #include "EquipmentCritical.h"
+#include "SetItemBonus.h"
 #include "DisconnectDiagnostics.h"
 #include "IntegratedFinalAttack.h"
 #include "SnipeDamageSync.h"
@@ -777,6 +778,7 @@ static void TraceIncomingPacket(CInPacket* packet) {
 }
 static void ProcessPacketBody(void* pThis, void* edx, CInPacket* packet) {
     TraceIncomingPacket(packet);
+    if (packet && SetItemBonus::HandlePacket(reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet && EquipmentCritical::HandlePacket(reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet && MonthlyShop::HandlePacket(reinterpret_cast<const unsigned char*>(packet->Data), packet->DataLen)) return;
     if (packet && packet->DataLen >= 6) MonthlyShop::BeforeNativePacket(ReadUInt16LE(reinterpret_cast<const unsigned char*>(packet->Data) + 4));

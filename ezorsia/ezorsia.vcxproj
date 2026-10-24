@@ -177,6 +177,12 @@
     <ClInclude Include="AranComboUi.h" />
     <ClInclude Include="AranFirstAttack.h" />
     <ClInclude Include="AranComboCommand.h" />
+    <ClInclude Include="VisitorsMorph.h" />
+    <ClInclude Include="VisitorsScroll.h" />
+    <ClInclude Include="VisitorsMobClimb.h" />
+    <ClInclude Include="VisitorsShuttle.h" />
+    <ClInclude Include="SetItemBonus.h" />
+    <ClInclude Include="SetItemTooltip.h" />
     <ClInclude Include="AranCombatStep.h" />
     <ClInclude Include="WarriorRush.h" />
     <ClInclude Include="ComboTempestDamage.h" />
@@ -300,6 +306,15 @@
     <ClCompile Include="AranComboUi.cpp" />
     <ClCompile Include="AranFirstAttack.cpp" />
     <ClCompile Include="AranComboCommand.cpp" />
+    <ClCompile Include="VisitorsMorph.cpp" />
+    <ClCompile Include="VisitorsShuttle.cpp" />
+    <ClCompile Include="SetItemBonus.cpp" />
+    <ClCompile Include="SetItemTooltip.cpp" />
+    <ClCompile Include="VisitorsScroll.cpp" />
+    <ClCompile Include="VisitorsMobClimb.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="AranCombatStep.cpp" />
     <ClCompile Include="WarriorRush.cpp" />
     <ClCompile Include="ComboTempestDamage.cpp" />

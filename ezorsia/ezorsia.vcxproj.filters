@@ -219,6 +219,24 @@
     <ClInclude Include="AranComboCommand.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="VisitorsMorph.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VisitorsShuttle.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SetItemBonus.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SetItemTooltip.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VisitorsScroll.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="VisitorsMobClimb.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="AranCombatStep.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -375,6 +393,24 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="AranComboCommand.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VisitorsMorph.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VisitorsShuttle.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SetItemBonus.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SetItemTooltip.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VisitorsScroll.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VisitorsMobClimb.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="AranCombatStep.cpp">
