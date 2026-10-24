@@ -238,6 +238,8 @@ int main(int argc,char** argv){
     Number(bytes,1,4);Number(bytes,2,4);Number(bytes,3,4);Number(bytes,240,2);Number(bytes,4,2);String(bytes,"ready");String(bytes,"player");
     for(int i=0;i<3;i++)Number(bytes,0,2);Number(bytes,6,1);for(int i=0;i<6;i++)Number(bytes,0,1);
     Snapshot decoded;assert(Decode(bytes.data(),unsigned(bytes.size()),decoded));assert(decoded.capacity==240 && decoded.request==3);
+    bytes[10]=Sort;assert(Decode(bytes.data(),unsigned(bytes.size()),decoded)&&decoded.outcome==Sort);
+    bytes[10]=Sort+1;assert(!Decode(bytes.data(),unsigned(bytes.size()),decoded));bytes[10]=Open;
     for(unsigned size=0;size<bytes.size();size++)assert(!Decode(bytes.data(),size,decoded));
     bytes.push_back(0);assert(!Decode(bytes.data(),unsigned(bytes.size()),decoded));
     if(argc==2){

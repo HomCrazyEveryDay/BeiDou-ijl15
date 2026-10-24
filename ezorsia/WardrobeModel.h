@@ -10,7 +10,7 @@
 namespace WardrobeModel {
 constexpr unsigned Magic=0x5744,Version=2;
 constexpr std::array<short,15> Slots={-101,-102,-103,-104,-105,-106,-107,-108,-109,-110,-111,-112,-113,-115,-116};
-enum Action {Open,Sync,Store,Take,Apply,Save,Delete,Rename,Close,Heartbeat};
+enum Action {Open,Sync,Store,Take,Apply,Save,Delete,Rename,Close,Heartbeat,Sort};
 struct Item {
     std::uint64_t uid=0;int id=0;short position=0,slot=0;unsigned flags=0,reason=0,ringEffects=0;
     std::string name;std::vector<unsigned char> native;
@@ -43,7 +43,7 @@ inline bool Decode(const unsigned char* data,unsigned length,Snapshot& result) {
     Snapshot s;s.busy=r.number(1)!=0;s.outcome=unsigned(r.number(1));
     s.token=int(r.number(4));s.revision=int(r.number(4));s.request=int(r.number(4));
     s.capacity=int(r.number(2));s.freeBag=int(r.number(2));s.message=r.text(512);s.name=r.text(64);
-    if(s.token<=0 || s.revision<=0 || s.capacity>1024 || s.outcome>Heartbeat)return false;
+    if(s.token<=0 || s.revision<=0 || s.capacity>1024 || s.outcome>Sort)return false;
     for(int source=0;source<3;source++) {
         auto count=r.number(2);if(!r.ok || count>1024)return false;
         for(unsigned n=0;n<count;n++) {

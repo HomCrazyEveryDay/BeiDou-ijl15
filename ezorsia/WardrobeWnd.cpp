@@ -62,7 +62,7 @@ void ReplySound(const Snapshot& snapshot){
     if(snapshot.busy || snapshot.outcome!=state.pendingAction){PlayUiSound(L"DlgNotice");return;}
     switch(snapshot.outcome){
     case Open:PlayUiSound(L"MenuUp");break;
-    case Store:case Take:case Apply:case Save:case Rename:case Delete:PlayUiSound(L"DragEnd");break;
+    case Store:case Take:case Apply:case Save:case Rename:case Delete:case Sort:PlayUiSound(L"DragEnd");break;
     }
 }
 
@@ -223,12 +223,15 @@ std::vector<int> Filter(int source,bool deposit=false) {
     }
     return result;
 }
-// Catalog sources: 0 locker, 1 bag, 2 worn, 3 all of them. "All" keeps a stable order (worn,
-// bag, locker) so the piece replaced by a try-on stays visible where it was.
+// Catalog sources: 0 locker, 1 bag, 2 worn, 3 all of them. Sort the combined view by
+// item ID (equipment subtype, then number), retaining source order for duplicate IDs.
 constexpr int AllSources=3;
 std::vector<std::pair<int,int>> Entries(int source,bool deposit=false){
     std::vector<std::pair<int,int>> result;
     for(int from:source==AllSources?std::vector<int>{2,1,0}:std::vector<int>{source})for(int index:Filter(from,deposit))result.emplace_back(from,index);
+    if(source==AllSources)std::stable_sort(result.begin(),result.end(),[](const auto& a,const auto& b){
+        return state.model.current.items[a.first][a.second].id<state.model.current.items[b.first][b.second].id;
+    });
     return result;
 }
 // CashShop item well: #666 rim and #BBCCDD gutter around 32px cells at a 35px pitch.
@@ -446,6 +449,8 @@ void DrawBody(void* window,const RECT* rect) {
             Text(dst,reason,GridX-3+(std::min)(TextWidth(lines[0]),room)+13,top,Label);
         }
         Pager(dst,state.source,pages,Width-74,infoY);
+        Button(dst,27,368,FooterY,80,L"一键整理",Writable()&&state.model.current.items[0].size()>1);
+        statusW=350;
         Button(dst,23,454,FooterY,60,L"还原",Writable()&&!state.model.draft.empty());
         Button(dst,18,520,FooterY,80,L"保存搭配",Writable()&&state.model.Valid());
         Button(dst,24,606,FooterY,60,L"穿上",Writable()&&!state.model.draft.empty()&&state.model.Valid());
@@ -476,6 +481,7 @@ void DrawBody(void* window,const RECT* rect) {
         Button(dst,20,middle,170,76,L"存入 →",Writable()&&state.selectedSource==1&&transferable);
         Button(dst,21,middle,200,76,L"← 取出",Writable()&&state.selectedSource==0&&transferable);
         Button(dst,22,12,FooterY,80,L"全部存入",Writable()&&state.model.StorableCount()>0);
+        Button(dst,27,586,FooterY,80,L"一键整理",Writable()&&state.model.current.items[0].size()>1);
         statusX=100;statusW=440;
     }
     std::wstring status=state.status;
@@ -578,6 +584,12 @@ bool FinishDeferredClose(){
 }
 void Popup(Dialog dialog){Edit(-1);TooltipClear();state.hover=state.pressed=-1;state.controls.clear();state.dialog=dialog;state.dialogMessage.clear();state.dropdown=-1;state.avatarDirty=true;if(dialog==Dialog::Binding || dialog==Dialog::Overwrite)PlayUiSound(L"DlgNotice");Invalidate();}
 void ResetSelection(){state.selected=state.hover=state.pressed=-1;state.clickUid=0;TooltipClear();}
+void SortLocker(){
+    if(!Writable() || state.page==1 || state.model.current.items[0].size()<2)return;
+    if(Send(Sort,{})){TooltipClear();state.status.clear();}
+    else {state.status=L"发送失败，请重新打开衣柜。";PlayUiSound(L"DlgNotice");}
+    Invalidate();
+}
 void PreviewSelected(){
     if(!Writable())return;auto item=Selected();if(!item)return;
     if(!(item->flags&1)){state.status=std::wstring(L"不能试穿：")+Reason(item->reason);PlayUiSound(L"DlgNotice");Invalidate();return;}
@@ -716,6 +728,7 @@ void Activate(int id){
     else if(id==20 && state.page==2 && state.selectedSource==1)TransferSelected();
     else if(id==21 && state.page==2 && state.selectedSource==0)TransferSelected();
     else if(id==22)StoreAll();
+    else if(id==27)SortLocker();
     else if(id>=300 && id<=307){state.category=id-300;std::fill(std::begin(state.gridPage),std::end(state.gridPage),0);ResetSelection();}
     else if(id>=30 && id<=37){state.gridPage[(id-30)/2]+=(id%2)?1:-1;ResetSelection();}
     else if(id>=40 && id<=43){state.source=id-40;state.dropdown=-1;ResetSelection();}
@@ -1001,7 +1014,8 @@ void Tick(void* localUser){
         if(state.dialog==Dialog::Binding)Popup(Dialog::None);
         state.controls.clear();
         bool transferDone=state.page==2 && (snapshot.outcome==Store || snapshot.outcome==Take);
-        state.status=snapshot.outcome==state.pendingAction && !transferDone?L"":Wide(snapshot.message);
+        state.status=snapshot.outcome==state.pendingAction && !transferDone && snapshot.outcome!=Sort?L"":Wide(snapshot.message);
+        if(snapshot.outcome==Sort)std::fill(std::begin(state.gridPage),std::end(state.gridPage),0);
         state.model.Refresh(std::move(snapshot),applied);state.pending=false;state.opening=false;
         state.model.original=state.page==1;
         if(applied)state.preset=state.applyingPreset;

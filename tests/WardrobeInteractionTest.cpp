@@ -55,6 +55,31 @@ static void DoubleClick(int hit){DrawCell(hit);Mouse(nullptr,nullptr,WM_LBUTTOND
 int wmain(int argc,wchar_t** argv){
     assert(argc==2);InstallNativeSoundHarness(argv[1]);
     CheckNativeSoundEncoding();
+    // Sorting is one server transaction, independent of filters, and never rewrites a local item index.
+    for(int page:{0,2}){
+        Reset();state.page=page;state.search=L"hidden";state.category=7;
+        state.model.current.items[0]={Make(811,1102000,-109),Make(812,1002000,-101)};
+        state.model.current.items[1]={Make(813,1001000,-101)};assert(state.model.Toggle(812));
+        const auto draft=state.model.draft;Activate(27);
+        assert(sends==1&&lastAction==Sort&&sent.empty()&&state.model.current.items[0][0].uid==811&&state.model.draft==draft);
+        Activate(27);assert(sends==1); // Pending click cannot enqueue another sort.
+        state.pending=false;socketAvailable=false;Activate(27);assert(sends==1&&!state.status.empty());
+    }
+    Reset();Activate(27);assert(sends==0);
+    state.model.current.items[0]={Make(811,1102000,-109)};Activate(27);assert(sends==0);
+    state.model.current.items[0].push_back(Make(812,1002000,-101));state.page=1;Activate(27);assert(sends==0);
+    // All-source sorting groups IDs across locations without mutating bag/worn order or duplicate identities.
+    Reset();state.model.current.items[0]={Make(821,1102000,-109),Make(822,1002000,-101)};
+    state.model.current.items[1]={Make(823,1042000,-105),Make(824,1002000,-101)};
+    state.model.current.items[2]={Make(825,1002000,-101,-101),Make(826,1072000,-107,-107)};
+    {const auto entries=Entries(AllSources);std::vector<std::uint64_t> ids;
+        for(auto entry:entries)ids.push_back(state.model.current.items[entry.first][entry.second].uid);
+        assert((ids==std::vector<std::uint64_t>{825,824,822,823,826,821}));
+        assert(Entries(0)[0].second==0&&Entries(1)[0].second==0);
+        assert(state.model.Toggle(822)&&Entries(AllSources)==entries); // Try-on cannot move the clicked cells.
+    }
+    Reset();state.pending=true;state.pendingAction=Sort;Snapshot sorted;sorted.outcome=Sort;
+    ReplySound(sorted);assert(sounds.size()==1&&sounds[0]==L"DragEnd");
     {
         Reset();void* vtable[0x120/sizeof(void*)]{};vtable[0x11c/sizeof(void*)]=reinterpret_cast<void*>(PutVisible);
         RetainedLayer layers[3]{{vtable,1},{vtable,1},{vtable,1}};alignas(void*) unsigned char window[0x24]{};
