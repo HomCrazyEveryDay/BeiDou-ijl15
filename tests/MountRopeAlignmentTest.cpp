@@ -3,6 +3,7 @@
 #include "../ezorsia/MountRopeAlignment.h"
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <iterator>
 #include <vector>
@@ -56,7 +57,7 @@ static void* Invoke(DWORD site, void* space, void* controller, int x1, int y1, i
 }
 
 int main(int argc, char** argv) {
-    assert(argc == 2);
+    assert(argc == 5);
     SetUnhandledExceptionFilter([](EXCEPTION_POINTERS* error) -> LONG {
         std::fprintf(stderr, "Test exception %08lX at %p (ecx=%08lX edx=%08lX)\n",
             error->ExceptionRecord->ExceptionCode, error->ExceptionRecord->ExceptionAddress,
@@ -114,6 +115,31 @@ int main(int argc, char** argv) {
     assert(findRope(space, 100, -60, 100, -60) == &ropes.entries[1]);
     assert(MountRopeAlignment::Install());
     assert(MountRopeAlignment::Install());
+    // Read the actual well rope coordinates from the server XML in the runner.
+    // A rider already within native reach must not lose that reach when its
+    // rendered body is offset, especially next to the well's left wall.
+    const Rope well = {1, 0, 0, std::atoi(argv[2]), std::atoi(argv[3]), std::atoi(argv[4]), 4};
+    const Rope firstRope = ropes.entries[1];
+    const Rope secondRope = ropes.entries[2];
+    ropes.entries[1] = well;
+    ropes.count = 2;
+    for (const auto& site : sites) {
+        for (int offset : {20, 25, -20, -25, 37, -37}) {
+            dx = offset;
+            assert(findRope(space, well.x, well.y2 - 4, well.x, well.y2 - 1) == &ropes.entries[1]);
+            if (Invoke(site.address, space, controller, well.x, well.y2 - 4, well.x, well.y2 - 1) != &ropes.entries[1]) {
+                std::fprintf(stderr, "FAIL: well native catch lost at site=%08lX x=%d dx=%d\n", site.address, well.x, dx);
+                return 1;
+            }
+            assert(Invoke(site.address, space, controller, well.x - offset, well.y2 - 4,
+                well.x - offset, well.y2 - 1) == &ropes.entries[1]);
+            assert(Invoke(site.address, space, controller, well.x, well.y2 + 1,
+                well.x, well.y2 + 20) == nullptr); // no extra vertical reach
+        }
+    }
+    ropes.entries[1] = firstRope;
+    ropes.entries[2] = secondRope;
+    ropes.count = 3;
     for (const auto& site : sites) {
         auto query = [&](int x1, int x2, int y1 = -60, int y2 = -60) {
             return Invoke(site.address, space, controller, x1, y1, x2, y2);
@@ -121,7 +147,7 @@ int main(int argc, char** argv) {
         model = 1902000; dx = 20; // Base hog plus motorcycle cash appearance.
         assert(query(80,80) == &ropes.entries[1]);
         assert(query(140,140) == &ropes.entries[2]); // ladder shares the same predicate
-        assert(query(100,100) == nullptr); // shifted, NOT a wider catch rectangle
+        assert(query(100,100) == &ropes.entries[1]); // preserve original physical reach
         dx = 25; assert(query(75,75) == &ropes.entries[1]);
         dx = -20; assert(query(120,120) == &ropes.entries[1]);
         dx = -25; assert(query(125,125) == &ropes.entries[1]);
@@ -130,9 +156,20 @@ int main(int argc, char** argv) {
         dx = 20;
         assert(query(70,70) == &ropes.entries[1]); // existing inclusive +/-10 boundary
         assert(query(69,69) == nullptr);
-        assert(query(91,91) == nullptr);
+        assert(query(91,91) == &ropes.entries[1]); // visual miss, native hit
+        assert(query(110,110) == &ropes.entries[1]);
+        assert(query(111,111) == nullptr);
         assert(query(40,110) == &ropes.entries[1]);
         assert(query(110,40) == &ropes.entries[1]); // motion in either direction
+        dx = 60;
+        assert(query(100,100) == &ropes.entries[2]); // visual target retains priority
+        dx = 40;
+        assert(query(80,80) == nullptr); // don't join the two search segments into one wide rectangle
+        dx = INT_MAX;
+        assert(query(100,100) == &ropes.entries[1]); // overflow falls back to native coordinates
+        dx = INT_MIN;
+        assert(query(100,100) == &ropes.entries[1]);
+        dx = 20;
         *reinterpret_cast<int*>(avatar + 0x4D8) = -100;
         assert(query(80,80,20,30) == nullptr); // never raise the vertical reach
         assert(query(80,80,-250,-210) == nullptr);
@@ -154,6 +191,7 @@ int main(int argc, char** argv) {
         assert(!std::memcmp(userBefore,user,sizeof(user)) && !std::memcmp(controllerBefore,controller,sizeof(controller)));
     }
     puts("PASS: original v83 lookup reproduces 20px miss; six installed CALL bridges align both motorcycles, flips, future IDs, rope/ladder and moving segments");
-    puts("PASS: +/-10 boundary and Y unchanged; ordinary/unready/foreign owners unchanged; no state mutation; registers/stack balanced; signature preflight and idempotence");
+    puts("PASS: actual well rope retains native and visual catches in both directions; visual target priority; no merged search rectangle; overflow fallback");
+    puts("PASS: each query keeps +/-10 and original Y; ordinary/unready/foreign owners unchanged; no state mutation; registers/stack balanced; signature preflight and idempotence");
     for (auto address : regions) VirtualFree(reinterpret_cast<void*>(address), 0, MEM_RELEASE);
 }

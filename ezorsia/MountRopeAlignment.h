@@ -31,12 +31,15 @@ static void* __fastcall Query(void* space, unsigned char* controller,
     const int offset = BodyOffsetX(controller);
     const long long first = static_cast<long long>(x1) + offset;
     const long long second = static_cast<long long>(x2) + offset;
-    // GetLadderOrRope itself expands X by ten pixels. Preserve that tolerance
-    // and the original vertical/foothold rules, including entering from above.
-    if (first >= INT_MIN + 10LL && first <= INT_MAX - 10LL &&
+    // Try the visible body first, but never remove an original native catch.
+    // Shifting the only query made riders miss ropes near walls (e.g. the
+    // Korean Folk Town well) even when the physics position was on the rope.
+    // Keep two separate native queries: each retains +/-10 and the original
+    // Y/foothold rules, without catching ropes between widely separated anchors.
+    if (offset && first >= INT_MIN + 10LL && first <= INT_MAX - 10LL &&
         second >= INT_MIN + 10LL && second <= INT_MAX - 10LL) {
-        x1 = static_cast<int>(first);
-        x2 = static_cast<int>(second);
+        if (auto rope = findRope(space, static_cast<int>(first), y1, static_cast<int>(second), y2))
+            return rope;
     }
     return findRope(space, x1, y1, x2, y2);
 }
