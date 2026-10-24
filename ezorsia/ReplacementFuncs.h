@@ -2279,6 +2279,20 @@ bool Hook_StringPool__GetString(bool bEnable)	//hook stringpool modification //t
         }
 		switch (nIdx)
 		{
+			// GMS083 login buttons (0x00620CA5): registration, account help,
+			// password recovery and homepage. URLs apply in every client language.
+			case 0:
+				*ret = "https://mxd.nodeisle.com/#register";
+				break;
+			case 1: // The website has no automatic username recovery flow.
+				*ret = "https://mxd.nodeisle.com/#help";
+				break;
+			case 2:
+				*ret = "https://mxd.nodeisle.com/#recovery";
+				break;
+			case 5633:
+				*ret = "https://mxd.nodeisle.com/";
+				break;
 			// Register the actual v84 avatar AND dragon action names in two unused
 			// v83 Evan prototype slots (avatar 146/156, dragon 10/20). Current
 			// Skill.wz references neither prototype. Load original v84 body and
