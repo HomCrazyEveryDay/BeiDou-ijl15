@@ -31,7 +31,7 @@
 
 | 主题 | 依据 |
 | --- | --- |
-| 崩溃修复 | 无单篇总表；按日期取最新：10-08 系列以 [remaining-crashes-followup-20261008](records/remaining-crashes-followup-20261008.md) 汇总，10-11 [crash-fixes-20261011](records/crash-fixes-20261011.md)，之后见 records 中 10-13 ~ 10-16 的 `*-crash*`、`pool-guard-*`、`player-logs*` |
+| 崩溃修复 | 最新：[聊天中文补丁越界修复 10-26](records/chat-text-bounds-crash-20261026.md)（真实原生循环隔离复现，60 个修复后边界用例通过，本地 DLL 已同步，实机待验证）。10-08 系列见 [remaining-crashes-followup-20261008](records/remaining-crashes-followup-20261008.md)，10-11 [crash-fixes-20261011](records/crash-fixes-20261011.md)，其他见 records 中 `*-crash*`、`pool-guard-*`、`player-logs*` |
 | 衣柜客户端 | [wardrobe-entry-delivery-20261018](records/wardrobe-entry-delivery-20261018.md)、[wardrobe-preview-ownership-20261018](records/wardrobe-preview-ownership-20261018.md)；2026-10-24 一键整理、跨来源分类/编号排序，10-20 界面重做及 10-21 原生音效、空部位暗化、套服裤裙标红见[服务端衣柜记录](../../BeiDou-Server/docs/records/wardrobe-redesign-20261020.md) |
 | 宠物 | [pet-potion-settings-20261018](records/pet-potion-settings-20261018.md)、[main-pet-inventory-mark-20261016](records/main-pet-inventory-mark-20261016.md) |
 

@@ -230,9 +230,12 @@ public:
 	}
 private:
 	static void GeneralHook() {
-		Memory::FillBytes(0x008D54A6, 0x90, 9); // Key ?
-		Memory::FillBytes(0x00937225, 0x90, 9); // Chat
-		Memory::FillBytes(0x00531EE8, 0x90, 9); // Group Message
+		// Preserve Chinese bytes, but remove the first of the two native increments
+		// as well. Advancing by two skips odd-length terminators and reads past
+		// the string buffer (observed at 0x00937216). Check every byte instead.
+		Memory::FillBytes(0x008D54A6, 0x90, 10); // Key ?
+		Memory::FillBytes(0x00937225, 0x90, 10); // Chat
+		Memory::FillBytes(0x00531EE8, 0x90, 10); // Group Message
 		// 剪贴板支持中文
 		Memory::FillBytes(0x004CAE7D, 0x90, 2);
 		Memory::WriteByte(0x004CAE8F, 0xEB);

@@ -1,5 +1,9 @@
-param([switch]$Baseline)
+param([switch]$Baseline, [switch]$ChatBoundsOnly, [string]$BaselineRef)
 $ErrorActionPreference = 'Stop'
+if ($Baseline -and [string]::IsNullOrWhiteSpace($BaselineRef)) {
+    throw 'Baseline requires -BaselineRef <commit> for the defect being reproduced.'
+}
+if (-not $Baseline -and $BaselineRef) { throw '-BaselineRef requires -Baseline.' }
 $repo = Split-Path $PSScriptRoot
 $output = Join-Path $repo '../.tmp/ime-focus-20261018'
 New-Item -ItemType Directory -Force $output | Out-Null
@@ -9,7 +13,7 @@ Import-Module (Join-Path $vs 'Common7/Tools/Microsoft.VisualStudio.DevShell.dll'
 Enter-VsDevShell -VsInstallPath $vs -SkipAutomaticLocation -DevCmdArguments '-arch=x86 -host_arch=x64' | Out-Null
 if ($Baseline) {
     # Capture git bytes directly; FixIme.h contains legacy GBK comments.
-    & node -e 'const fs=require("fs"),cp=require("child_process");fs.writeFileSync(process.argv[2],cp.execFileSync("git",["-C",process.argv[1],"show","HEAD:ezorsia/FixIme.h"]));' $repo "$output/ImeUnderTest.h"
+    & node -e 'const fs=require("fs"),cp=require("child_process");const ref=cp.execFileSync("git",["-C",process.argv[1],"rev-parse","--verify","--end-of-options",process.argv[3]+"^{commit}"]).toString().trim();fs.writeFileSync(process.argv[2],cp.execFileSync("git",["-C",process.argv[1],"show",ref+":ezorsia/FixIme.h"]));' $repo "$output/ImeUnderTest.h" $BaselineRef
     if ($LASTEXITCODE -ne 0) { throw 'Baseline extraction failed' }
 } else {
     Copy-Item -LiteralPath "$repo/ezorsia/FixIme.h" -Destination "$output/ImeUnderTest.h" -Force
@@ -32,6 +36,7 @@ $start.RedirectStandardOutput = $true
 $start.RedirectStandardError = $true
 $start.ArgumentList.Add((Resolve-Path "$repo/../BeiDou-Client/BeiDou.exe").Path)
 $start.ArgumentList.Add($variant)
+if ($ChatBoundsOnly) { $start.ArgumentList.Add('chat-bounds') }
 $test = [Diagnostics.Process]::Start($start)
 $stdout = $test.StandardOutput.ReadToEnd()
 $stderr = $test.StandardError.ReadToEnd()

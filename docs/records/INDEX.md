@@ -5,6 +5,7 @@
 - [boss-hp-shared-page-crash.md](boss-hp-shared-page-crash.md) — Boss 血量百分比显示的共享页写入崩溃
 - [captain-resource-crash-guards.md](captain-resource-crash-guards.md) — 船长玩家资源读取异常：第一版防崩溃修复
 - [chair-3015759-inlinks-20261004.md](chair-3015759-inlinks-20261004.md) — 超星魔导椅子（3015759）动画闪烁排查与修复
+- [chat-text-bounds-crash-20261026.md](chat-text-bounds-crash-20261026.md) — 2026-10-26 聊天中文补丁越界读取修复
 - [crash-claims-verification-20261013.md](crash-claims-verification-20261013.md) — 2026-10-13 闪退调查结论复核
 - [crash-fix-delivery-20261008.md](crash-fix-delivery-20261008.md) — 玩家崩溃修复交付（2026-10-08）
 - [crash-fixes-20261011.md](crash-fixes-20261011.md) — 2026-10-11 生产崩溃首批修复与本地交付

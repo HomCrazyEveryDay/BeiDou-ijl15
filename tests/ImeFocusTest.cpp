@@ -112,6 +112,11 @@ static void MapImage(const char* path) {
     }
     Need(!memcmp(reinterpret_cast<void*>(0x004CA05B), "\x39\x7c\x24\x0c\x74\x30", 6), "single loss gate");
     Need(!memcmp(reinterpret_cast<void*>(0x004D32C1), "\x83\x7c\x24\x08\x00\x74\x1a", 7), "multi loss gate");
+    // The first loop advances EDI (47); the other two advance ESI (46).
+    // Both increments must be independent one-byte instructions before patching.
+    Need(!memcmp(reinterpret_cast<void*>(0x008D54A6), "\x74\x0b\xc6\x47\x01\x20\xc6\x07\x20\x47\x47", 11), "key text native patch bytes");
+    Need(!memcmp(reinterpret_cast<void*>(0x00937225), "\x74\x18\xc6\x46\x01\x20\xc6\x06\x20\x46\x46", 11), "chat text native patch bytes");
+    Need(!memcmp(reinterpret_cast<void*>(0x00531EE8), "\x74\x0b\xc6\x46\x01\x20\xc6\x06\x20\x46\x46", 11), "group text native patch bytes");
 }
 static void Dependencies() {
     At<void*>(0x00BEC20C) = manager; At<void*>(0x00BEBF98) = nullptr; At<void*>(0x00BEC33C) = nullptr;
@@ -145,14 +150,95 @@ static void Dependencies() {
     Field<void*>(manager, 0x88) = manager + 4;
     nextOnDestroy = nullptr; associated = nullptr;
 }
+// Exercise the actual three native filtering loops against a guard page. The
+// production patch must preserve every byte and stop at the first terminator.
+struct TextCursor { char* esi; char* edi; };
+__declspec(naked) static void __cdecl RunTextLoop(DWORD entry, char* text, TextCursor* cursor) {
+    __asm {
+        push ebx
+        push esi
+        push edi
+        mov esi, [esp + 20]
+        mov edi, esi
+        xor ebx, ebx
+        call dword ptr [esp + 16]
+        mov eax, [esp + 24]
+        mov [eax], esi
+        mov [eax + 4], edi
+        pop edi
+        pop esi
+        pop ebx
+        ret
+    }
+}
+static DWORD faultAddress;
+static int CaptureTextFault(EXCEPTION_POINTERS* error) {
+    faultAddress = reinterpret_cast<DWORD>(error->ExceptionRecord->ExceptionAddress);
+    return error->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION
+        ? EXCEPTION_EXECUTE_HANDLER : EXCEPTION_CONTINUE_SEARCH;
+}
+static bool TryTextLoop(DWORD entry, char* text, TextCursor& cursor) {
+    __try { RunTextLoop(entry, text, &cursor); return true; }
+    __except (CaptureTextFault(GetExceptionInformation())) { return false; }
+}
+static void CheckTextBounds(bool baseline) {
+    struct Loop { DWORD entry, fault, end, importOperand; bool usesEdi; };
+    const Loop loops[] = {
+        {0x008D5495, 0x008D5497, 0x008D54C3, 0x008D54A0, true},
+        {0x00937214, 0x00937216, 0x0093724F, 0x0093721F},
+        {0x00531ED7, 0x00531ED9, 0x00531F05, 0x00531EE2}
+    };
+    SYSTEM_INFO info; GetSystemInfo(&info);
+    auto page = static_cast<char*>(VirtualAlloc(nullptr, info.dwPageSize * 2,
+        MEM_RESERVE, PAGE_NOACCESS));
+    Need(page && VirtualAlloc(page, info.dwPageSize, MEM_COMMIT, PAGE_READWRITE), "guarded string allocation");
+    unsigned cases = 0, faults = 0;
+    for (const auto& loop : loops) {
+        // Raw fixture VA intentionally has no 0x00 prefix: ps1 must not rebase
+        // this comparison. The operand is then explicitly redirected to our IAT.
+        constexpr DWORD nativeDbcsImport = 0xAF0064, imageRebase = 0x30000000;
+        Need(At<DWORD>(loop.importOperand) == nativeDbcsImport, "native DBCS import operand");
+        At<DWORD>(loop.importOperand) = nativeDbcsImport + imageRebase;
+        At<void*>(nativeDbcsImport + imageRebase) = reinterpret_cast<void*>(&IsDBCSLeadByte);
+        Memory::WriteByte(loop.end, 0xC3); // Stop before the unrelated string-release/UI code.
+        for (unsigned size : {0u, 1u, 2u, 3u, 4u, 5u, 31u, 32u, 1023u, 1024u}) {
+            for (bool mixed : {false, true}) {
+                char* text = page + info.dwPageSize - size - 1;
+                std::vector<char> expected(size + 1, 'A');
+                if (mixed) for (unsigned j = 0; j + 1 < size; j += 3) {
+                    expected[j] = '\xD6'; expected[j + 1] = '\xD0'; // GBK Chinese plus ASCII.
+                }
+                expected[size] = 0;
+                memcpy(text, expected.data(), expected.size());
+                TextCursor cursor{};
+                const bool ok = TryTextLoop(loop.entry, text, cursor);
+                if (baseline && (size & 1)) {
+                    Need(!ok && faultAddress == loop.fault, "old patch reproduces terminator-skipping read at native fault site");
+                    ++faults;
+                } else {
+                    Need(ok, "text loop stops before guard page");
+                    Need((loop.usesEdi ? cursor.edi : cursor.esi) == text + size, "text loop reaches the exact terminator");
+                }
+                Need(!memcmp(text, expected.data(), expected.size()), "Chinese and ASCII bytes preserved");
+                ++cases;
+            }
+        }
+    }
+    VirtualFree(page, 0, MEM_RELEASE);
+    std::printf("%s: %u native text cases across 3 loops, %u expected baseline access violations\n",
+        baseline ? "BASELINE REPRODUCED" : "PASS", cases, faults);
+}
 int main(int argc, char** argv) {
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
-    Need(argc == 3, "fixture and baseline|patched arguments");
+    Need(argc == 3 || argc == 4, "fixture and baseline|patched arguments");
     MapImage(argv[1]); Dependencies();
     BYTE singleTail[0x1f], multiTail[0x1f];
     memcpy(singleTail, reinterpret_cast<void*>(0x004CA08F), sizeof(singleTail));
     memcpy(multiTail, reinterpret_cast<void*>(0x004D32E0), sizeof(multiTail));
     FixIme::HookNew();
+    if (argc == 4 && !strcmp(argv[3], "chat-bounds")) {
+        CheckTextBounds(!strcmp(argv[2], "baseline")); return 0;
+    }
     Need(!memcmp(singleTail, reinterpret_cast<void*>(0x004CA08F), sizeof(singleTail))
         && !memcmp(multiTail, reinterpret_cast<void*>(0x004D32E0), sizeof(multiTail)), "native return tails intact");
     Focus(single + 4); Need(associated == saved && enabled, "single gain enables IME");
