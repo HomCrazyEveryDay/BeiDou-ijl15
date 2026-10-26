@@ -14,7 +14,8 @@ $fixture = Join-Path $output '测试模块.dll'
 & cl.exe /nologo /LD /O2 /MT (Join-Path $PSScriptRoot 'ModuleAuditFixture.cpp') "/Fo:$output/fixture.obj" "/Fe:$fixture" /link "/IMPLIB:$output/fixture.lib"
 if ($LASTEXITCODE -ne 0) { throw 'Fixture build failed' }
 $sources = @('ModuleAudit.cpp','ClientLog.cpp','ClientDiagnostics.cpp') | ForEach-Object { Join-Path $repo "ezorsia/$_" }
-& cl.exe /nologo /std:c++17 /O2 /EHsc /DMODULE_AUDIT_TEST (Join-Path $PSScriptRoot 'ModuleAuditTest.cpp') @sources "/I:$repo/ezorsia" "/Fo:$output/" "/Fe:$output/test.exe" /link Advapi32.lib
+$sources += @('miniz.c', 'miniz_tdef.c') | ForEach-Object { Join-Path $repo "ezorsia/third_party/miniz/$_" }
+& cl.exe /nologo /std:c++17 /O2 /EHsc /DMODULE_AUDIT_TEST /DMINIZ_NO_ZLIB_APIS /DMINIZ_NO_INFLATE_APIS (Join-Path $PSScriptRoot 'ModuleAuditTest.cpp') @sources "/I:$repo/ezorsia" "/Fo:$output/" "/Fe:$output/test.exe" /link Advapi32.lib
 if ($LASTEXITCODE -ne 0) { throw 'Module audit test build failed' }
 & "$output/test.exe" $output $fixture
 if ($LASTEXITCODE -ne 0) { throw "Module audit test failed: $LASTEXITCODE" }
@@ -37,6 +38,9 @@ $plainLogs = Get-ChildItem "$output/logs/*.log" | Get-Content -Raw
 if (($plainLogs -join '').Contains('测试模块')) { throw 'Module information leaked to ordinary logs' }
 $roundtrip = @(& $decode -Path "$output/crypto.bda" -PassThru)
 if ($roundtrip[1].value -cne '测试.dll') { throw 'Unicode roundtrip failed' }
+$compressed = @(& $decode -Path "$output/compression.bda" -PassThru)
+if ($compressed.Count -ne 501 -or $compressed[-1].record -ne 499) { throw 'Compressed batch lost records' }
+Write-Host "500 snapshot records compressed/encrypted to $((Get-Item "$output/compression.bda").Length) bytes."
 function MustReject([string]$name, [scriptblock]$action) {
     $rejected = $false
     try { & $action | Out-Null } catch { $rejected = $true }

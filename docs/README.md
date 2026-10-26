@@ -7,7 +7,7 @@
 - [endpoint-override.md](endpoint-override.md) — 连接线路由启动器下发，DLL 不再读 config.ini 连接配置
 - [launcher-coexistence.md](launcher-coexistence.md) — 正式与开发启动器共存
 - [macos-wine.md](macos-wine.md) — macOS / Wine 11 兼容总入口（字体、显示细节在 records/macos-*）
-- [module-audit.md](module-audit.md) — DLL 模块加密日志
+- [module-audit.md](module-audit.md) — DLL 模块加密日志；2026-10-26 加密前批次压缩和无变化快照去重为现行实现，待客户端发布
 - [default-exit-monitor.md](default-exit-monitor.md) — 退出监视与条件 mini dump（诊断开关现由启动器 `GameLaunchSettings` 下发）
 
 ## 诊断

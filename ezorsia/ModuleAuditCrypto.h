@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <stdexcept>
+#include "third_party/miniz/miniz_tdef.h"
 
 #pragma comment(lib, "bcrypt.lib")
 
@@ -13,9 +14,11 @@ inline void Check(NTSTATUS result) {
     if (result < 0) throw std::runtime_error("module audit crypto failed");
 }
 
-// BDMAUD01 | SHA256(key)[0:8] | random file ID[16]. Each frame:
+// BDMAUD02 | SHA256(key)[0:8] | random file ID[16]. Each frame:
 // plaintext length LE32 | sequence LE32 | random nonce[12] | ciphertext | tag[16].
-// AAD = file header + length + sequence. No plaintext fallback.
+// Authenticated plaintext = codec (0=raw, 1=raw DEFLATE) | expanded length LE32 | JSONL.
+// Batch at most 65537 bytes, flush every 5 seconds or at rotation/shutdown.
+// AAD = file header + length + sequence. No plaintext disk fallback.
 class Writer {
     BCRYPT_ALG_HANDLE algorithm_ = nullptr;
     BCRYPT_KEY_HANDLE key_ = nullptr;
@@ -24,6 +27,7 @@ class Writer {
     unsigned long sequence_ = 0;
     unsigned long bytes_ = 0;
     bool dirty_ = false;
+    std::string pending_;
     void WriteBytes(const void* data, DWORD length) {
         DWORD written = 0;
         if (!WriteFile(file_, data, length, &written, nullptr) || written != length)
@@ -45,7 +49,7 @@ public:
         Check(BCryptSetProperty(algorithm_, BCRYPT_CHAINING_MODE,
             reinterpret_cast<PUCHAR>(const_cast<wchar_t*>(BCRYPT_CHAIN_MODE_GCM)), sizeof(BCRYPT_CHAIN_MODE_GCM), 0));
         Check(BCryptGenerateSymmetricKey(algorithm_, &key_, nullptr, 0, const_cast<PUCHAR>(secret), 32, 0));
-        memcpy(header_, "BDMAUD01", 8);
+        memcpy(header_, "BDMAUD02", 8);
         memcpy(header_ + 8, keyId, 8);
     }
     void Open(const std::wstring& path) {
@@ -59,9 +63,26 @@ public:
         WriteBytes(header_, sizeof(header_));
     }
     void Append(const std::string& json) {
-        if (json.empty() || json.size() > 65536 || sequence_ == MAXDWORD)
+        if (json.empty() || json.size() > 65536)
             throw std::runtime_error("module audit frame too large");
-        const DWORD length = static_cast<DWORD>(json.size());
+        if (pending_.size() + json.size() + 1 > 65537) WriteBatch();
+        pending_ += json;
+        pending_ += '\n';
+    }
+private:
+    void WriteBatch() {
+        if (pending_.empty()) return;
+        if (sequence_ == MAXDWORD) throw std::runtime_error("module audit sequence exhausted");
+        const DWORD expanded = static_cast<DWORD>(pending_.size());
+        std::vector<unsigned char> plain(expanded + 5);
+        // A bounded output buffer: incompressible data uses the raw codec without growth.
+        const size_t compressed = tdefl_compress_mem_to_mem(plain.data() + 5, expanded,
+            pending_.data(), expanded, TDEFL_DEFAULT_MAX_PROBES);
+        plain[0] = compressed && compressed < expanded ? 1 : 0;
+        memcpy(plain.data() + 1, &expanded, 4);
+        if (plain[0]) plain.resize(compressed + 5);
+        else memcpy(plain.data() + 5, pending_.data(), expanded);
+        const DWORD length = static_cast<DWORD>(plain.size());
         std::vector<unsigned char> frame(length + 36);
         const DWORD seq = ++sequence_;
         memcpy(frame.data(), &length, 4);
@@ -76,17 +97,23 @@ public:
         auth.pbTag = frame.data() + 20 + length; auth.cbTag = 16;
         auth.pbAuthData = aad; auth.cbAuthData = sizeof(aad);
         ULONG encrypted = 0;
-        Check(BCryptEncrypt(key_, reinterpret_cast<PUCHAR>(const_cast<char*>(json.data())), length, &auth,
+        Check(BCryptEncrypt(key_, plain.data(), length, &auth,
             nullptr, 0, frame.data() + 20, length, &encrypted, 0));
         if (encrypted != length) throw std::runtime_error("module audit encryption length mismatch");
         WriteBytes(frame.data(), static_cast<DWORD>(frame.size()));
+        pending_.clear();
     }
+public:
+    // Make evidence visible to the OS/uploader without forcing a synchronous disk flush.
+    void Commit() { WriteBatch(); }
     void Flush() {
+        WriteBatch();
         if (file_ != INVALID_HANDLE_VALUE && dirty_) {
             if (!FlushFileBuffers(file_)) throw std::runtime_error("module audit flush failed");
             dirty_ = false;
         }
     }
-    unsigned long Bytes() const { return bytes_; }
+    // Conservative rotation accounting includes a still-uncompressed pending batch.
+    unsigned long Bytes() const { return bytes_ + (pending_.empty() ? 0 : static_cast<DWORD>(pending_.size()) + 41); }
 };
 }

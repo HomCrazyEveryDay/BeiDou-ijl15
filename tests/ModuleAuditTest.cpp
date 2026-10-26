@@ -13,9 +13,26 @@ int wmain(int argc, wchar_t** argv) {
         ModuleAuditCrypto::Writer writer;
         writer.Initialize(ModuleAuditKey::Secret, ModuleAuditKey::Id);
         writer.Open(directory + L"\\crypto.bda");
-        writer.Append("{\"event\":\"session\",\"clientRunId\":\"crypto-test\",\"part\":1}");
-        writer.Append("{\"event\":\"unicode\",\"value\":\"\xe6\xb5\x8b\xe8\xaf\x95.dll\",\"record\":1}");
+        writer.Append("{\"event\":\"session\",\"clientRunId\":\"0123456789abcdef0123456789abcdef\",\"part\":1}");
         writer.Flush();
+        writer.Append("{\"event\":\"unicode\",\"value\":\"\xe6\xb5\x8b\xe8\xaf\x95.dll\",\"record\":1}");
+        writer.Commit();
+        // An abrupt process exit can retain committed critical evidence without a 5s flush.
+        WIN32_FILE_ATTRIBUTE_DATA info{};
+        if (!GetFileAttributesExW((directory + L"\\crypto.bda").c_str(), GetFileExInfoStandard, &info)
+            || info.nFileSizeLow != writer.Bytes()) return 6;
+        writer.Flush();
+    }
+    {
+        ModuleAuditCrypto::Writer writer;
+        writer.Initialize(ModuleAuditKey::Secret, ModuleAuditKey::Id);
+        writer.Open(directory + L"\\compression.bda");
+        writer.Append("{\"event\":\"session\",\"clientRunId\":\"0123456789abcdef0123456789abcdef\",\"part\":1}");
+        for (unsigned i = 0; i < 500; ++i)
+            writer.Append("{\"event\":\"snapshot\",\"record\":" + std::to_string(i)
+                + ",\"moduleCount\":120,\"dllCount\":119,\"outsideGameAndWindows\":5,\"complete\":true}");
+        writer.Flush();
+        if (writer.Bytes() > 8000) return 5;
     }
     SetEnvironmentVariableW(L"BEIDOU_MODULE_AUDIT_SECONDS", L"5");
     ModuleAudit::Start();

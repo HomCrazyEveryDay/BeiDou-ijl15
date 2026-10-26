@@ -302,6 +302,14 @@
     <ClInclude Include="targetver.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="third_party\miniz\miniz.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PreprocessorDefinitions>MINIZ_NO_ZLIB_APIS;MINIZ_NO_INFLATE_APIS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <ClCompile Include="third_party\miniz\miniz_tdef.c">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <PreprocessorDefinitions>MINIZ_NO_ZLIB_APIS;MINIZ_NO_INFLATE_APIS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
     <ClCompile Include="AbsoluteDefenseSync.cpp" />
     <ClCompile Include="AranComboUi.cpp" />
     <ClCompile Include="AranFirstAttack.cpp" />

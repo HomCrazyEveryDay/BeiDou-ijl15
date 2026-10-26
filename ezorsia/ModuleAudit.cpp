@@ -179,6 +179,10 @@ class Audit {
     unsigned long long record_ = 0;
     bool baseline_ = false;
     bool rebaseline_ = false;
+    bool scanFailed_ = false;
+    ULONGLONG lastSnapshot_ = 0;
+    size_t lastPending_ = 0;
+    unsigned unchangedScans_ = 0;
     std::string lastConnection_;
     ULONG_PTR exe_ = reinterpret_cast<ULONG_PTR>(GetModuleHandleW(nullptr));
     void OpenPart() {
@@ -244,6 +248,7 @@ public:
         Write(event, fields);
     }
     void Drain() {
+        bool recorded = false;
         // Bound work even if notifications arrive continuously.
         for (unsigned count = 0; count < kQueueSize; ++count) {
             const LONG read = _InterlockedCompareExchange(&g_read, 0, 0);
@@ -252,15 +257,21 @@ public:
             _InterlockedExchange(&g_read, (read + 1) % kQueueSize);
             Record(event.reason == 1 ? "load_notification" : "unload_notification",
                 Module{event.base, event.size, event.path, event.truncated}, event.reason == 1);
+            recorded = true;
         }
         const LONG dropped = _InterlockedExchange(&g_dropped, 0);
         if (dropped) Write("coverage_gap", ",\"reason\":\"notification_queue_overflow\",\"dropped\":"
             + std::to_string(static_cast<unsigned long>(dropped)));
+        // Preserve the old WriteFile visibility for crash-adjacent module changes.
+        // Compression batches the drained notifications; disk flush still runs every 5s.
+        if (recorded || dropped) writer_.Commit();
     }
     void Scan() {
         Modules current; DWORD error = 0;
         if (!Snapshot(current, error)) {
+            scanFailed_ = true;
             Write("snapshot_failed", ",\"win32Error\":" + std::to_string(error));
+            writer_.Commit();
             return; // An incomplete scan must never synthesize mass unloads.
         }
         if (rebaseline_) {
@@ -269,22 +280,34 @@ public:
             previous_.clear(); scheduled_.clear(); pending_.clear();
             baseline_ = false; rebaseline_ = false;
         }
+        bool changed = !baseline_ || scanFailed_;
         size_t dlls = 0, other = 0;
         for (const auto& item : current) {
             const Module& module = item.second;
             if (module.base != exe_) { ++dlls; if (Origin(module.path) == "other") ++other; }
             const auto old = previous_.find(item.first);
-            if (old == previous_.end() || old->second.path != module.path || old->second.size != module.size)
+            if (old == previous_.end() || old->second.path != module.path || old->second.size != module.size) {
+                changed = true;
                 Record(baseline_ ? "snapshot_added" : "initial_module", module, true);
+            }
         }
         for (const auto& item : previous_) {
             const auto now = current.find(item.first);
-            if (now == current.end() || now->second.path != item.second.path || now->second.size != item.second.size)
+            if (now == current.end() || now->second.path != item.second.path || now->second.size != item.second.size) {
+                changed = true;
                 Record("snapshot_removed", item.second, false);
+            }
         }
-        Write("snapshot", ",\"moduleCount\":" + std::to_string(current.size()) + ",\"dllCount\":" + std::to_string(dlls)
-            + ",\"outsideGameAndWindows\":" + std::to_string(other)
-            + ",\"metadataPending\":" + std::to_string(pending_.size()) + ",\"complete\":true");
+        const ULONGLONG now = GetTickCount64();
+        if (changed || pending_.size() != lastPending_ || now - lastSnapshot_ >= 300000) {
+            Write("snapshot", ",\"moduleCount\":" + std::to_string(current.size()) + ",\"dllCount\":" + std::to_string(dlls)
+                + ",\"outsideGameAndWindows\":" + std::to_string(other)
+                + ",\"metadataPending\":" + std::to_string(pending_.size())
+                + ",\"unchangedScans\":" + std::to_string(unchangedScans_) + ",\"complete\":true");
+            lastSnapshot_ = now; lastPending_ = pending_.size(); unchangedScans_ = 0;
+            writer_.Commit();
+        } else ++unchangedScans_;
+        scanFailed_ = false;
         previous_ = std::move(current); baseline_ = true;
     }
     void Connection() {
@@ -297,6 +320,7 @@ public:
                     + ",\"state\":" + Json(std::string(ClientDiagnostics::StateName(snapshot.connectionState)))
                     + ",\"attempt\":" + std::to_string(snapshot.diagnosticAttempt));
                 lastConnection_ = value;
+                writer_.Commit();
             }
         }
     }
@@ -441,8 +465,12 @@ void ModuleAudit::ExerciseBoundsForTest() {
     NativeNotification data{0, &name, &name, reinterpret_cast<void*>(0x12340000), 4096};
     for (unsigned i = 0; i < kQueueSize + 17; ++i) OnNotification(1, &data, nullptr);
     audit.Drain();
-    const std::string payload = ",\"padding\":" + Json(std::string(8192, 'x'));
-    for (unsigned i = 0; i < 600; ++i) audit.Write("stress", payload);
+    // Unique random bytes keep the rotation test meaningful with compression enabled.
+    for (unsigned i = 0; i < 1200; ++i) {
+        unsigned char random[4096];
+        ModuleAuditCrypto::Check(BCryptGenRandom(nullptr, random, sizeof(random), BCRYPT_USE_SYSTEM_PREFERRED_RNG));
+        audit.Write("stress", ",\"padding\":" + Json(Hex(random, sizeof(random))));
+    }
     audit.Scan(); audit.Flush();
 }
 #endif
