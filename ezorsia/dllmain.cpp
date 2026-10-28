@@ -25,6 +25,7 @@
 #include "StackedBuffIcons.h"
 #include "SkillTooltipLayout.h"
 #include "SkillPointSync.h"
+#include "EvanSpReset.h"
 #include "HiredMerchantClock.h"
 #include "SelectCharMacFix.h"
 #include "MovementKeyHook.h"
@@ -1256,6 +1257,8 @@ namespace
 		InstallHurricaneMovement();
 		SkillTooltipLayout::Install();
 		SkillPointSync::Install();
+		if (!EvanSpReset::Install(GetModuleHandleW(nullptr)))
+			ClientLog::Append(ClientLog::Component::Lifecycle, "evan_sp_reset_install_failed");
 		HiredMerchantClock::Install();
 		InstallSuperOctopusAttackCadence();
 		InstallBattleshipMovementSpeed();

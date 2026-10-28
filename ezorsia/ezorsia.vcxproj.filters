@@ -59,6 +59,9 @@
     <ClInclude Include="SkillPointSync.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="EvanSpReset.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="HiredMerchantClock.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -507,6 +510,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="SkillPointSync.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="EvanSpReset.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="HiredMerchantClock.cpp">

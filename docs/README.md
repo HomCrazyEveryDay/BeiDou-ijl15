@@ -25,7 +25,7 @@
 - 骑宠抓绳：[mount-rope-alignment-20261018](records/mount-rope-alignment-20261018.md) — 以 2026-10-24 井口回归修正为准：显示位置查询未命中时回退原生位置，离线通过、实机待验证
 - 访客套装：[set-item-bonus.md](set-item-bonus.md) — 0x1011 权威快照、装备循环前安全整数加算和游戏线程属性重算；实机待验收
 - 套装提示框：[set-item-tooltip.md](set-item-tooltip.md) — 092 布局、set 5 中文资源；修复实测发现的坐标偏移/抖动，原生坐标转换和幂等定位已离线验证，本版未安装、待复测
-- 龙神 084 → 083：[evan-ui-localization.md](evan-ui-localization.md)、[evan-killer-wings.md](evan-killer-wings.md)、[evan-phantom-imprint.md](evan-phantom-imprint.md)、[evan-soul-stone.md](evan-soul-stone.md)、[evan-maple-hero-animation.md](evan-maple-hero-animation.md)、[evan-dark-fog-animation.md](evan-dark-fog-animation.md)、[evan-thrust-flame-wheel-effects.md](evan-thrust-flame-wheel-effects.md)、[evan-dragon-visibility.md](evan-dragon-visibility.md)、[evan-dragon-follow-facing.md](evan-dragon-follow-facing.md)、[evan-dream-frame-scaling.md](evan-dream-frame-scaling.md)、[evan-incubation-scaling.md](evan-incubation-scaling.md)
+- 龙神 084 → 083：[单点重置卷与窗口兼容](../../BeiDou-Server/docs/evan-sp-accounting.md)（10-28，待用户实机验收）、[evan-ui-localization.md](evan-ui-localization.md)、[evan-killer-wings.md](evan-killer-wings.md)、[evan-phantom-imprint.md](evan-phantom-imprint.md)、[evan-soul-stone.md](evan-soul-stone.md)、[evan-maple-hero-animation.md](evan-maple-hero-animation.md)、[evan-dark-fog-animation.md](evan-dark-fog-animation.md)、[evan-thrust-flame-wheel-effects.md](evan-thrust-flame-wheel-effects.md)、[evan-dragon-visibility.md](evan-dragon-visibility.md)、[evan-dragon-follow-facing.md](evan-dragon-follow-facing.md)、[evan-dream-frame-scaling.md](evan-dream-frame-scaling.md)、[evan-incubation-scaling.md](evan-incubation-scaling.md)
 
 ## 主题的现行依据在 records 中
 
