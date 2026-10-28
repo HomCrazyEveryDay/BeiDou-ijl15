@@ -211,6 +211,9 @@
     <ClInclude Include="ChairImageLinks.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="SplitChairResources.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="ResourceVariant.h">
       <Filter>Header Files</Filter>
     </ClInclude>

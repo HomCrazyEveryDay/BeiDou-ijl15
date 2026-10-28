@@ -220,6 +220,7 @@
     <ClInclude Include="ModuleAuditCrypto.h" />
     <ClInclude Include="ChairCompatibility.h" />
     <ClInclude Include="ChairImageLinks.h" />
+    <ClInclude Include="SplitChairResources.h" />
     <ClInclude Include="ResourceVariant.h" />
     <ClInclude Include="CrashReporter.h" />
     <ClInclude Include="RefreshRateTrace.h" />

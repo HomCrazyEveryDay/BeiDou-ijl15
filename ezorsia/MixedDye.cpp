@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "MixedDyeResources.h"
 #include "ChairImageLinks.h"
+#include "SplitChairResources.h"
 #include "ModernWeaponResources.h"
 #include "ModernSetEffects.h"
 #include "CrashReporter.h"
@@ -55,9 +56,12 @@ HRESULT __stdcall GetCompatibleObject(void* rm,BSTR path,VARIANT a,VARIANT b,VAR
     if(SUCCEEDED(hr))ModernSetEffects::AdaptNativeRoot(factory,rm,path,result);
     return hr;
 }
+HRESULT __stdcall GetChairObject(void* rm,BSTR path,VARIANT a,VARIANT b,VARIANT* result){
+    return SplitChairResources::GetObject(GetCompatibleObject,factory,rm,path,a,b,result);
+}
 HRESULT __stdcall GetMixedObject(void* rm,BSTR path,VARIANT a,VARIANT b,VARIANT* result){
     std::uint32_t id=0;Style style;std::wstring suffix;
-    if(!ParsePath(path,id,style,suffix))return ChairImageLinks::GetObject(GetCompatibleObject,factory,rm,path,a,b,result);
+    if(!ParsePath(path,id,style,suffix))return ChairImageLinks::GetObject(GetChairObject,factory,rm,path,a,b,result);
     if(!result)return E_POINTER;
     try{
         if(building)throw E_UNEXPECTED;

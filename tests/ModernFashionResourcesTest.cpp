@@ -256,6 +256,7 @@ void CheckChairSettings(Factory factory,void* manager){
 }
 #include "SchoolSetEffectsCases.h"
 #include "ModernStandingActionsCases.h"
+#include "SplitChairResourcesCases.h"
 int wmain(int argc,wchar_t** argv){
     SetErrorMode(SEM_FAILCRITICALERRORS|SEM_NOGPFAULTERRORBOX);setvbuf(stdout,nullptr,_IONBF,0);
     Require((argc==2 || argc==3) && SetCurrentDirectoryW(argv[1]),"client resource directory");Check(CoInitialize(nullptr));
@@ -270,6 +271,7 @@ int wmain(int argc,wchar_t** argv){
     Check(reinterpret_cast<HRESULT(__cdecl*)(void**,int)>(GetProcAddress(pcom,"PcRootNameSpace"))(&ns.p,1));
     BSTR path=SysAllocString(argc==3?argv[2]:L"Data");Check(Method<HRESULT(__stdcall*)(void*,BSTR)>(fs.p,0x34)(fs.p,path));SysFreeString(path);
     path=SysAllocString(L"/");Check(Method<HRESULT(__stdcall*)(void*,BSTR,void*,int)>(ns.p,0x18)(ns.p,path,fs.p,0));SysFreeString(path);
-    try {CheckWeapons(factory,rm.p);CheckCapes(factory,rm.p);CheckEquipmentEffects(factory,rm.p);CheckSchoolSets(factory,rm.p);CheckStandingAndRotation(factory,rm.p);CheckChairCoordinates(rm.p);CheckChairSettings(factory,rm.p);}catch(HRESULT hr){std::printf("HRESULT %08x\n",hr);return 1;}
+    SplitChairTests::Install(factory,rm.p);
+    try {SplitChairTests::CheckChairs(rm.p);CheckWeapons(factory,rm.p);CheckCapes(factory,rm.p);CheckEquipmentEffects(factory,rm.p);CheckSchoolSets(factory,rm.p);CheckStandingAndRotation(factory,rm.p);CheckChairCoordinates(rm.p);CheckChairSettings(factory,rm.p);}catch(HRESULT hr){std::printf("HRESULT %08x\n",hr);return 1;}
     return 0;
 }

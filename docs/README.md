@@ -16,6 +16,7 @@
 
 ## 功能与兼容
 
+- 椅子小文件：[现行交付与验证](../../BeiDou-Server/docs/records/november-refresh-20261028.md#椅子小文件与发布体积2026-10-28) — 保留 release 45 的旧合集，新增椅子用五位小文件；DLL 合并原生根与重定向深路径，配套服务端按 ID 优先读取小文件。旧椅子、覆盖/回退、真实 PCOM 读取与宠物座位回归通过，已同步本地，实机待用户验收。
 - 十一月焕新：[通用武器、ItemEff、套装站姿和椅子兼容](../../BeiDou-Server/docs/records/november-refresh-20261028.md) — 已接入 16 件独立特效、往期两套校服的完整随机同伴、运动套服原版浮动站姿及特殊动作特效规则，修复商店武器类别、名片接缝和标题性别重复。12:48 用户反馈小天使穿戴崩溃后，已修正动作表的引用类型标记，补测真实加载分支及 112 个身体/衣服图片引用；12:57 新 DLL 已安装本地，实机待用户复测。现行依据见记录中的“12:48 小天使穿戴崩溃修复”。17:55 补上 GM 隐身时特效闪烁的通用透明度修复，真实绘图组件复现与修复回归通过，新 DLL 已替换本地，详见“GM 隐身时装备特效反复闪亮”。
 
 - 界面与系统：[buff-countdown.md](buff-countdown.md)、[character-slots-20.md](character-slots-20.md)、[hired-merchant-clock.md](hired-merchant-clock.md)、[maple-life-localization.md](maple-life-localization.md)、[high-id-face-preview.md](high-id-face-preview.md)
