@@ -554,8 +554,8 @@ bool IsMineral(int id)
         || (id >= 4004000 && id <= 4004004) // Crystal ores
         || (id >= 4005000 && id <= 4005004) // Refined crystals
         || (id >= 4260000 && id <= 4260008) // Maker monster/item crystals
-        || ((id / 100 == 42504 || (id / 100 >= 42508 && id / 100 <= 42514))
-            && id % 100 <= 2); // Lower/intermediate/advanced Maker crystals
+        || (id / 100 >= 42500 && id / 100 <= 42514
+            && id % 100 <= 2); // Lower/intermediate/advanced Maker gems and crystals
 }
 int __stdcall HandleEtcDoubleClick(void* nativeItem, int slot)
 {
