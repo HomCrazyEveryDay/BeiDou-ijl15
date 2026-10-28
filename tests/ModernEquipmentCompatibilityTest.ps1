@@ -21,7 +21,11 @@ $test = [regex]::Replace($test, '(?i)0x00(?=[4-9ab][0-9a-f]{5}\b)', '0x30')
 [IO.File]::WriteAllText((Join-Path $outputDir 'ModernEquipmentCompatibilityUnderTest.h'), $guard)
 foreach ($file in @(
     @{ Source = (Join-Path $sourceDirectory 'NameTagOriginFix.h'); Target = 'NameTagOriginFixUnderTest.h' },
-    @{ Source = (Join-Path $PSScriptRoot 'NameTagOriginFixCases.h'); Target = 'NameTagOriginFixCases.h' }
+    @{ Source = (Join-Path $PSScriptRoot 'NameTagOriginFixCases.h'); Target = 'NameTagOriginFixCases.h' },
+    @{ Source = (Join-Path $sourceDirectory 'EquipmentGenderTooltip.h'); Target = 'EquipmentGenderTooltip.h' },
+    @{ Source = (Join-Path $sourceDirectory 'ModernStandingActions.h'); Target = 'ModernStandingActions.h' },
+    @{ Source = (Join-Path $PSScriptRoot 'ModernStandingActionHookCases.h'); Target = 'ModernStandingActionHookCases.h' },
+    @{ Source = (Join-Path $PSScriptRoot 'EquipmentGenderTooltipCases.h'); Target = 'EquipmentGenderTooltipCases.h' }
 )) {
     $content = [IO.File]::ReadAllText($file.Source)
     $content = [regex]::Replace($content, '(?i)0x00(?=[4-9ab][0-9a-f]{5}\b)', '0x30')

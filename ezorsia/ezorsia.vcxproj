@@ -242,6 +242,13 @@
     <ClInclude Include="MovementKeyHook.h" />
     <ClInclude Include="NpcShopCurrency.h" />
     <ClInclude Include="ModernEquipmentCompatibility.h" />
+    <ClInclude Include="EquipmentGenderTooltip.h" />
+    <ClInclude Include="ModernWeaponResources.h" />
+    <ClInclude Include="ModernChairResources.h" />
+    <ClInclude Include="ModernCapeEffects.h" />
+    <ClInclude Include="ModernSetEffects.h" />
+    <ClInclude Include="ModernStandingActions.h" />
+    <ClInclude Include="AvatarActionIds.h" />
     <ClInclude Include="NameTagOriginFix.h" />
     <ClInclude Include="MineralBagWnd.h" />
     <ClInclude Include="MixedDyeWnd.h" />

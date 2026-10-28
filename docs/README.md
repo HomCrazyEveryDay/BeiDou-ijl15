@@ -16,6 +16,8 @@
 
 ## 功能与兼容
 
+- 十一月焕新：[通用武器、ItemEff、套装站姿和椅子兼容](../../BeiDou-Server/docs/records/november-refresh-20261028.md) — 已接入 16 件独立特效、往期两套校服的完整随机同伴、运动套服原版浮动站姿及特殊动作特效规则，修复商店武器类别、名片接缝和标题性别重复。12:48 用户反馈小天使穿戴崩溃后，已修正动作表的引用类型标记，补测真实加载分支及 112 个身体/衣服图片引用；12:57 新 DLL 已安装本地，实机待用户复测。现行依据见记录中的“12:48 小天使穿戴崩溃修复”。17:55 补上 GM 隐身时特效闪烁的通用透明度修复，真实绘图组件复现与修复回归通过，新 DLL 已替换本地，详见“GM 隐身时装备特效反复闪亮”。
+
 - 界面与系统：[buff-countdown.md](buff-countdown.md)、[character-slots-20.md](character-slots-20.md)、[hired-merchant-clock.md](hired-merchant-clock.md)、[maple-life-localization.md](maple-life-localization.md)、[high-id-face-preview.md](high-id-face-preview.md)
 - 技能跳字与指令：[combo-tempest-damage-timing.md](combo-tempest-damage-timing.md)、[shadow-partner-damage-timing.md](shadow-partner-damage-timing.md)、[aran-combo-command.md](aran-combo-command.md)、[skill-point-sync.md](skill-point-sync.md)
 - 外星访客：[visitors-morph.md](visitors-morph.md) — Morph 64–67 输入、等级、动作、固定伤害与原生 Reactor 协议兼容；以当前实现和离线测试为依据，实机待验收

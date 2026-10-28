@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "MixedDyeResources.h"
 #include "ChairImageLinks.h"
+#include "ModernWeaponResources.h"
+#include "ModernSetEffects.h"
 #include "CrashReporter.h"
 #include <list>
 #include <mutex>
@@ -48,9 +50,14 @@ Object LoadBase(void* rm,int id,bool face){
     auto hr=originalGetObject(rm,name,missing,missing,&value.v);SysFreeString(name);Check(hr);
     auto property=Query(value.v,PropertyIID());if(!property.p)throw E_NOINTERFACE;return property;
 }
+HRESULT __stdcall GetCompatibleObject(void* rm,BSTR path,VARIANT a,VARIANT b,VARIANT* result){
+    auto hr=ModernWeaponResources::GetObject(originalGetObject,factory,rm,path,a,b,result);
+    if(SUCCEEDED(hr))ModernSetEffects::AdaptNativeRoot(factory,rm,path,result);
+    return hr;
+}
 HRESULT __stdcall GetMixedObject(void* rm,BSTR path,VARIANT a,VARIANT b,VARIANT* result){
     std::uint32_t id=0;Style style;std::wstring suffix;
-    if(!ParsePath(path,id,style,suffix))return ChairImageLinks::GetObject(originalGetObject,factory,rm,path,a,b,result);
+    if(!ParsePath(path,id,style,suffix))return ChairImageLinks::GetObject(GetCompatibleObject,factory,rm,path,a,b,result);
     if(!result)return E_POINTER;
     try{
         if(building)throw E_UNEXPECTED;

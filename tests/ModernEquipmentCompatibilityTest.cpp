@@ -33,6 +33,8 @@ static BOOL WINAPI TestVirtualProtect(void* address, SIZE_T size, DWORD protecti
 #include "NameTagOriginFixUnderTest.h"
 #undef VirtualProtect
 #include "NameTagOriginFixCases.h"
+#include "EquipmentGenderTooltipCases.h"
+#include "ModernStandingActionHookCases.h"
 bool Memory::SetHook(bool, void**, void*) { return false; }
 static void MapClient(const wchar_t* path) {
     FILE* file = nullptr;
@@ -59,6 +61,106 @@ static void MapClient(const wchar_t* path) {
 }
 
 static int iconCalls = 0, iconMode = 0;
+static DWORD weaponTypeSite = 0x005CD06A;
+__declspec(naked) static void WeaponTypeResult() {
+    __asm {
+        cmp edx, 12345678h
+        jne bad
+        cmp ecx, esi
+        jne bad
+        mov eax, edi
+        ret
+    bad:
+        mov eax, 9
+        ret
+    }
+}
+__declspec(naked) static void KnownWeaponType() { __asm { mov edi, 1 } __asm { jmp WeaponTypeResult } }
+__declspec(naked) static void InvalidWeaponType() { __asm { mov edi, 2 } __asm { jmp WeaponTypeResult } }
+__declspec(naked) static void SkippedWeaponType() { __asm { mov edi, 3 } __asm { jmp WeaponTypeResult } }
+__declspec(naked) static int __cdecl RunWeaponType(const wchar_t*, int) {
+    __asm {
+        push ebp
+        mov ebp, esp
+        push ebx
+        push esi
+        push edi
+        mov esi, dword ptr [ebp + 8]
+        mov eax, dword ptr [ebp + 12]
+        mov edx, 12345678h
+        call dispatch
+        cmp ebx, dword ptr [ebp + 12]
+        je done
+        mov eax, 9
+    done:
+        pop edi
+        pop esi
+        pop ebx
+        pop ebp
+        ret
+    dispatch:
+        push esi
+        push 0ABCDEFh
+        mov ecx, 87654321h
+        jmp dword ptr [weaponTypeSite]
+    }
+}
+static void CheckWeaponTypeEnumeration() {
+    using namespace ModernEquipmentCompatibility;
+    // Execute the real index lookup and zero-index branch in an isolated image.
+    // Only the destinations (mark supported / throw / advance enumeration) are
+    // replaced, leaving the original stack cleanup and patched bridge executable.
+    Require(*reinterpret_cast<DWORD*>(0x005CF5DE) == 0xBD8618
+        && *reinterpret_cast<DWORD*>(0x005CF5F0) == 0xBD8658, "native weapon type table operands");
+    *reinterpret_cast<DWORD*>(0x005CF5DE) = 0x00BD8618;
+    *reinterpret_cast<DWORD*>(0x005CF5F0) = 0x00BD8658;
+    auto index = reinterpret_cast<int(__cdecl*)(int)>(0x005CF5DA);
+    auto jump = [](DWORD address, void* target) {
+        auto bytes = reinterpret_cast<BYTE*>(address); bytes[0] = 0xe9;
+        *reinterpret_cast<DWORD*>(bytes + 1) = reinterpret_cast<DWORD>(target) - address - 5;
+    };
+    jump(supportedWeaponType, KnownWeaponType);
+    jump(invalidWeaponType, InvalidWeaponType);
+    jump(nextWeaponType, SkippedWeaponType);
+    Require(index(21) == 0 && index(36) == 0 && index(59) == 0, "modern categories absent from original mask");
+    Require(RunWeaponType(L"21", index(21)) == 2 && RunWeaponType(L"36", index(36)) == 2,
+        "unpatched client takes failure branch for both November weapons");
+    Require(RunWeaponType(L"30", index(30)) == 1, "unpatched legacy category accepted");
+    protectionCalls = 0; deniedProtectionCall = 1;
+    Require(!InstallWeaponTypeEnumeration() && RunWeaponType(L"21", index(21)) == 2,
+        "failed installation leaves native bytes intact");
+    deniedProtectionCall = 0;
+    Require(InstallWeaponTypeEnumeration(), "production enumeration patch matches original instructions");
+    Require(!InstallWeaponTypeEnumeration(), "duplicate installation rejected");
+    for (int type = 20; type <= 99; ++type) {
+        wchar_t name[8]; swprintf_s(name, L"%d", type);
+        Require(RunWeaponType(name, index(type)) == (index(type) ? 1 : 3),
+            "native types retain mask index; additional categories skip with stack/registers intact");
+    }
+    for (auto name : {L"", L"x", L"21x", L"021", L"-1", L"1", L"100", L"info", L"unknown"})
+        Require(RunWeaponType(name, 0) == 2, "malformed unknown nodes keep native validation");
+    Require(RunWeaponType(L"30", 0) == 2, "invalid supported category cannot be silently skipped");
+    std::puts("PASS: reproduced original shop failure; 80 weapon categories, invalid names and bridge ABI");
+}
+static void CheckNovemberWeaponTypes() {
+    using namespace MixedDyeResources;
+    const auto index = reinterpret_cast<int(__cdecl*)(int)>(0x005CF5DA);
+    for (int id : {1702713, 1702804}) {
+        wchar_t path[80]; swprintf_s(path, L"Character/Weapon/%08d.img", id);
+        Object root(ModernEquipmentCompatibility::LoadInterface(path, PropertyIID()));
+        Require(root.p != nullptr, "installed November weapon loads through original PCOM");
+        int supported = 0, additional = 0;
+        for (const auto& name : Names(root.p)) {
+            if (name == L"info") continue;
+            const int nativeIndex = index(_wtoi(name.c_str()));
+            Require(RunWeaponType(name.c_str(), nativeIndex) == (nativeIndex ? 1 : 3),
+                "all original November root categories accepted by production bridge");
+            if (nativeIndex) ++supported; else ++additional;
+        }
+        Require(supported == 16 && additional > 0, "both real weapons keep all 16 original supported types");
+        std::printf("PASS: original weapon %d retains %d supported and %d additional resource categories\n", id, supported, additional);
+    }
+}
 static void CheckNativePetLife() {
     // Run the actual v83 pet dried-up predicate, relocating only its constant
     // pointer and CompareFileTime import in this isolated, uninitialized copy.
@@ -707,6 +809,9 @@ static void CheckNativeResources(const wchar_t* exePath, const wchar_t* followup
     Require(SUCCEEDED(Method<Mount>(ns, 0x18)(ns, path, fs, 0)), "mount namespace");
     SysFreeString(path);
     *reinterpret_cast<void**>(0x00BF14E8) = rm;
+    if (!followupRoot) CheckStandingActionRouting(rm);
+    if (!followupRoot) CheckEquipmentGenderResourceNames();
+    if (!followupRoot) CheckNovemberWeaponTypes();
     if (followupRoot) CheckFollowupResources();
     else { CheckFaceCanvasRecovery(); CheckInstalledResources(); CheckPetEquipmentResources(); CheckPetRenderingTrace(); CheckPetActionUols(); CheckNameTagResources(create); }
     *reinterpret_cast<void**>(0x00BF14E8) = nullptr;
@@ -725,6 +830,9 @@ int wmain(int argc, wchar_t** argv) {
     setvbuf(stdout, nullptr, _IONBF, 0);
     Require(argc == 2 || argc == 3, "client path and optional staged resource root");
     MapClient(argv[1]);
+    CheckStandingActionInstallation();
+    CheckEquipmentGenderTooltip();
+    CheckWeaponTypeEnumeration();
     CheckNativePetLife();
     CheckPetMaskInstallation();
     CheckIconContract();

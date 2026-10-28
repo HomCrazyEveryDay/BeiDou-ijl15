@@ -3,6 +3,10 @@
   <ItemGroup>
     <ClCompile Include="ModuleAudit.cpp"><Filter>Source Files</Filter></ClCompile>
     <ClInclude Include="ModuleAudit.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="EquipmentGenderTooltip.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ModernSetEffects.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="ModernStandingActions.h"><Filter>Header Files</Filter></ClInclude>
+    <ClInclude Include="AvatarActionIds.h"><Filter>Header Files</Filter></ClInclude>
     <ClInclude Include="ModuleAuditCrypto.h"><Filter>Header Files</Filter></ClInclude>
   </ItemGroup>
   <ItemGroup>

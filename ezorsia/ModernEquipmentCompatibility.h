@@ -6,6 +6,10 @@
 #include "Memory.h"
 #include "ResourceVariant.h"
 #include "CrashReporter.h"
+#include "ModernCapeEffects.h"
+#include "ModernSetEffects.h"
+#include "ModernStandingActions.h"
+#include "EquipmentGenderTooltip.h"
 
 namespace ModernEquipmentCompatibility {
 // v83 CItemInfo::GetItemIconCanvas returns an owning IWzCanvas pointer in out.
@@ -18,6 +22,66 @@ static auto getIcon = reinterpret_cast<GetIcon>(0x005D3BD8);
 static LONG iconReports = 0;
 static LONG faceReports = 0;
 static LONG capeReports = 0;
+
+// GetEquipItem enumerates cash-weapon root names to build the v83 type mask.
+// Newer IMGs also contain numeric categories for jobs absent from v83. The
+// native zero-index branch throws E_FAIL for these, aborting NPC shop creation.
+// Skip only additional two-digit categories in that mask; keep their original
+// resources/UOL targets and all validation of supported categories untouched.
+static int __stdcall AdditionalWeaponType(const wchar_t* name) {
+    if (!name || name[0] < L'2' || name[0] > L'9'
+        || name[1] < L'0' || name[1] > L'9' || name[2]) return false;
+    const int type = (name[0] - L'0') * 10 + name[1] - L'0';
+    for (int legacy : {30,31,32,33,37,38,40,41,42,43,44,45,46,47,48,49,39})
+        if (type == legacy) return false;
+    return true;
+}
+static DWORD supportedWeaponType = 0x005CD072;
+static DWORD nextWeaponType = 0x005CD097;
+static DWORD invalidWeaponType = 0x005CD0A9;
+__declspec(naked) static void EnumerateWeaponType() {
+    __asm {
+        // Replay the overwritten instructions, including both cdecl arguments.
+        mov ebx, eax
+        test ebx, ebx
+        pop ecx
+        pop ecx
+        jnz supported
+        push eax
+        push ecx
+        push edx
+        push esi
+        call AdditionalWeaponType
+        test eax, eax
+        pop edx
+        pop ecx
+        pop eax
+        jnz additional
+        jmp dword ptr [invalidWeaponType]
+    supported:
+        jmp dword ptr [supportedWeaponType]
+    additional:
+        jmp dword ptr [nextWeaponType]
+    }
+}
+static bool InstallWeaponTypeEnumeration() {
+    const BYTE expected[] = {0x8b,0xd8,0x85,0xdb,0x59,0x59,0x74,0x37};
+    auto site = reinterpret_cast<BYTE*>(0x005CD06A);
+    if (std::memcmp(site, expected, sizeof(expected))) return false;
+    BYTE patch[] = {0xe9,0,0,0,0,0x90,0x90,0x90};
+    const DWORD displacement = reinterpret_cast<DWORD>(EnumerateWeaponType) - 0x005CD06F;
+    std::memcpy(patch + 1, &displacement, sizeof(displacement));
+    DWORD protection = 0, ignored = 0;
+    if (!VirtualProtect(site, sizeof(patch), PAGE_EXECUTE_READWRITE, &protection)) return false;
+    std::memcpy(site, patch, sizeof(patch));
+    const bool flushed = FlushInstructionCache(GetCurrentProcess(), site, sizeof(patch)) != FALSE;
+    if (!flushed) {
+        std::memcpy(site, expected, sizeof(expected));
+        FlushInstructionCache(GetCurrentProcess(), site, sizeof(expected));
+    }
+    const bool restored = VirtualProtect(site, sizeof(patch), protection, &ignored) != FALSE;
+    return flushed && restored;
+}
 
 template<class F> static F Method(void* object, unsigned offset) {
     return reinterpret_cast<F>((*reinterpret_cast<void***>(object))[offset / 4]);
@@ -434,11 +498,21 @@ static bool Install() {
     const BYTE expected[] = {0xb8,0x47,0x47,0xa9,0x00,0xe8,0xb6,0xcf,0x48,0x00};
     if (std::memcmp(reinterpret_cast<void*>(getIcon), expected, sizeof(expected))) return false;
     const bool icon = Memory::SetHook(true, reinterpret_cast<void**>(&getIcon), ItemIcon);
+    const bool weaponTypes = InstallWeaponTypeEnumeration();
     const bool face = InstallFaceImages();
     const bool pet = InstallPetEquipment();
     const bool petActionUol = InstallPetActionUols();
     const bool petTrace = InstallPetRenderingTrace();
+    const bool capeEffects = ModernCapeEffects::Install();
+    const bool standingActions = ModernStandingActions::Install();
+    CrashReporter::RecordEvent("equipment.standing-actions","installed=%d",standingActions);
+    ModernSetEffects::Install(capeEffects);
+    const bool genderTitle = EquipmentGenderTooltip::Install();
     CrashReporter::RecordEvent("equipment.compat", "install icon=%d faceImage=%d petEquipment=%d petRenderTrace=%d petActionUol=%d", icon, face, pet, petTrace, petActionUol);
-    return icon && face && pet && petActionUol;
+    CrashReporter::RecordEvent("equipment.cape-effect", "install=%d", capeEffects);
+    CrashReporter::RecordEvent("equipment.set-effect", "install=%d", capeEffects);
+    CrashReporter::RecordEvent("equipment.weapon-types", "install=%d", weaponTypes);
+    CrashReporter::RecordEvent("equipment.gender-title", "install=%d", genderTitle);
+    return icon && weaponTypes && face && pet && petActionUol && capeEffects && genderTitle;
 }
 }

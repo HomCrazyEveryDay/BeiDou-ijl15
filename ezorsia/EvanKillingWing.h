@@ -2,6 +2,7 @@
 #include <map>
 #include <vector>
 #include <cstring>
+#include "AvatarActionIds.h"
 
 // Append real actions instead of replacing a live v83 action. CAvatar's two
 // fixed-size animation banks retain their ABI; only each new action's two cache
@@ -12,9 +13,9 @@ constexpr DWORD Address(DWORD value) { return value + 0x10000000; }
 #else
 constexpr DWORD Address(DWORD value) { return value; }
 #endif
-constexpr int AvatarCount = 167, DragonCount = 26, Action = 162;
+constexpr int AvatarCount = AvatarActionIds::Count, DragonCount = 26, Action = 162;
 constexpr int ExtraCount = AvatarCount - Action;
-static const wchar_t* extraNames[ExtraCount] = {L"killingWing", L"fireCircle", L"Earthquake", L"lightingBolt", L"Awakening"};
+static const wchar_t* extraNames[ExtraCount] = {L"killingWing", L"fireCircle", L"Earthquake", L"lightingBolt", L"Awakening", L"stand1_floating", L"stand2_floating"};
 struct ActionData { void* name; int delay, relative, duration, attackDelay; void* frames; };
 static_assert(sizeof(ActionData)==24, "native action ABI");
 static ActionData avatar[AvatarCount]{};
@@ -33,14 +34,16 @@ static void __cdecl ClearCache(void* bank) {
     extraCaches.erase(found);
 }
 static void __cdecl InitAvatar() {
-    // The native ACTIONDATA constructor uses (delay=0, relative=1) for skill actions.
+    // Every appended action contains frame references (action/frame), not a
+    // directly named canvas bank. The native loader branches on +8 at 412DBB;
+    // copying stand1/stand2's zero here makes floating frames lose their body.
     for (int i=0;i<ExtraCount;++i) {
         reinterpret_cast<void*(__thiscall*)(void*,const wchar_t*)>(Address(0x00403382))(&avatar[Action+i].name,extraNames[i]);
         avatar[Action+i].relative=1;
     }
 }
 static void __cdecl InitDragon() {
-    for (int i=0;i<ExtraCount;++i)
+    for (int i=0;i<AvatarActionIds::EvanCount;++i)
         reinterpret_cast<void*(__thiscall*)(void*,const wchar_t*)>(Address(0x00403382))(&dragon[21+i],extraNames[i]);
 }
 static const DWORD avatarInitReturn=Address(0x004A60DA), dragonInitReturn=Address(0x004A9CA9);
@@ -77,7 +80,7 @@ __declspec(naked) static void PrepareCache() {
         pushfd
         cmp ebx,162
         jl original
-        cmp ebx,167
+        cmp ebx,169
         jge original
         push edx
         push ebx
@@ -101,7 +104,7 @@ __declspec(naked) static void UpdateCache() {
         pushfd
         cmp edi,162
         jl original
-        cmp edi,167
+        cmp edi,169
         jge original
         push ecx
         push edx
@@ -185,14 +188,14 @@ static std::vector<Patch> BuildPatches() {
     };
     // CActionMan must load the appended action's metadata and allocate its
     // per-resource arrays too; extending name lookup alone leaves null frames.
-    bytes(0x004073A2,{0x81,0xfe,0xa2,0,0,0},{0x81,0xfe,0xa7,0,0,0});
-    bytes(0x0040ACDA,{0xbe,0xa2,0,0,0},{0xbe,0xa7,0,0,0});
-    bytes(0x0040ACFE,{0x68,0x20,0x0a,0,0},{0x68,0x70,0x0a,0,0});
-    bytes(0x0040B2A2,{0x81,0x7d,0xd0,0x60,0x1e,0,0},{0x81,0x7d,0xd0,0x50,0x1f,0,0});
-    bytes(0x00453B2B,{0x81,0xfb,0xa2,0,0,0},{0x81,0xfb,0xa7,0,0,0});
-    bytes(0x004522F4,{0x81,0x7d,0xec,0xa2,0,0,0},{0x81,0x7d,0xec,0xa7,0,0,0});
-    bytes(0x00451010,{0x68,0xa2,0,0,0},{0x68,0xa7,0,0,0}); // dynamic per-action flags
-    bytes(0x004A60F5,{0x68,0xa2,0,0,0},{0x68,0xa7,0,0,0}); // action metadata destructor count
+    bytes(0x004073A2,{0x81,0xfe,0xa2,0,0,0},{0x81,0xfe,0xa9,0,0,0});
+    bytes(0x0040ACDA,{0xbe,0xa2,0,0,0},{0xbe,0xa9,0,0,0});
+    bytes(0x0040ACFE,{0x68,0x20,0x0a,0,0},{0x68,0x90,0x0a,0,0});
+    bytes(0x0040B2A2,{0x81,0x7d,0xd0,0x60,0x1e,0,0},{0x81,0x7d,0xd0,0xb0,0x1f,0,0});
+    bytes(0x00453B2B,{0x81,0xfb,0xa2,0,0,0},{0x81,0xfb,0xa9,0,0,0});
+    bytes(0x004522F4,{0x81,0x7d,0xec,0xa2,0,0,0},{0x81,0x7d,0xec,0xa9,0,0,0});
+    bytes(0x00451010,{0x68,0xa2,0,0,0},{0x68,0xa9,0,0,0}); // dynamic per-action flags
+    bytes(0x004A60F5,{0x68,0xa2,0,0,0},{0x68,0xa9,0,0,0}); // action metadata destructor count
     bytes(0x004A9CBC,{0x6a,0x15},{0x6a,0x1a}); // dragon name destructor count
     bytes(0x004FEC48,{0x6a,0x15},{0x6a,0x1a}); // dynamic dragon action cache
     for (DWORD site : {0x0092EEDC,0x0096AF58,0x0096CACE,0x0096D4E1})

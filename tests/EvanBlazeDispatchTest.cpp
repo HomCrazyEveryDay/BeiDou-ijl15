@@ -9,6 +9,31 @@
 #include <cstdio>
 extern "C" void TestSetMemoryFieldType(void*, int);
 extern "C" int TestMemoryBlocksSkill(void*, void*);
+extern "C" void TestInitializeAvatarActions();
+static void* __fastcall TestActionName(void* output,void*,const wchar_t* name) {
+    *static_cast<const wchar_t**>(output)=name;return output;
+}
+// Execute the real frame-loader decision with the initialized production table.
+// Only the two continuations are markers; no game startup or rendering occurs.
+__declspec(naked) static int NativeFrameReferenceMode(void* metadata) {
+    __asm {
+        push ebp
+        mov ebp,esp
+        sub esp,40h
+        push ebx
+        push esi
+        xor ebx,ebx
+        mov eax,[ebp+8]
+        mov [ebp-38h],eax
+        mov eax,10412db8h
+        call eax
+        pop esi
+        pop ebx
+        mov esp,ebp
+        pop ebp
+        ret
+    }
+}
 int __fastcall TestFieldType(void*, void*) { return 0; }
 int __fastcall TestMemoryJob(void* user, void*) { return reinterpret_cast<int*>(user)[1]; }
 
@@ -466,20 +491,45 @@ int main(int argc,char** argv) {
     const DWORD avatarTable=*reinterpret_cast<DWORD*>(0x10406c1c);
     const DWORD dragonTable=*reinterpret_cast<DWORD*>(0x10411494);
     if(!avatarTable || !dragonTable || avatarTable==0xbec620 || dragonTable==0xbec3f8)return 21;
-    if(*reinterpret_cast<DWORD*>(0x104a8d33)!=avatarTable+167*24)return 22;
+    if(*reinterpret_cast<DWORD*>(0x104a8d33)!=avatarTable+169*24)return 22;
     if(*reinterpret_cast<DWORD*>(0x104a8dc5)!=dragonTable+26*4)return 23;
-    if(*reinterpret_cast<BYTE*>(0x10453b2d)!=167 || *reinterpret_cast<BYTE*>(0x104fec49)!=26)return 24;
+    if(*reinterpret_cast<BYTE*>(0x10453b2d)!=169 || *reinterpret_cast<BYTE*>(0x104fec49)!=26)return 24;
+
+    // 2026-10-28: actual equip crashed at 40223F because floating metadata
+    // copied a plain stance's direct-canvas mode. The body reference is then
+    // absent even though the table bounds, caches and IMG frames all exist.
+    BYTE constructorStub[]={0xe9,0,0,0,0};
+    *reinterpret_cast<DWORD*>(constructorStub+1)=reinterpret_cast<DWORD>(TestActionName)-0x10403387;
+    memcpy(reinterpret_cast<void*>(0x10403382),constructorStub,sizeof(constructorStub));
+    TestInitializeAvatarActions();
+    const BYTE directFrames[]={0x31,0xc0,0xc3},referencedFrames[]={0xb8,1,0,0,0,0xc3};
+    memcpy(reinterpret_cast<void*>(0x10413064),directFrames,sizeof(directFrames));
+    memcpy(reinterpret_cast<void*>(0x10412dc4),referencedFrames,sizeof(referencedFrames));
+    for(int index:{2,3})
+        if(NativeFrameReferenceMode(reinterpret_cast<void*>(avatarTable+index*24))!=0)return 80;
+    for(int index:{162,163,164,165,166,167,168})
+        if(NativeFrameReferenceMode(reinterpret_cast<void*>(avatarTable+index*24))!=1)return 81;
+    for(int index:{167,168}) {
+        auto metadata=reinterpret_cast<int*>(avatarTable+index*24);
+        const wchar_t* name=*reinterpret_cast<const wchar_t**>(metadata);
+        if(wcscmp(name,index==167?L"stand1_floating":L"stand2_floating"))return 82;
+        metadata[2]=0;
+        if(NativeFrameReferenceMode(metadata)!=0)return 83;
+        metadata[2]=1;
+        if(NativeFrameReferenceMode(metadata)!=1)return 84;
+    }
+    puts("PASS native frame loader: initialized floating/Evan actions follow frame references; original stands remain direct; old crash mode reproduced and corrected");
 
     // Regression for the 2026-09-21 null-frame crash at native 00455F53:
-    // both loader loops must reach every appended action and stop at 167.
+    // Both loader loops include Evan and the two floating stances, stopping at 169.
     *reinterpret_cast<BYTE*>(0x104073a8)=0xc3;
     *reinterpret_cast<BYTE*>(0x1040b2a9)=0xc3;
-    for(int index:{0,161,162,163,164,165,166,167}) {
-        if(LoadsAction(index)!=(index<167))return 35;
-        if(LoadsResource(index*48)!=(index<167))return 36;
+    for(int index:{0,161,162,163,164,165,166,167,168,169}) {
+        if(LoadsAction(index)!=(index<169))return 35;
+        if(LoadsResource(index*48)!=(index<169))return 36;
     }
-    if(*reinterpret_cast<DWORD*>(0x1040acdb)!=167 ||
-       *reinterpret_cast<DWORD*>(0x1040acff)!=167*16)return 37;
+    if(*reinterpret_cast<DWORD*>(0x1040acdb)!=169 ||
+       *reinterpret_cast<DWORD*>(0x1040acff)!=169*16)return 37;
 
     // Exercise the installed cache trampolines, both banks and destruction.
     *reinterpret_cast<BYTE*>(0x1045456f)=0xc3;
@@ -497,7 +547,7 @@ int main(int argc,char** argv) {
     if(!normal || cell!=reinterpret_cast<DWORD>(normal)+4)return 26;
     if(UpdateCells(owner+0x4f0,162,&updated)!=cell || normal!=updated)return 27;
     void* first=normal;
-    for(int action:{163,164,165,166}) {
+    for(int action:{163,164,165,166,167,168}) {
         DWORD extra=PrepareCells(owner+0x4f0,action,&normal);
         if(normal==first || UpdateCells(owner+0x4f0,action,&updated)!=extra || normal!=updated)return 49;
         first=normal;
@@ -511,11 +561,11 @@ int main(int argc,char** argv) {
         if(UpdateCells(owner+0x4f0,index,&updated)!=reinterpret_cast<DWORD>(owner+0x4f0+0x298+index*4) || normal!=updated)return 31;
     }
     ResetCells(owner,0);
-    if(destroyed!=10)return 32;
+    if(destroyed!=14)return 32;
     ResetCells(owner,0);
-    if(destroyed!=10)return 33;
+    if(destroyed!=14)return 33;
     reinterpret_cast<void(__thiscall*)(void*)>(0x10450093)(owner+0x4f0+0x5dc);
-    if(destroyed!=20)return 34;
+    if(destroyed!=28)return 34;
     // Execute the new gate, including the predecessor comparison flags.
     const BYTE yes[]={0xb8,1,0,0,0,0xc3},no[]={0x31,0xc0,0xc3};
     // Run the predecessor Breath checks and actual JZ after the trampoline.

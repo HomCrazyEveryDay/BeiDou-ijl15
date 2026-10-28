@@ -720,6 +720,7 @@ Patch patches[] = {
 }
 
 #ifdef EVAN_RUNTIME_TEST
+extern "C" void TestInitializeAvatarActions() { EvanKillingWing::InitAvatar(); }
 extern "C" void TestSetMemoryFieldType(void* field, int type) { SetMemoryFieldType(field, type); }
 extern "C" int TestMemoryBlocksSkill(void* field, void* user) { return MemoryBlocksSkill(field, user); }
 extern "C" bool TestPursuitReceive(const unsigned char* data, unsigned long size, unsigned now) { return ReceivePursuit(data, size, now); }

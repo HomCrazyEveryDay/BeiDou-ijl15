@@ -126,7 +126,7 @@ static std::vector<unsigned> NameTagPixels(void* canvas, int width, int height) 
 }
 static void CheckNameTagPixels(NameTagFactory factory, bool patched) {
     using namespace ModernEquipmentCompatibility;
-    for (int id : {370, 375, 217}) {
+    for (int id : {370,375,217,40,120,151,166,186,187,188,189,190,193,194,196,201,206,225,229,231,232,398,41,212,112,118}) {
         void* pieces[3]{};
         int widths[3]{}, heights[3]{}, origins[3]{};
         int maxY = 0, bottom = 0;
@@ -138,7 +138,15 @@ static void CheckNameTagPixels(NameTagFactory factory, bool patched) {
             maxY = (std::max)(maxY, origins[i]);
             bottom = (std::max)(bottom, heights[i] - origins[i]);
         }
-        Require(maxY - origins[2] == (id == 370 ? 3 : id == 375 ? 4 : 0), "known name-tag alignment offsets");
+        if(id==370 || id==375 || id==217 || id==189)
+            Require(maxY-origins[2]==(id==370?3:id==375?4:id==189?1:0),"known name-tag alignment offsets");
+        if(id==189) {
+            // The old resource's extra transparent top row could pass an
+            // origin-only reference test while still leaving a visible seam.
+            Require(widths[2]==21 && heights[2]==24,"shark right piece retains original unpadded dimensions");
+            const auto right=NameTagPixels(pieces[2],widths[2],heights[2]);
+            Require((right[0]>>24)!=0,"shark right edge begins at the original border row");
+        }
         for (int centerWidth : {24, 60, 120, 198}) {
             centerWidth = (centerWidth + widths[1] - 1) / widths[1] * widths[1];
             int width = widths[0] + centerWidth + widths[2], height = maxY + bottom;
@@ -155,11 +163,11 @@ static void CheckNameTagPixels(NameTagFactory factory, bool patched) {
             const auto actualPixels = NameTagPixels(actual, width, height);
             const auto referencePixels = NameTagPixels(reference, width, height);
             const bool same = actualPixels == referencePixels;
-            if (same != (patched || id == 217)) std::printf("name-tag mismatch: id=%d center=%d patched=%d same=%d actualVisible=%d referenceVisible=%d\n",
+            if (same != (patched || maxY == origins[2])) std::printf("name-tag mismatch: id=%d center=%d patched=%d same=%d actualVisible=%d referenceVisible=%d\n",
                 id, centerWidth, patched, same,
                 static_cast<int>(std::count_if(actualPixels.begin(), actualPixels.end(), [](unsigned p) { return (p >> 24) != 0; })),
                 static_cast<int>(std::count_if(referencePixels.begin(), referencePixels.end(), [](unsigned p) { return (p >> 24) != 0; })));
-            Require(same == (patched || id == 217), "original seam reproduced; patched pixels match origin-aligned reference");
+            Require(same == (patched || maxY == origins[2]), "original seam reproduced; patched pixels match origin-aligned reference");
             static_cast<IUnknown*>(actual)->Release();
             static_cast<IUnknown*>(reference)->Release();
         }
@@ -176,5 +184,5 @@ static void CheckNameTagResources(NameTagFactory factory) {
     CheckNameTagInstallation();
     CheckNameTagCopyContract();
     CheckNameTagPixels(factory, true);
-    std::puts("PASS: name-tag 370/375 seams reproduced and fixed with real PCOM pixels; 217 unchanged; four widths, HRESULT, stack, patch rollback");
+    std::puts("PASS: 26 name-tags, including 18 restored frames and all November tags; real PCOM pixels at four widths; shark padding regression; HRESULT, stack, patch rollback");
 }
