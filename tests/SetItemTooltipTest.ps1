@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot
 $workspace = Split-Path $repo
 if (!$OutputDirectory) { $OutputDirectory = Join-Path $workspace '.tmp/codex-visitors/set-tooltip/tests' }
-if (!$PatchedImage) { $PatchedImage = Join-Path $workspace '.tmp/codex-visitors/set-tooltip/patched/Data/Etc/SetItemInfo.img' }
+if (!$PatchedImage) { $PatchedImage = Join-Path $workspace 'BeiDou-Client/Data/Etc/SetItemInfo.img' }
 $output = [IO.Path]::GetFullPath($OutputDirectory)
 $client = Join-Path $workspace 'BeiDou-Client'
 $vs = 'C:/Program Files/Microsoft Visual Studio/18/Community'
@@ -25,6 +25,12 @@ foreach ($group in @(
         $name = '{0:D8}.img' -f $item
         Copy-Item -LiteralPath "$client/Data/Character/$($group.Folder)/$name" -Destination "$fixture/Character/$($group.Folder)/$name"
     }
+}
+foreach ($item in @(1032084,1112439,1122085,1132040)) {
+    $folder = if ($item -eq 1112439) { 'Ring' } else { 'Accessory' }
+    $name = '{0:D8}.img' -f $item
+    New-Item -ItemType Directory -Force "$fixture/Character/$folder" | Out-Null
+    Copy-Item -LiteralPath "$client/Data/Character/$folder/$name" -Destination "$fixture/Character/$folder/$name"
 }
 & cl.exe /nologo /O2 /EHsc /std:c++17 /DSET_ITEM_TOOLTIP_TEST "$PSScriptRoot/SetItemTooltipTest.cpp" "/Fo$output/tooltip.obj" "/Fe$output/tooltip.exe" /link /BASE:0x20000000 /DYNAMICBASE:NO OleAut32.lib Ole32.lib
 if ($LASTEXITCODE -ne 0) { throw 'Tooltip test build failed' }

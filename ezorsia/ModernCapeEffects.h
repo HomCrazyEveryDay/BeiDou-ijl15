@@ -191,6 +191,14 @@ inline std::wstring ActionName(int action) {
     if(!data || !*data || wcslen(*data)>64)return L"default";
     return *data;
 }
+inline int ImageFlip(void* avatar) {
+    // GetCurrentAction's output is the movement facing bit, not image flip.
+    // Native PrepareAction (45614C..456547) inverts it for normal poses and
+    // handles climbing separately; Update (452D07/452D70) applies frame flips.
+    // Follow the already rendered avatar, including those pose exceptions.
+    auto overlay=*reinterpret_cast<void**>(static_cast<BYTE*>(avatar)+0x10c8);
+    return overlay?Int(overlay,0xd4):0;
+}
 inline void TickEquipment(void* avatar,void* manager,void* graphics,const std::wstring& action,int flip) {
     auto& states=States();auto found=states.find(avatar);
     if(found==states.end() && states.size()>=512)return;
@@ -220,12 +228,15 @@ inline void TickEquipment(void* avatar,void* manager,void* graphics,const std::w
         }
     }
 }
-inline void Tick(void* avatar) {
-    int flip=0;int action=actionFor(avatar,&flip);
-    auto manager=*reinterpret_cast<void**>(0x00BF14E8),graphics=*reinterpret_cast<void**>(0x00BF14EC);
-    auto name=ActionName(action);
+inline void TickEffects(void* avatar,void* manager,void* graphics,const std::wstring& name) {
+    const int flip=ImageFlip(avatar);
     TickEquipment(avatar,manager,graphics,name,flip);
     if(UpdateSetEffects())UpdateSetEffects()(avatar,manager,graphics,name,flip);
+}
+inline void Tick(void* avatar) {
+    const int action=actionFor(avatar,nullptr);
+    auto manager=*reinterpret_cast<void**>(0x00BF14E8),graphics=*reinterpret_cast<void**>(0x00BF14EC);
+    TickEffects(avatar,manager,graphics,ActionName(action));
 }
 static void __fastcall Update(void* avatar,void*) {update(avatar);Tick(avatar);}
 static void __fastcall Destroy(void* avatar,void*) {

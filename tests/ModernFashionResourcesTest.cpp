@@ -17,8 +17,11 @@ ULONG __stdcall Add(Layer* p){return ++p->refs;}
 ULONG __stdcall Release(Layer* p){if(--p->refs)return p->refs;--live;delete p;return 0;}
 HRESULT __stdcall Origin(Layer* p,VARIANT v){p->origin=MixedDyeResources::Unknown(v);return S_OK;}
 HRESULT __stdcall GetOrigin(Layer* p,VARIANT* v){*v=ModernCapeEffects::Borrow(p->origin);if(v->punkVal)v->punkVal->AddRef();return S_OK;}
-HRESULT __stdcall GetX(Layer* p,LONG* v){*v=p->x;return S_OK;}
-HRESULT __stdcall GetY(Layer* p,LONG* v){*v=p->y;return S_OK;}
+HRESULT __stdcall GetX(Layer* p,LONG* v){*v=p->x+(p->origin?Int(p->origin,0x20):0);return S_OK;}
+HRESULT __stdcall GetY(Layer* p,LONG* v){*v=p->y+(p->origin?Int(p->origin,0x28):0);return S_OK;}
+HRESULT __stdcall GetOverlay(Layer* p,VARIANT* v){*v=ModernCapeEffects::Borrow(p->overlay);if(v->punkVal)v->punkVal->AddRef();return S_OK;}
+HRESULT __stdcall GetZ(Layer* p,LONG* v){*v=p->z;return S_OK;}
+HRESULT __stdcall SetZ(Layer* p,int z){p->z=z;return S_OK;}
 HRESULT __stdcall GetFlip(Layer* p,LONG* v){*v=p->flip;return S_OK;}
 HRESULT __stdcall Move(Layer* p,int x,int y,VARIANT,VARIANT){p->x=x;p->y=y;return S_OK;}
 HRESULT __stdcall Overlay(Layer* p,VARIANT v){p->overlay=MixedDyeResources::Unknown(v);return S_OK;}
@@ -42,6 +45,7 @@ void InitMock(){
     layerMethods[1]=reinterpret_cast<void*>(Add);layerMethods[2]=reinterpret_cast<void*>(Release);
     layerMethods[0x64/4]=reinterpret_cast<void*>(Origin);layerMethods[0xfc/4]=reinterpret_cast<void*>(Overlay);
     layerMethods[0x60/4]=reinterpret_cast<void*>(GetOrigin);layerMethods[0x20/4]=reinterpret_cast<void*>(GetX);layerMethods[0x28/4]=reinterpret_cast<void*>(GetY);
+    layerMethods[0xf8/4]=reinterpret_cast<void*>(GetOverlay);layerMethods[0xb0/4]=reinterpret_cast<void*>(GetZ);layerMethods[0xb4/4]=reinterpret_cast<void*>(SetZ);
     layerMethods[0xd4/4]=reinterpret_cast<void*>(GetFlip);layerMethods[0x90/4]=reinterpret_cast<void*>(Move);
     layerMethods[0xd8/4]=reinterpret_cast<void*>(Flip);layerMethods[0xe0/4]=reinterpret_cast<void*>(Alpha);layerMethods[0xdc/4]=reinterpret_cast<void*>(GetAlpha);
     layerMethods[0x11c/4]=reinterpret_cast<void*>(Visible);layerMethods[0x118/4]=reinterpret_cast<void*>(GetVisible);
@@ -163,9 +167,9 @@ void CheckEquipmentEffects(Factory factory,void* manager){
         auto layer=static_cast<Layer*>(state.layer.p);
         if(id==1022241 || id==1022242)Require(layer->overlay==&face && layer->z==1 && layer->frames==6,"eye effect follows head and face depth");
         if(id==1073379) {
-            Require(layer->frames==8 && layer->z==-1 && state.sequence==L"stand1","fixed=1 shoe keeps its eight frames and stand depth");
+            Require(layer->frames==8 && layer->z==-3 && state.sequence==L"stand1","fixed=1 shoe keeps its eight frames and stand depth");
             Sync(state,&graph,avatar,&overlay,L"ladder",0);layer=static_cast<Layer*>(state.layer.p);
-            Require(layer->frames==8 && layer->z==2 && state.sequence==L"ladder","shoe ladder frame UOL selects back artwork and front depth");
+            Require(layer->frames==8 && layer->z==-3 && state.sequence==L"ladder","shoe ladder artwork stays behind the avatar");
         }
         if(id==1074003){Sync(state,&graph,avatar,&overlay,L"walk2",0);Require(static_cast<Layer*>(state.layer.p)->frames==4 && state.sequence==L"walk2","water shoe action UOL plays walk1 frames");}
     }
@@ -236,9 +240,12 @@ void CheckChairSettings(Factory factory,void* manager){
     BYTE user[0x3000]{},pet[0x200]{},petTemplate[0x40]{};
     *reinterpret_cast<int*>(petTemplate)=5002415;*reinterpret_cast<void**>(pet+0x88)=petTemplate;
     *reinterpret_cast<void**>(pet+0x94)=user;*reinterpret_cast<int*>(pet+0x9c)=1;*reinterpret_cast<int*>(pet+0xf8)=-1;
-    *reinterpret_cast<int*>(user+kActiveChairOffset)=3018806;*reinterpret_cast<void**>(user+0x88+0x10b0)=foot.p;
+    *reinterpret_cast<int*>(user+kActiveChairOffset)=3018806;*reinterpret_cast<void**>(user+kBodyOriginOffset)=foot.p;
     Layer layer{layerMethods};layer.origin=origin.p;layer.x=7;layer.y=8;*reinterpret_cast<void**>(pet+0x124)=&layer;
     Layer equipmentEffect{layerMethods},chairEffect{layerMethods};
+    *reinterpret_cast<void**>(user+0x88+0x10c8)=&equipmentEffect;
+    VARIANT missing{};missing.vt=VT_ERROR;missing.scode=DISP_E_PARAMNOTFOUND;
+    Check(Method<RelMove>(origin.p,0x90)(origin.p,400,800,missing,missing));
     *reinterpret_cast<void**>(user+0x2258+0x14)=&equipmentEffect;
     *reinterpret_cast<void**>(user+0x26fc+0x14)=&chairEffect;
     ChairState visibility{3018806,altar};HideItemEffects(user,visibility);
@@ -246,7 +253,7 @@ void CheckChairSettings(Factory factory,void* manager){
     RestoreEffects(visibility);Require(equipmentEffect.visible==1 && equipmentEffect.refs==1,"item effect visibility/reference restored");
     g_chairs.emplace(user+0x88,ChairState{3018806,altar});
     PetUpdateHook(pet,nullptr);Require(layer.origin==foot.p && layer.x==-67 && layer.y==19 && layer.flip==1,"pet seated using source position and reverseFlip");
-    chairFlip=1;PetUpdateHook(pet,nullptr);Require(layer.x==67 && layer.flip==0,"seat mirrors with owner direction");
+    chairFlip=0;equipmentEffect.flip=1;PetUpdateHook(pet,nullptr);Require(layer.x==67 && layer.flip==0,"seat mirrors with rendered owner, not the opposite movement facing bit");
     *reinterpret_cast<int*>(user+kActiveChairOffset)=0;PetUpdateHook(pet,nullptr);
     Require(g_petSeats.empty() && layer.origin==origin.p && layer.x==7 && layer.y==8 && *reinterpret_cast<int*>(pet+0xf8)==-1,"standing restores native pet display/action");
     *reinterpret_cast<int*>(user+kActiveChairOffset)=3018806;PetUpdateHook(pet,nullptr);PetDestroyHook(pet+8,nullptr);

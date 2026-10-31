@@ -18,7 +18,8 @@ constexpr DWORD Native(DWORD address) { return address + 0x10000000; }
 #else
 constexpr DWORD Native(DWORD address) { return address; }
 #endif
-constexpr int supportedSet = 5;
+const int supportedSets[] = {5, 6};
+bool Supported(int id) { return id == 5 || id == 6; }
 constexpr int panelWidth = 236;
 constexpr int lineHeight = 16;
 constexpr unsigned titleColor = 0xff7fff00;
@@ -26,7 +27,7 @@ constexpr unsigned activeColor = 0xffffffff;
 constexpr unsigned inactiveColor = 0xff7b8c91;
 constexpr unsigned backgroundColor = 0xa0000040;
 const GUID vectorId = {0xf28bd1ed,0x3deb,0x4f92,{0x9e,0xec,0x10,0xef,0x5a,0x1c,0x3f,0xb4}};
-const wchar_t* statKeys[] = {L"incPDD", L"incMDD", L"incACC", L"incEVA"};
+const wchar_t* statKeys[] = {L"incPDD", L"incMDD", L"incACC", L"incEVA", L"incPAD", L"incMAD", L"incCriticalDamage"};
 const unsigned statLabels[] = {659, 660, 661, 662};
 bool installed = false;
 LONG failureLogged = 0, resourceLogged = 0;
@@ -69,7 +70,7 @@ struct Text {
     ~Text() { SysFreeString(value); }
 };
 struct Member { int item; int category; };
-struct Effect { int threshold; std::array<int, 4> values; int setKey = 0; };
+struct Effect { int threshold; std::array<int, 7> values; int setKey = 0; };
 struct Definition {
     int id = 0, completeCount = 0;
     std::wstring name;
@@ -79,7 +80,7 @@ struct Definition {
 };
 struct Equipped {
     int count = 0;
-    unsigned categories = 0;
+    unsigned long long categories = 0;
     bool operator==(const Equipped& other) const { return count == other.count && categories == other.categories; }
 };
 struct Line {
@@ -121,13 +122,16 @@ struct Panel {
     Placement placement;
     Equipped equipped;
 };
-Definition definition;
-bool definitionAttempted = false;
+std::map<int, Definition> definitions;
 std::map<int, bool> verifiedMembers;
 std::map<void*, std::unique_ptr<Panel>> panels;
 
 int Category(int item) {
     switch (item / 10000) {
+    case 103: return 4;
+    case 111: return 12;
+    case 112: return 17;
+    case 113: return 50;
     case 100: return 1;
     case 105: return 5;
     case 107: return 7;
@@ -137,6 +141,8 @@ int Category(int item) {
 }
 const wchar_t* Folder(int category) {
     switch (category) {
+    case 4: case 17: case 50: return L"Accessory";
+    case 12: return L"Ring";
     case 1: return L"Cap";
     case 5: return L"Longcoat";
     case 7: return L"Shoes";
@@ -220,7 +226,7 @@ int Index(const std::wstring& text) {
     return result;
 }
 bool Valid(const Definition& candidate) {
-    if (candidate.id != supportedSet || candidate.completeCount != 4 || candidate.name.empty()
+    if (!Supported(candidate.id) || candidate.completeCount != 4 || candidate.name.empty()
         || candidate.categories.size() != 4 || candidate.members.empty() || candidate.members.size() > 64
         || candidate.effects.empty() || candidate.effects.size() > 4) return false;
     std::vector<int> seen;
@@ -238,12 +244,12 @@ bool Valid(const Definition& candidate) {
     }
     return true;
 }
-Definition LoadDefinition() {
+Definition LoadDefinition(int id = 5) {
     Value resource;
-    Resource(L"Etc/SetItemInfo.img/5", &resource.value);
+    Resource((L"Etc/SetItemInfo.img/" + std::to_wstring(id)).c_str(), &resource.value);
     auto property = Property(resource.value);
     Definition result;
-    result.id = supportedSet;
+    result.id = id;
     Value name, count;
     Child(property.value, L"setItemName", &name.value);
     Child(property.value, L"completeCount", &count.value);
@@ -286,20 +292,28 @@ Definition LoadDefinition() {
 bool IsMember(const Definition& set, int item) {
     return std::any_of(set.members.begin(), set.members.end(), [item](const Member& member) { return member.item == item; });
 }
-bool EnabledItem(int item) {
-    if (!definitionAttempted) {
-        if (!*reinterpret_cast<void**>(Native(0x00BF14E8))) return false;
-        definitionAttempted = true;
-        definition = LoadDefinition();
+const Definition* ItemDefinition(int item) {
+    if (!*reinterpret_cast<void**>(Native(0x00BF14E8))) return nullptr;
+    for (int id : supportedSets) {
+        auto found = definitions.find(id);
+        if (found == definitions.end()) {
+            try { found = definitions.emplace(id, LoadDefinition(id)).first; }
+            catch (...) { continue; }
+        }
+        if (IsMember(found->second, item)) return &found->second;
     }
-    if (definition.id != supportedSet || !IsMember(definition, item)) return false;
+    return nullptr;
+}
+bool EnabledItem(int item) {
+    const auto* set = ItemDefinition(item);
+    if (!set) return false;
     const auto found = verifiedMembers.find(item);
     if (found != verifiedMembers.end()) return found->second;
     wchar_t path[128]{};
     swprintf_s(path, L"Character/%s/%08d.img/info/setItemID", Folder(Category(item)), item);
     Value value;
     Resource(path, &value.value);
-    const bool enabled = (value.value.vt == VT_I4 || value.value.vt == VT_I2) && Number(value.value) == supportedSet;
+    const bool enabled = (value.value.vt == VT_I4 || value.value.vt == VT_I2) && Number(value.value) == set->id;
     verifiedMembers.emplace(item, enabled);
     return enabled;
 }
@@ -307,9 +321,9 @@ Equipped Count(const Definition& set, const std::vector<int>& items) {
     Equipped result;
     for (const auto item : items) {
         auto found = std::find_if(set.members.begin(), set.members.end(), [item](const Member& member) { return member.item == item; });
-        if (found != set.members.end()) {
+        if (found != set.members.end() && !(result.categories & (1ull << found->category))) {
             ++result.count;
-            result.categories |= 1u << found->category;
+            result.categories |= 1ull << found->category;
         }
     }
     return result;
@@ -322,7 +336,7 @@ int ItemId(void* item) {
     using Read = int(__thiscall*)(const void*);
     return item ? reinterpret_cast<Read>(Native(0x0042873D))(static_cast<BYTE*>(item) + 0xc) : 0;
 }
-Equipped ReadEquipped(void* character) {
+Equipped ReadEquipped(const Definition& definition, void* character) {
     using Get = void*(__thiscall*)(void*, void*, int, int);
     using Release = void(__thiscall*)(void*);
     struct Slot {
@@ -336,7 +350,12 @@ Equipped ReadEquipped(void* character) {
         reinterpret_cast<Get>(Native(0x004282F7))(character, &slot, 1, position);
         if (slot.item) items.push_back(ItemId(slot.item));
     };
-    for (int slot = 1; slot <= 51; ++slot) { read(-slot); read(-slot - 100); }
+    const auto context = *reinterpret_cast<BYTE**>(Native(0x00BE7918));
+    const bool secondPendant = context && *reinterpret_cast<DWORD*>(context + 0x387c) != 0;
+    for (int slot = 1; slot <= 51; ++slot) {
+        if (slot == 51 && !secondPendant) continue;
+        read(-slot); read(-slot - 100);
+    }
     for (int slot = 1000; slot <= 1003; ++slot) read(-slot);
     return Count(definition, items);
 }
@@ -357,13 +376,22 @@ std::wstring Pool(unsigned id) {
     return result;
 }
 using LabelReader = std::wstring(*)(unsigned);
+std::wstring CategoryText(int category, LabelReader label) {
+    switch (category) {
+    case 4: return L"\u8033\u73af";
+    case 12: return L"\u6212\u6307";
+    case 17: return L"\u9879\u94fe";
+    case 50: return L"\u8170\u5e26";
+    default: return label(CategoryLabel(category));
+    }
+}
 Layout Compose(const Definition& set, Equipped equipped, LabelReader label) {
     Layout result;
     result.lines.push_back({set.name, L"", titleColor, 8, true});
     int top = 35;
     for (const auto& category : set.categories) {
-        result.lines.push_back({category.second, L"(" + label(CategoryLabel(category.first)) + L")",
-            equipped.categories & (1u << category.first) ? activeColor : inactiveColor, top});
+        result.lines.push_back({category.second, L"(" + CategoryText(category.first, label) + L")",
+            equipped.categories & (1ull << category.first) ? activeColor : inactiveColor, top});
         top += lineHeight;
     }
     result.divider = static_cast<int>(set.categories.size()) * lineHeight + 40;
@@ -373,7 +401,9 @@ Layout Compose(const Definition& set, Equipped equipped, LabelReader label) {
         top += lineHeight;
         for (size_t index = 0; index < effect.values.size(); ++index) {
             if (!effect.values[index]) continue;
-            result.lines.push_back({label(statLabels[index]) + L" +" + std::to_wstring(effect.values[index]), L"",
+            const std::wstring name = index < 4 ? label(statLabels[index]) : index == 4 ? L"\u7269\u7406\u653b\u51fb\u529b :"
+                : index == 5 ? L"\u9b54\u6cd5\u653b\u51fb\u529b :" : L"\u66b4\u51fb\u4f24\u5bb3 :";
+            result.lines.push_back({name + L" +" + std::to_wstring(effect.values[index]) + (index == 6 ? L"%" : L""), L"",
                 equipped.count >= effect.threshold ? activeColor : inactiveColor, top});
             top += lineHeight;
         }
@@ -526,7 +556,7 @@ void PositionPanel(Panel& panel) {
     placement.appliedMain = position.main;
     placement.appliedComparison = position.comparison;
 }
-std::unique_ptr<Panel> CreatePanel(void* owner, int item, void* character, Equipped equipped, const Panel* previous) {
+std::unique_ptr<Panel> CreatePanel(const Definition& definition, void* owner, int item, void* character, Equipped equipped, const Panel* previous) {
     auto panel = std::make_unique<Panel>();
     auto layout = Compose(definition, equipped, Pool);
     Borrow(owner, 0x440, panel->activeFont);
@@ -572,14 +602,15 @@ void Sync(void* owner, int item) {
     if (!character || !mainLayer || !EnabledItem(item)) { panels.erase(owner); return; }
     const auto found = panels.find(owner);
     if (found != panels.end() && found->second->character != character) { panels.erase(found); return; }
-    const auto equipped = ReadEquipped(character);
+    const auto& definition = *ItemDefinition(item);
+    const auto equipped = ReadEquipped(definition, character);
     if (found != panels.end() && found->second->mainLayer == mainLayer && found->second->character == character
         && found->second->item == item && found->second->equipped == equipped) {
         if (!comparisonDepth) PositionPanel(*found->second);
         return;
     }
     if (panels.size() >= 8 && found == panels.end()) return;
-    auto panel = CreatePanel(owner, item, character, equipped, found == panels.end() ? nullptr : found->second.get());
+    auto panel = CreatePanel(definition, owner, item, character, equipped, found == panels.end() ? nullptr : found->second.get());
     panels[owner] = std::move(panel);
 }
 void SafeSync(void* owner, int item) {
@@ -731,6 +762,6 @@ bool SetItemTooltip::Install(HMODULE module) {
         return Failure("patch protection/cache", 0);
     }
     installed = true;
-    ClientLog::Append(ClientLog::Component::Lifecycle, "event=set_item_tooltip_install success=1 protectionRestored=1 set=5");
+    ClientLog::Append(ClientLog::Component::Lifecycle, "event=set_item_tooltip_install success=1 protectionRestored=1 sets=5,6");
     return true;
 }

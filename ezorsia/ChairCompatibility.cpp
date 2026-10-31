@@ -76,7 +76,8 @@ struct PetSeatState {
     ModernChairResources::Seat seat;
     MixedDyeResources::Object layer;
     MixedDyeResources::Value origin;
-    int x=0,y=0,flip=0;
+    MixedDyeResources::Value overlay;
+    int x=0,y=0,flip=0,z=0;
 };
 std::map<void*,PetSeatState> g_petSeats;
 
@@ -90,11 +91,26 @@ void RestorePetLayer(PetSeatState& state) {
     using namespace MixedDyeResources;
     if(!state.layer.p)return;
     Check(Method<HRESULT(__stdcall*)(void*,VARIANT)>(state.layer.p,0x64)(state.layer.p,state.origin.v));
+    Check(Method<HRESULT(__stdcall*)(void*,VARIANT)>(state.layer.p,0xfc)(state.layer.p,state.overlay.v));
+    Check(Method<HRESULT(__stdcall*)(void*,int)>(state.layer.p,0xb4)(state.layer.p,state.z));
     VARIANT missing{};missing.vt=VT_ERROR;missing.scode=DISP_E_PARAMNOTFOUND;
     Check(Method<RelMove>(state.layer.p,0x90)(state.layer.p,state.x,state.y,missing,missing));
     Check(Method<HRESULT(__stdcall*)(void*,int)>(state.layer.p,0xd8)(state.layer.p,state.flip));
     DreamCanvas::Release(state.layer.p);state.layer.p=nullptr;
     ResourceVariant::Clear(&state.origin.v);
+    ResourceVariant::Clear(&state.overlay.v);
+}
+
+void SavePetLayer(PetSeatState& state, void* layer) {
+    using namespace MixedDyeResources;
+    static_cast<IUnknown*>(layer)->AddRef();state.layer.p=layer;
+    Check(Method<HRESULT(__stdcall*)(void*,VARIANT*)>(layer,0x60)(layer,&state.origin.v));
+    Check(Method<HRESULT(__stdcall*)(void*,VARIANT*)>(layer,0xf8)(layer,&state.overlay.v));
+    state.x=Int(layer,0x20);state.y=Int(layer,0x28);state.flip=Int(layer,0xd4);state.z=Int(layer,0xb0);
+    // get_x/get_y are absolute; RelMove accepts offsets from the origin.
+    // Restoring absolute map coordinates here makes the pet drift offscreen.
+    auto origin=Query(state.origin.v,VectorIID());
+    if(origin.p){state.x-=Int(origin.p,0x20);state.y-=Int(origin.p,0x28);}
 }
 
 int PetAction(void* pet,const std::wstring& name) {
@@ -150,13 +166,14 @@ void __fastcall PetUpdateHook(void* pet,void*) {
             *reinterpret_cast<int*>(bytes+0xf8)=state.action;g_petPrepare(pet);
         }
         void* layer=*reinterpret_cast<void**>(bytes+0x124);
-        void* origin=*reinterpret_cast<void**>(user+0x88+0x10b0);
-        if(!layer || !origin)return;
-        static_cast<IUnknown*>(layer)->AddRef();state.layer.p=layer;
-        Check(Method<HRESULT(__stdcall*)(void*,VARIANT*)>(layer,0x60)(layer,&state.origin.v));
-        state.x=Int(layer,0x20);state.y=Int(layer,0x28);state.flip=Int(layer,0xd4);
-        int flip=0;ModernCapeEffects::actionFor(user+0x88,&flip);
+        void* origin=*reinterpret_cast<void**>(user+kBodyOriginOffset);
+        void* overlay=*reinterpret_cast<void**>(user+0x88+0x10c8);
+        if(!layer || !origin || !overlay)return;
+        SavePetLayer(state,layer);
+        const int flip=ModernCapeEffects::ImageFlip(user+0x88);
         Check(Method<HRESULT(__stdcall*)(void*,VARIANT)>(layer,0x64)(layer,ModernCapeEffects::Borrow(origin)));
+        Check(Method<HRESULT(__stdcall*)(void*,VARIANT)>(layer,0xfc)(layer,ModernCapeEffects::Borrow(overlay)));
+        Check(Method<HRESULT(__stdcall*)(void*,int)>(layer,0xb4)(layer,4));
         VARIANT missing{};missing.vt=VT_ERROR;missing.scode=DISP_E_PARAMNOTFOUND;
         Check(Method<RelMove>(layer,0x90)(layer,flip?-state.seat.x:state.seat.x,state.seat.y,missing,missing));
         Check(Method<HRESULT(__stdcall*)(void*,int)>(layer,0xd8)(layer,flip ^ state.seat.reverse));
@@ -276,7 +293,8 @@ void ApplyBodyOffset(void* user, int x, int y, bool sample)
 		VARIANT missing{};
 		missing.vt = VT_ERROR;
 		missing.scode = DISP_E_PARAMNOTFOUND;
-		const HRESULT result = reinterpret_cast<RelMove>(vtable[kRelMoveVtableIndex])(vector, x, y, missing, missing);
+		const int flip=ModernCapeEffects::ImageFlip(static_cast<BYTE*>(user)+0x88);
+		const HRESULT result = reinterpret_cast<RelMove>(vtable[kRelMoveVtableIndex])(vector, flip?-x:x, y, missing, missing);
 		if (sample) LogChair("relmove", user, 0, x, y, vector, result);
 	}
 	__except (EXCEPTION_EXECUTE_HANDLER) {

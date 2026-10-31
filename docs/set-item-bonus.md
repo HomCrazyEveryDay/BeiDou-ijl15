@@ -6,13 +6,16 @@
 
 | body 偏移 | 类型 | 含义 |
 | --- | --- | --- |
-| 0 | u8 | version=1 |
+| 0 | u8 | version=2（仍接受 version=1） |
 | 1 | u8 | pieces，0–4 |
 | 2 / 4 / 6 / 8 | i16 LE | PDD / MDD / ACC / EVA |
+| 10 / 12 | i16 LE | PAD / MAD，v2 新增 |
 
-body=10 字节；含 opcode 的 wire 数据=12 字节；现有 CInPacket 含四字节前缀，故 `DataLen=16`、opcode 在 data+4、body 在 data+6。逐字段解析，不 memcpy 结构体。长度、版本、件数不符或任一加值为负时消费该扩展包并清零快照；其他 opcode 透传，opcode 0 先清空快照及待刷新状态。
+v2 body=14 字节，含 opcode 的 wire 数据=16 字节；现有 CInPacket 含四字节前缀，故 `DataLen=20`、opcode 在 data+4、body 在 data+6。v1 仍接受 `DataLen=16`，PAD/MAD 清零。逐字段解析，不 memcpy 结构体。长度、版本、件数不符或任一加值为负时消费该扩展包并清零快照；其他 opcode 透传，opcode 0 先清空快照及待刷新状态。
 
 属性注入不扫描装备、不在 DLL 重新判断套装 ID/件数阈值。服务器目前 2/3 件为 `(20,20,0,0)`，4 件为 `(20,20,20,20)`；DLL 使用收到的非负 i16 值，不把这组数值硬编码成另一套规则。[套装提示框](set-item-tooltip.md) 独立读取本地装备用于显示，不参与属性注入；游戏线程完成一次 pending 属性刷新后通知提示框更新。
+
+2026-11-01 新增至尊饰品 set 6：2 件 PAD/MAD +5，3 件累积 +13，4 件额外暴伤 +5 个百分点。战甲 set 5 与饰品 set 6 的快照相加；pieces 为各套装最大件数，仍不超过 4。暴伤合并到现有装备暴击 `0x1010` 快照，由原有暴击模块处理，不在本包重复加入。服务端同步实际攻击/魔攻和暴伤，去重同 ID，并忽略未开启的第二吊坠。
 
 ## 接收、线程与生命周期
 
@@ -35,6 +38,8 @@ body=10 字节；含 opcode 的 wire 数据=12 字节；现有 CInPacket 含四�
 | MDD | +0x90 | +0x98 |
 | ACC | +0xC0 | +0xC8 |
 | EVA | +0xF0 | +0xF8 |
+| PAD | +0x00 | +0x08 |
+| MAD | +0x60 | +0x68 |
 
 reader **0x00416563**：`int __cdecl(const void* encoded,unsigned checksum)`。writer **0x004165B1**：`unsigned __fastcall(int value,void* encoded)`，ECX=value、EDX=encoded、EAX=新 checksum，调用者必须写 encoded+8。加算使用溢出保护；普通游戏数值的后续上限仍由原生代码决定。
 
@@ -45,5 +50,7 @@ reader **0x00416563**：`int __cdecl(const void* encoded,unsigned checksum)`。w
 安装先检查 PE 基线、补点、reader/writer/ValidateStat 入口字节；不符整组拒绝，日志一次。写入后刷新指令缓存并恢复原页面保护，刷新失败回滚。
 
 `tests/SetItemBonusTest.ps1` 对真实 EXE 做 SHA-256/字节验证，在隔离映射执行 gate 和 mock 原生服务：覆盖精确包长、大小端、负值/版本/件数非法、清零、独立权威数值、重复快照不累计、换角色、pending/reset、异线程延迟、刷新重入、本地对象限定、安全整数 ABI/checksum、栈参数及 flags。
+
+2026-11-01 已补 v2 攻击/魔攻 +13、安全整数六字段及 v1 回退清零的隔离回归；Release|x86 构建通过并安装本地，详见服务端 [测试反馈修复](../../BeiDou-Server/docs/visitors.md)。实机属性/战斗表现仍需用户验收。
 
 用户实机验收：登录时 0/1/2/3/4 件，穿脱和销毁/到期，属性窗口即时刷新、与 buff/被动叠加和限幅，死亡/换图/换频道/换账号，以及原生受击/命中表现。测试不启动游戏或服务端，不自动部署 DLL。

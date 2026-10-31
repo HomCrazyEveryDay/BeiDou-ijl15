@@ -14,7 +14,7 @@ int refreshCount = 0, readCount = 0, writeCount = 0, logCount = 0;
 DWORD testThread = 0;
 bool nestedRefresh = false;
 unsigned char ordinary[6] = {0,0,0,0,0x7E,0};
-const int baseValues[] = {100,200,300,400};
+const int baseValues[] = {100,200,300,400,500,600};
 
 unsigned __fastcall WriteInt(int value, void* encoded) {
     ++writeCount;
@@ -30,16 +30,16 @@ int __cdecl ReadInt(const void* encoded, unsigned checksum) {
     return static_cast<int>(value);
 }
 void InitializeStats(void* secondary) {
-    for (size_t index = 0; index < 4; ++index) {
+    for (size_t index = 0; index < 6; ++index) {
         auto* encoded = static_cast<unsigned char*>(secondary) + offsets[index];
         Set(encoded, 8, WriteInt(baseValues[index], encoded));
         Set(encoded, 12, 0x12345678u);
     }
 }
-void ExpectValues(const int* bonuses) {
-    for (size_t index = 0; index < 4; ++index) {
+void ExpectValues(const int* bonuses, int pad = 0, int mad = 0) {
+    for (size_t index = 0; index < 6; ++index) {
         auto* encoded = context + 0x2134 + offsets[index];
-        Require(ReadInt(encoded, *reinterpret_cast<unsigned*>(encoded + 8)) == baseValues[index] + bonuses[index], "rebuilt totals include one snapshot");
+        Require(ReadInt(encoded, *reinterpret_cast<unsigned*>(encoded + 8)) == baseValues[index] + (index < 4 ? bonuses[index] : index == 4 ? pad : mad), "rebuilt totals include one snapshot");
         Require(*reinterpret_cast<unsigned*>(encoded + 12) == 0x12345678, "temporary buff fields untouched");
     }
 }
@@ -124,6 +124,10 @@ void PacketTests() {
         packet.resize(20);
         Require(SetItemBonus::HandlePacket(packet.data(), size) == (size >= 6), "strict internal packet length");
     }
+    auto vip = Packet(4,20,20,20,20);
+    vip.resize(20);vip[6]=2;vip[16]=13;vip[18]=13;
+    Receive(vip);ExpectValues(full,13,13);
+    Receive(Packet(2,20,20,0,0));ExpectValues(partial);
     const int refreshes = refreshCount;
     Require(!SetItemBonus::HandlePacket(ordinary, sizeof(ordinary)) && refreshCount == refreshes, "non-owned packet does not refresh twice");
     Receive(Packet(4,20,20,20,20));

@@ -4,11 +4,11 @@
 
 ## 数据与边界
 
-- `SetItemTooltip.cpp` 的 `supportedSet=5` 与服务端 `SetItemBonus.SUPPORTED={5}` 必须同步维护。不要因 IMG 存在其他套装就显示它们；新增支持须同时实现服务端效果及 DLL 对应标签/数据字段。
-- 原生 ResMan 读取 `Etc/SetItemInfo.img/5`，缓存名称、四个类别、16 个成员和效果；悬停对象还必须通过 `Character/<类别>/<八位ID>.img/info/setItemID=5` 校验。基础款 `1003115/1052277/1072449/1082277` 不显示。
-- 本地 `CharacterData` 的装备槽逐实例计数，重复 ID 的两个已装备实例算两件，不按类别去重；类别行由是否穿戴该类别的任意成员点亮。这与服务端 `calculate` 遍历 equipped 的成员判断一致，不把悬停的背包物品当成已装备物品。
+- `SetItemTooltip.cpp` 的 `supportedSets={5,6}` 与服务端 `SetItemBonus.SUPPORTED={5,6}` 必须同步维护。不要因 IMG 存在其他套装就显示它们；新增支持须同时实现服务端效果及 DLL 对应标签/数据字段。
+- 原生 ResMan 分别读取 `Etc/SetItemInfo.img/5`（战甲四类别、16 个成员）和 `/6`（至尊饰品四类别、4 个成员），按套装缓存；悬停对象必须通过 `Character/<类别>/<八位ID>.img/info/setItemID` 与所属套装一致的校验。基础款 `1003115/1052277/1072449/1082277` 不显示。
+- 本地 `CharacterData` 只计已穿戴的套装类别，重复戒指/项链只算一件，未开启的第二吊坠不计入；类别掩码使用 64 位以容纳腰带类别 50。这与当前合法装备槽下的服务端去重计算一致，不把悬停的背包物品当成已装备物品。
 - 展示读取 WZ 效果与装备状态；实际属性仍只由 [SetItemBonus](set-item-bonus.md) 的服务器权威快照注入。面板不修改属性、不发送封包。`RefreshPending` 完成游戏线程 `ValidateStat` 后通知面板刷新，不轮询、不创建线程。
-- 显示 PDD/MDD/ACC/EVA 和 `setKey=10000` 的立方体保护说明（服务端 `VisitorQuests.wearsFullSet` / `Character.doHurtHp` 已实现）；遇到未知非零效果、非法结构或资源读取失败隐藏面板，资源错误仅记录一次。其他 GMS092 套装的通用效果展示不在本次范围。
+- 显示 PDD/MDD/ACC/EVA/PAD/MAD/暴击伤害和 `setKey=10000` 的立方体保护说明（服务端 `VisitorQuests.wearsFullSet` / `Character.doHurtHp` 已实现）。至尊饰品按 2/3/4 件显示 +5 攻魔 / 再加 +8 攻魔 / +5% 暴伤；遇到未知非零效果、非法结构或资源读取失败隐藏面板，资源错误仅记录一次。其他 GMS092 套装的通用效果展示不在本次范围。
 
 ## 样式与 092 依据
 
@@ -52,11 +52,11 @@
 
 ## 汉化和验证
 
-服务端 `wz-zh-CN/Etc.wz/SetItemInfo.img.xml` 是从 `wz` 复制的全文件 overlay，仅修改 set 5 五个 string。其他套装、ItemID、completeCount、Effect、setKey 不变；服务器 loader 只读取支持套装的 ItemID/Effect，不读取显示名称。客户端实际 IMG 原有 set 3/1/2/5，不要误认为只有 set 5，更不要用服务端全文件替换客户端结构。
+服务端 `wz-zh-CN/Etc.wz/SetItemInfo.img.xml` 是全文件 overlay，原有 set 5 五个 string 汉化保留，2026-11-01 与基础层共同增加 set 6。服务器 loader 只读取支持套装的 ItemID/Effect，不读取显示名称。客户端原有 set 3/1/2/5，现在增量加入 set 6；不能用服务端全文件覆盖客户端结构。
 
-使用 workspace `tools/xml-img-patcher` 导出实际 IMG、生成精确五字段 diff，`batch --dry-run`、`batch` 后 `verify` 与完整反读比较；批处理提供全 overlay 作为 full XML，实际只应用 diff。此次产物留在 `.tmp/codex-visitors/set-tooltip/patched/Data/Etc/SetItemInfo.img`，未写客户端目录。审核后安装时应关闭客户端并同时安装 XML 对应 IMG 和 Release DLL。
+使用 workspace `tools/xml-img-patcher` 按目标字段生成 diff，`batch --dry-run`、`batch` 后 `verify` 与完整反读比较。2026-11-01 set 6 和四件装备的 setItemID/基础属性已安装本地，原有套装保持不变，配套 Release DLL 已同步；产物及原件备份位于 workspace `exports/orange-wz/test-feedback-20261101/`。
 
-`tests/SetItemTooltipTest.ps1` 默认使用上述暂存 IMG，产物全在 `.tmp/codex-visitors/set-tooltip/tests`；也可传 `-OutputDirectory` 和 `-PatchedImage`。测试只在隔离进程映射 EXE 数据，加载客户端 PCOM 库读取复制到暂存目录的资源，绝不启动 BeiDou.exe 或服务端。
+`tests/SetItemTooltipTest.ps1` 默认使用已安装的客户端 IMG；也可传 `-OutputDirectory` 和 `-PatchedImage`。测试只在隔离进程映射 EXE 数据，加载客户端 PCOM 库读取复制到暂存目录的资源，不启动 BeiDou.exe 或服务端。2026-11-01 增补 set 6 的四件真实资源、去重计数、2/3/4 件效果和中文暴伤标签回归并通过。
 
 测试覆盖原字节逐字节拒绝、七处保护故障回滚、RX 恢复、18/6 栈字转发、真实 PCOM WZ/字体/canvas/向量、实际 native ClearToolTip 和UI原点getter、0–4件高亮及新译文、重复实例、白名单、基础款、异线程抑制、换角色与引用释放。定位覆盖1280×720左/中/右/底部、精确贴边、负坐标、超宽超高不隐藏、100次悬停与刷新不调用RelMove、格内移动重新构建、计数重绘保留基准、同一层被原生重定位、非居中UI原点、多级父层、面板变矮恢复原生基准。比较替身构造UI原点→A→B→S图，get_x/y递归返回绝对值；覆盖横/竖、缓存命中、原生根层移动、重绘和清除。`content-0.bmp` 至 `content-4.bmp` 是离线内容绘制，frame/layer仍为替身；真实PCOM向量测试另行验证getter/origin/RelMove语义，不能代替游戏图形线程的无闪烁验收。
 

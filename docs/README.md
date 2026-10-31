@@ -17,6 +17,7 @@
 ## 功能与兼容
 
 - 椅子小文件：[现行交付与验证](../../BeiDou-Server/docs/records/november-refresh-20261028.md#椅子小文件与发布体积2026-10-28) — 保留 release 45 的旧合集，新增椅子用五位小文件；DLL 合并原生根与重定向深路径，配套服务端按 ID 优先读取小文件。旧椅子、覆盖/回退、真实 PCOM 读取与宠物座位回归通过，已同步本地，实机待用户验收。
+- 时装左右位置（2026-11-01）：[反馈修复与翻转复核](../../BeiDou-Server/docs/records/november-refresh-20261028.md#2026-10-31-反馈修复2026-11-01) — 区分移动朝向位与图片 flip，独立特效、套装同伴、椅子偏移和宠物座位跟随原生已渲染朝向；六件实际图片的遮挡及左右转身离线验证通过，实机待复测。
 - 十一月焕新：[通用武器、ItemEff、套装站姿和椅子兼容](../../BeiDou-Server/docs/records/november-refresh-20261028.md) — 已接入 16 件独立特效、往期两套校服的完整随机同伴、运动套服原版浮动站姿及特殊动作特效规则，修复商店武器类别、名片接缝和标题性别重复。12:48 用户反馈小天使穿戴崩溃后，已修正动作表的引用类型标记，补测真实加载分支及 112 个身体/衣服图片引用；12:57 新 DLL 已安装本地，实机待用户复测。现行依据见记录中的“12:48 小天使穿戴崩溃修复”。17:55 补上 GM 隐身时特效闪烁的通用透明度修复，真实绘图组件复现与修复回归通过，新 DLL 已替换本地，详见“GM 隐身时装备特效反复闪亮”。
 
 - 界面与系统：[buff-countdown.md](buff-countdown.md)、[character-slots-20.md](character-slots-20.md)、[hired-merchant-clock.md](hired-merchant-clock.md)、[maple-life-localization.md](maple-life-localization.md)、[high-id-face-preview.md](high-id-face-preview.md)
@@ -26,8 +27,8 @@
 - 护送怪梯绳：[visitors-mob-climb.md](visitors-mob-climb.md) — 42 项私有动作表、rope/ladder stance、懒加载缺帧回退及缓存生命周期；实机待验收
 - OS4 飞船：[visitors-shuttle.md](visitors-shuttle.md) — 1932037 模型分类、四职业 1065 施放/效果、原生限制与上下马计数；含 2026-10-24 限时技能及相关到期提示汉化，实机待验收
 - 骑宠抓绳：[mount-rope-alignment-20261018](records/mount-rope-alignment-20261018.md) — 以 2026-10-24 井口回归修正为准：显示位置查询未命中时回退原生位置，离线通过、实机待验证
-- 访客套装：[set-item-bonus.md](set-item-bonus.md) — 0x1011 权威快照、装备循环前安全整数加算和游戏线程属性重算；实机待验收
-- 套装提示框：[set-item-tooltip.md](set-item-tooltip.md) — 092 布局、set 5 中文资源；修复实测发现的坐标偏移/抖动，原生坐标转换和幂等定位已离线验证，本版未安装、待复测
+- 访客套装：[set-item-bonus.md](set-item-bonus.md) — 0x1011 v2 权威快照新增攻击/魔攻，支持战甲 set 5 与至尊饰品 set 6，暴伤沿用装备暴击快照；2026-11-01 离线通过、本地已安装，实机待验收
+- 套装提示框：[set-item-tooltip.md](set-item-tooltip.md) — 092 布局、set 5/6 中文资源、去重计数与至尊饰品效果；坐标转换和幂等定位已离线验证，2026-11-01 本地已安装，待复测
 - 龙神 084 → 083：[单点重置卷与窗口兼容](../../BeiDou-Server/docs/evan-sp-accounting.md)（10-28，待用户实机验收）、[evan-ui-localization.md](evan-ui-localization.md)、[evan-killer-wings.md](evan-killer-wings.md)、[evan-phantom-imprint.md](evan-phantom-imprint.md)、[evan-soul-stone.md](evan-soul-stone.md)、[evan-maple-hero-animation.md](evan-maple-hero-animation.md)、[evan-dark-fog-animation.md](evan-dark-fog-animation.md)、[evan-thrust-flame-wheel-effects.md](evan-thrust-flame-wheel-effects.md)、[evan-dragon-visibility.md](evan-dragon-visibility.md)、[evan-dragon-follow-facing.md](evan-dragon-follow-facing.md)、[evan-dream-frame-scaling.md](evan-dream-frame-scaling.md)、[evan-incubation-scaling.md](evan-incubation-scaling.md)
 
 ## 主题的现行依据在 records 中

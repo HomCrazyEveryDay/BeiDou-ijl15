@@ -13,7 +13,7 @@ constexpr DWORD Native(DWORD address) { return address; }
 #endif
 struct Snapshot {
     unsigned pieces;
-    int values[4];
+    int values[6];
 };
 struct State {
     Snapshot snapshot;
@@ -27,7 +27,7 @@ volatile LONG gameThread = 0;
 LONG failureLogged = 0, invalidLogged = 0;
 bool installed = false, refreshing = false;
 const DWORD statResume = Native(0x0077F875);
-const size_t offsets[] = {0x30, 0x90, 0xC0, 0xF0};
+const size_t offsets[] = {0x30, 0x90, 0xC0, 0xF0, 0x00, 0x60};
 using ReadSecureInt = int(__cdecl*)(const void*, unsigned);
 using WriteSecureInt = unsigned(__fastcall*)(int, void*);
 using ValidateStat = void(__thiscall*)(void*);
@@ -39,10 +39,12 @@ void* Character(void* context) {
 
 bool Decode(const unsigned char* data, unsigned long size, Snapshot& result) {
     result = {};
-    if (!data || size != 16 || data[6] != 1 || data[7] > 4) return false;
+    if (!data || size < 8 || data[7] > 4) return false;
+    const size_t count = data[6] == 1 && size == 16 ? 4 : data[6] == 2 && size == 20 ? 6 : 0;
+    if (!count) return false;
     Snapshot decoded{};
     decoded.pieces = data[7];
-    for (size_t index = 0; index < 4; ++index) {
+    for (size_t index = 0; index < count; ++index) {
         const unsigned value = data[8 + index * 2] | (data[9 + index * 2] << 8);
         if (value > 0x7FFF) return false;
         decoded.values[index] = static_cast<int>(value);
@@ -68,7 +70,7 @@ void __stdcall ApplyBonus(void* secondary) {
     ReleaseSRWLockExclusive(&stateLock);
     const auto read = reinterpret_cast<ReadSecureInt>(Native(0x00416563));
     const auto write = reinterpret_cast<WriteSecureInt>(Native(0x004165B1));
-    for (size_t index = 0; index < 4; ++index) {
+    for (size_t index = 0; index < _countof(offsets); ++index) {
         if (!snapshot.values[index]) continue;
         auto* encoded = static_cast<unsigned char*>(secondary) + offsets[index];
         auto* checksum = reinterpret_cast<unsigned*>(encoded + 8);
@@ -189,6 +191,6 @@ bool SetItemBonus::Install(HMODULE module) {
     const bool restored = VirtualProtect(site, patch.size, protection, &ignored) != FALSE;
     installed = flushed;
     ClientLog::Append(ClientLog::Component::Lifecycle,
-        "event=set_item_bonus_install version=1 success=%d protectionRestored=%d", installed, restored);
+        "event=set_item_bonus_install version=2 success=%d protectionRestored=%d", installed, restored);
     return installed;
 }

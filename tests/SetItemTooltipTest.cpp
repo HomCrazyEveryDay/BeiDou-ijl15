@@ -12,7 +12,7 @@ int logCount = 0, frameCount = 0, liveLayers = 0, inventoryReferences = 0;
 void* layerMethods[80]{};
 DreamCanvas::Factory pcomFactory = nullptr;
 std::wstring outputPath;
-BYTE owner[1304]{}, context[0x2200]{}, character[16]{}, otherCharacter[16]{};
+BYTE owner[1304]{}, context[0x4000]{}, character[16]{}, otherCharacter[16]{};
 struct Item { DWORD padding[3]{}; int id; };
 Item helmet{{},1003116}, suit{{},1052278}, shoes{{},1072450}, gloves{{},1082278}, basic{{},1003115};
 std::map<int, Item*> inventory;
@@ -332,12 +332,12 @@ void ModelTests() {
     const auto set = LoadDefinition();
     Require(Valid(set) && set.id == 5 && set.completeCount == 4 && set.members.size() == 16, "native PCOM reads patched set 5");
     Require(set.name == L"\u8fdb\u5316\u6218\u7532\u5957\u88c5", "patched Chinese title");
-    Require(set.effects.size() == 2 && set.effects[0].threshold == 2 && set.effects[0].values == std::array<int,4>{20,20,0,0}
-        && set.effects[1].threshold == 4 && set.effects[1].values == std::array<int,4>{0,0,20,20}
+    Require(set.effects.size() == 2 && set.effects[0].threshold == 2 && set.effects[0].values == std::array<int,7>{20,20,0,0}
+        && set.effects[1].threshold == 4 && set.effects[1].values == std::array<int,7>{0,0,20,20}
         && set.effects[0].setKey == 0 && set.effects[1].setKey == 10000, "native PCOM reads unchanged bonuses and cube protection setKey");
     for (const auto& member : set.members) Require(EnabledItem(member.item), "every member also has native info/setItemID=5");
     for (int item : {1003115,1052277,1072449,1082277,1003108,1000000}) Require(!EnabledItem(item), "base pieces, other sets and ordinary equips excluded");
-    for (int id : {0,1,2,3,4,6}) { auto other = set; other.id = id; Require(!Valid(other), "server-aligned enabled-set whitelist"); }
+    for (int id : {0,1,2,3,4,7}) { auto other = set; other.id = id; Require(!Valid(other), "server-aligned enabled-set whitelist"); }
     std::vector<int> equipped;
     const int ids[] = {1003116,1052278,1072450,1082278};
     for (int count = 0; count <= 4; ++count) {
@@ -356,7 +356,15 @@ void ModelTests() {
         for (int index : {9,10}) Require(layout.lines[index].color == (count >= 4 ? activeColor : inactiveColor), "four-piece block activates at four");
         if (count != 4) equipped.push_back(ids[count]);
     }
-    Require(Count(set, {ids[0],ids[0],1003115}).count == 2, "server counts duplicate instances, not unique IDs or unique categories");
+    Require(Count(set, {ids[0],ids[0],1003115}).count == 1, "duplicate copies cannot fill multiple set categories");
+    const auto vip = LoadDefinition(6);
+    Require(Valid(vip) && vip.members.size()==4 && vip.effects.size()==3,"VIP accessory definition");
+    for(const auto& member:vip.members)Require(EnabledItem(member.item),"VIP resource membership");
+    Require(Count(vip,{1112439,1112439,1032084}).count==2,"duplicate rings do not inflate VIP set");
+    const auto vipLayout=Compose(vip,Count(vip,{1112439,1032084,1122085,1132040}),Label);
+    Require(vipLayout.lines.back().left.find(L"+5%")!=std::wstring::npos,"critical damage percentage displayed");
+    Require(vip.effects[0].values[4]+vip.effects[1].values[4]==13
+        && vip.effects[0].values[5]+vip.effects[1].values[5]==13,"2/3 thresholds total 13 attack and magic");
     auto position = Place(100,80,260,360,236,231,800,600);
     Require(position.mainX == 100 && position.mainY == 80 && position.panelX == 360 && position.panelY == 80, "right-hand default");
     position = Place(540,400,260,360,236,231,800,600);
