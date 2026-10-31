@@ -17,6 +17,7 @@
 #include "VisitorsShuttle.h"
 #include "SetItemBonus.h"
 #include "SetItemTooltip.h"
+#include "VisitorsTimerTooltip.h"
 #include "AranCombatStep.h"
 #include "WarriorRush.h"
 #include "ComboTempestCritical.h"
@@ -1309,7 +1310,9 @@ namespace
 		VisitorsMobClimb::Install(GetModuleHandleW(nullptr));
 		VisitorsShuttle::Install(GetModuleHandleW(nullptr));
 		SetItemBonus::Install(GetModuleHandleW(nullptr));
-		SetItemTooltip::Install(GetModuleHandleW(nullptr));
+		if (SetItemTooltip::Install(GetModuleHandleW(nullptr))) {
+			VisitorsTimerTooltip::Install(GetModuleHandleW(nullptr));
+		}
 		if (!AranFirstAttack::Install()) {
 			ClientLog::Append(ClientLog::Component::Lifecycle, "aran_first_attack_install_failed");
 		}

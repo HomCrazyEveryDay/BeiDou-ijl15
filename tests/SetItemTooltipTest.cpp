@@ -4,6 +4,7 @@
 
 int Client::m_nGameWidth = 800;
 int Client::m_nGameHeight = 600;
+namespace VisitorsTimerTooltip { void Clear(void*) {} }
 
 namespace {
 using TestSupport::Require;

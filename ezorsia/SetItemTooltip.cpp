@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "SetItemTooltip.h"
+#include "VisitorsTimerTooltip.h"
 #include "ClientLog.h"
 #include "DreamCanvas.h"
 #include "ResourceVariant.h"
@@ -655,6 +656,7 @@ void __fastcall CompareHook(void* owner, void*, CompareArguments arguments) {
     SetItemTooltip::Refresh();
 }
 void __fastcall ClearHook(void* owner, void*) {
+    VisitorsTimerTooltip::Clear(owner);
     panels.erase(owner);
     originalClear(owner);
 }

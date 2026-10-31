@@ -183,6 +183,7 @@
     <ClInclude Include="VisitorsShuttle.h" />
     <ClInclude Include="SetItemBonus.h" />
     <ClInclude Include="SetItemTooltip.h" />
+    <ClInclude Include="VisitorsTimerTooltip.h" />
     <ClInclude Include="AranCombatStep.h" />
     <ClInclude Include="WarriorRush.h" />
     <ClInclude Include="ComboTempestDamage.h" />
@@ -327,6 +328,7 @@
     <ClCompile Include="VisitorsShuttle.cpp" />
     <ClCompile Include="SetItemBonus.cpp" />
     <ClCompile Include="SetItemTooltip.cpp" />
+    <ClCompile Include="VisitorsTimerTooltip.cpp" />
     <ClCompile Include="VisitorsScroll.cpp" />
     <ClCompile Include="VisitorsMobClimb.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>

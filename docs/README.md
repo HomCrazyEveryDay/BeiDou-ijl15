@@ -23,6 +23,7 @@
 - 界面与系统：[buff-countdown.md](buff-countdown.md)、[character-slots-20.md](character-slots-20.md)、[hired-merchant-clock.md](hired-merchant-clock.md)、[maple-life-localization.md](maple-life-localization.md)、[high-id-face-preview.md](high-id-face-preview.md)
 - 技能跳字与指令：[combo-tempest-damage-timing.md](combo-tempest-damage-timing.md)、[shadow-partner-damage-timing.md](shadow-partner-damage-timing.md)、[aran-combo-command.md](aran-combo-command.md)、[skill-point-sync.md](skill-point-sync.md)
 - 外星访客：[visitors-morph.md](visitors-morph.md) — Morph 64–67 输入、等级、动作、固定伤害与原生 Reactor 协议兼容；以当前实现和离线测试为依据，实机待验收
+- OSSS 计时器：[visitors-timer-tooltip.md](visitors-timer-tooltip.md) — 2026-11-01 使用已有服务器时间显示已过分钟，背包静止悬停跨分钟刷新；离线边界与生命周期回归通过，实机待验收。
 - 战甲强化：[visitors-scroll.md](visitors-scroll.md) — 限定材料/装备/资源分类的拖放放行、247/249 双击保护与原生 0x56；以当前实现及离线测试为依据，实机待验收
 - 护送怪梯绳：[visitors-mob-climb.md](visitors-mob-climb.md) — 42 项私有动作表、rope/ladder stance、懒加载缺帧回退及缓存生命周期；实机待验收
 - OS4 飞船：[visitors-shuttle.md](visitors-shuttle.md) — 1932037 模型分类、四职业 1065 施放/效果、原生限制与上下马计数；含 2026-10-24 限时技能及相关到期提示汉化，实机待验收
