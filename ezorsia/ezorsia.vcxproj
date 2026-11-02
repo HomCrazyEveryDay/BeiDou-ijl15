@@ -180,6 +180,7 @@
     <ClInclude Include="VisitorsMorph.h" />
     <ClInclude Include="VisitorsScroll.h" />
     <ClInclude Include="VisitorsMobClimb.h" />
+    <ClInclude Include="VisitorsMovementDiagnostics.h" />
     <ClInclude Include="VisitorsShuttle.h" />
     <ClInclude Include="SetItemBonus.h" />
     <ClInclude Include="SetItemTooltip.h" />
@@ -331,6 +332,10 @@
     <ClCompile Include="VisitorsTimerTooltip.cpp" />
     <ClCompile Include="VisitorsScroll.cpp" />
     <ClCompile Include="VisitorsMobClimb.cpp">
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
+    <ClCompile Include="VisitorsMovementDiagnostics.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <ExceptionHandling>Sync</ExceptionHandling>
     </ClCompile>

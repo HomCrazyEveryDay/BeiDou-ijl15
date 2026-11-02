@@ -14,6 +14,7 @@
 #include "VisitorsMorph.h"
 #include "VisitorsScroll.h"
 #include "VisitorsMobClimb.h"
+#include "VisitorsMovementDiagnostics.h"
 #include "VisitorsShuttle.h"
 #include "SetItemBonus.h"
 #include "SetItemTooltip.h"
@@ -1308,6 +1309,7 @@ namespace
 			ClientLog::Append(ClientLog::Component::Lifecycle, "visitors_scroll_install_failed");
 		}
 		VisitorsMobClimb::Install(GetModuleHandleW(nullptr));
+		VisitorsMovementDiagnostics::Install();
 		VisitorsShuttle::Install(GetModuleHandleW(nullptr));
 		SetItemBonus::Install(GetModuleHandleW(nullptr));
 		if (SetItemTooltip::Install(GetModuleHandleW(nullptr))) {
