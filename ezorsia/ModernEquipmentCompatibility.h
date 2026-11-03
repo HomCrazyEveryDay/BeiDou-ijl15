@@ -487,6 +487,69 @@ static void** __fastcall ItemIcon(void* self, void*, void** out,
     return result;
 }
 
+// CUIItem::OnMouseButton creates a drag layer before checking its icon. The
+// 2026-11-03 dump has a null canvas at 0081D5CC -> Gr2D_DX8+7998 for ETC slot 39.
+// Stop at the existing empty-slot exit, before any layer/VARIANT is allocated.
+// Do not change GetItemIconCanvas's null contract for its other callers.
+static DWORD inventoryDragReady = 0x0081D4BC;
+static DWORD inventoryDragEmpty = 0x0081D894;
+using DecodeItemId = int(__thiscall*)(void*);
+static auto decodeDragItemId = reinterpret_cast<DecodeItemId>(0x0042873D);
+static LONG missingDragReports = 0;
+
+static int __stdcall CanDragInventoryItem(void* item) {
+    const int id = decodeDragItemId(static_cast<unsigned char*>(item) + 0x0C);
+    void* canvas = nullptr;
+    // Same raw selector as the native drag path; the native cache owns its own
+    // reference. Release our extra lookup result before letting native code run.
+    ItemIcon(*reinterpret_cast<void**>(0x00BE78D8), nullptr, &canvas, id, 0, 0);
+    if (canvas) {
+        static_cast<IUnknown*>(canvas)->Release();
+        return true;
+    }
+    if (InterlockedIncrement(&missingDragReports) <= 16) {
+        const DWORD error = GetLastError();
+        CrashReporter::RecordEvent("inventory.icon", "skip drag with missing icon itemId=%d", id);
+        SetLastError(error);
+    }
+    return false;
+}
+
+__declspec(naked) static void InventoryDragIconGuard() {
+    __asm {
+        cmp esi, edi
+        je empty
+        pushad
+        push esi
+        call CanDragInventoryItem
+        test eax, eax
+        popad
+        jz empty
+        jmp dword ptr [inventoryDragReady]
+    empty:
+        jmp dword ptr [inventoryDragEmpty]
+    }
+}
+
+static bool InstallInventoryDragIconGuard() {
+    const BYTE expected[] = {0x3B,0xF7,0x0F,0x84,0xD8,0x03,0x00,0x00};
+    auto site = reinterpret_cast<BYTE*>(0x0081D4B4);
+    if (std::memcmp(site, expected, sizeof(expected))) return false;
+    BYTE patch[] = {0xE9,0,0,0,0,0x90,0x90,0x90};
+    const DWORD displacement = reinterpret_cast<DWORD>(InventoryDragIconGuard) - 0x0081D4B9;
+    std::memcpy(patch + 1, &displacement, sizeof(displacement));
+    DWORD protection = 0, ignored = 0;
+    if (!VirtualProtect(site, sizeof(patch), PAGE_EXECUTE_READWRITE, &protection)) return false;
+    std::memcpy(site, patch, sizeof(patch));
+    const bool flushed = FlushInstructionCache(GetCurrentProcess(), site, sizeof(patch)) != FALSE;
+    if (!flushed) {
+        std::memcpy(site, expected, sizeof(expected));
+        FlushInstructionCache(GetCurrentProcess(), site, sizeof(expected));
+    }
+    const bool restored = VirtualProtect(site, sizeof(patch), protection, &ignored) != FALSE;
+    return flushed && restored;
+}
+
 static bool Install() {
     const auto base = reinterpret_cast<const BYTE*>(GetModuleHandleW(nullptr));
     if (reinterpret_cast<DWORD>(base) != 0x00400000) return false;
@@ -498,6 +561,8 @@ static bool Install() {
     const BYTE expected[] = {0xb8,0x47,0x47,0xa9,0x00,0xe8,0xb6,0xcf,0x48,0x00};
     if (std::memcmp(reinterpret_cast<void*>(getIcon), expected, sizeof(expected))) return false;
     const bool icon = Memory::SetHook(true, reinterpret_cast<void**>(&getIcon), ItemIcon);
+    const bool inventoryDrag = InstallInventoryDragIconGuard();
+    CrashReporter::RecordEvent("inventory.icon", "drag guard installed=%d", inventoryDrag);
     const bool weaponTypes = InstallWeaponTypeEnumeration();
     const bool face = InstallFaceImages();
     const bool pet = InstallPetEquipment();
@@ -513,6 +578,6 @@ static bool Install() {
     CrashReporter::RecordEvent("equipment.set-effect", "install=%d", capeEffects);
     CrashReporter::RecordEvent("equipment.weapon-types", "install=%d", weaponTypes);
     CrashReporter::RecordEvent("equipment.gender-title", "install=%d", genderTitle);
-    return icon && weaponTypes && face && pet && petActionUol && capeEffects && genderTitle;
+    return icon && inventoryDrag && weaponTypes && face && pet && petActionUol && capeEffects && genderTitle;
 }
 }

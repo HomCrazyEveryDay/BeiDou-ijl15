@@ -231,6 +231,95 @@ static void CheckIconContract() {
     Require(threw && iconCalls == 1, "original exceptions propagate");
 }
 
+static BYTE dragItem[32]{};
+static int __fastcall DragItemIdFixture(void* value, void*) {
+    Require(value == dragItem + 0x0c, "native secure item ID field");
+    return 1703494;
+}
+static DWORD dragGuardSite = 0x0081D4B4;
+__declspec(naked) static void DragAllowed() {
+    __asm { mov eax, 1 }
+    __asm { ret }
+}
+__declspec(naked) static void DragBlocked() {
+    __asm { xor eax, eax }
+    __asm { ret }
+}
+__declspec(naked) static int __cdecl RunDragGuard(void*) {
+    __asm {
+        push ebp
+        mov ebp, esp
+        push ebx
+        push esi
+        push edi
+        mov esi, dword ptr [ebp + 8]
+        xor edi, edi
+        mov ecx, 12345678h
+        mov edx, 87654321h
+        mov ebx, esp
+        call dispatch
+        cmp ebx, esp
+        jne bad
+        cmp ecx, 12345678h
+        jne bad
+        cmp edx, 87654321h
+        jne bad
+        cmp esi, dword ptr [ebp + 8]
+        jne bad
+        test edi, edi
+        jnz bad
+        jmp done
+    bad:
+        mov eax, 9
+    done:
+        pop edi
+        pop esi
+        pop ebx
+        pop ebp
+        ret
+    dispatch:
+        jmp dword ptr [dragGuardSite]
+    }
+}
+static void CheckInventoryDragGuard() {
+    using namespace ModernEquipmentCompatibility;
+    // Execute the real empty-slot branch, replacing only its destinations.
+    auto jump = [](DWORD address, void* target) {
+        auto bytes = reinterpret_cast<BYTE*>(address); bytes[0] = 0xe9;
+        *reinterpret_cast<DWORD*>(bytes + 1) = reinterpret_cast<DWORD>(target) - address - 5;
+    };
+    jump(inventoryDragReady, DragAllowed);
+    jump(inventoryDragEmpty, DragBlocked);
+    Require(RunDragGuard(nullptr) == 0 && RunDragGuard(dragItem) == 1,
+        "original drag path accepts any non-null slot even without an icon");
+    Require(*reinterpret_cast<DWORD*>(0x0081D53C) == 0xBE78D8,
+        "CItemInfo singleton verified against native drag lookup");
+    const auto savedDecoder = decodeDragItemId;
+    decodeDragItemId = reinterpret_cast<DecodeItemId>(DragItemIdFixture);
+    *reinterpret_cast<void**>(0x00BE78D8) = iconThis;
+    getIcon = reinterpret_cast<GetIcon>(IconFixture);
+    protectionCalls = 0; deniedProtectionCall = 1;
+    Require(!InstallInventoryDragIconGuard() && RunDragGuard(dragItem) == 1,
+        "denied write preserves original branch");
+    deniedProtectionCall = 0;
+    Require(InstallInventoryDragIconGuard(), "install exact native drag branch");
+    Require(!InstallInventoryDragIconGuard(), "duplicate drag patch rejected");
+    iconMode = 2; iconCalls = 0;
+    Require(RunDragGuard(nullptr) == 0 && iconCalls == 0, "empty slot needs no icon lookup");
+    for (int i = 0; i < 100; ++i)
+        Require(RunDragGuard(dragItem) == 0, "missing icon exits before allocating drag layer");
+    Require(iconCalls == 100 && iconObject.refs == 0, "failed lookups have no owned result");
+    for (iconMode = 0; iconMode <= 1; ++iconMode) {
+        iconCalls = 0;
+        for (int i = 0; i < 100; ++i)
+            Require(RunDragGuard(dragItem) == 1, "normal and raw-only icons keep native drag");
+        Require(iconCalls == 100 && iconObject.refs == 0, "preflight releases each owning canvas");
+    }
+    decodeDragItemId = savedDecoder;
+    *reinterpret_cast<void**>(0x00BE78D8) = nullptr;
+    std::puts("PASS: native inventory drag branch, missing/raw/normal icons, register/stack/COM lifetime");
+}
+
 static void** __fastcall NativeIcon(void*, void*, void** out, int id, int useIcon, int disabled) {
     wchar_t path[128];
     swprintf_s(path, L"Character/%s/%08d.img/info/%s%s",
@@ -809,6 +898,15 @@ static void CheckNativeResources(const wchar_t* exePath, const wchar_t* followup
     Require(SUCCEEDED(Method<Mount>(ns, 0x18)(ns, path, fs, 0)), "mount namespace");
     SysFreeString(path);
     *reinterpret_cast<void**>(0x00BF14E8) = rm;
+    if (!followupRoot) {
+        using ModernEquipmentCompatibility::LoadCanvas;
+        void* knownCoin = LoadCanvas(L"Item/Etc/0431.img/04310000/info/iconRaw");
+        Require(knownCoin != nullptr, "installed ETC bucket and normal coin icon load");
+        static_cast<IUnknown*>(knownCoin)->Release();
+        Require(!LoadCanvas(L"Item/Etc/0431.img/04310049/info/iconRaw")
+            && !LoadCanvas(L"Item/Etc/0431.img/04310049/info/icon"),
+            "crash item 4310049 has neither raw nor normal icon in installed resources");
+    }
     if (!followupRoot) CheckStandingActionRouting(rm);
     if (!followupRoot) CheckEquipmentGenderResourceNames();
     if (!followupRoot) CheckNovemberWeaponTypes();
@@ -836,6 +934,7 @@ int wmain(int argc, wchar_t** argv) {
     CheckNativePetLife();
     CheckPetMaskInstallation();
     CheckIconContract();
+    CheckInventoryDragGuard();
     using namespace ModernEquipmentCompatibility;
     DWORD ignored = 0;
     Require(VirtualProtect(reinterpret_cast<void*>(0x004081B2), 5, PAGE_EXECUTE_READ, &ignored)

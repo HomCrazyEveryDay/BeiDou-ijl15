@@ -33,6 +33,7 @@ struct Platform {
     std::string name;
     Motion motion;
     int initialX = 0, initialY = 0;
+    int localX = 0, localY = 0;
     std::vector<int> serials;
     std::vector<void*> footholds;
     // Borrowed from the field; no COM/native pointer survives Clear/Load.
@@ -44,6 +45,8 @@ struct State {
     bool loading = false, ready = false;
     std::vector<Platform> platforms;
     std::map<int, size_t> serials;
+    unsigned updates = 0, moves = 0, firstUpdate = 0;
+    bool reportedSkip = false, reportedMotion = false;
 } state;
 bool installed = false;
 
@@ -138,10 +141,28 @@ void BindLayers(void* field) {
         if (!frames || *reinterpret_cast<unsigned*>(frames-4) != 1) throw E_INVALIDARG;
         p.layer = Field<void*>(frames,8);
         if (!p.layer) throw E_POINTER;
+        Value parentValue;
+        Check(Method<HRESULT(__stdcall*)(void*,VARIANT*)>(p.layer,0x60)(p.layer,&parentValue.v));
+        auto parent=Query(parentValue.v,VectorIID());
+        // Keep the canvas's original local offset (including its origin).
+        p.localX=Int(p.layer,0x20)-(parent.p?Int(parent.p,0x20):0);
+        p.localY=Int(p.layer,0x28)-(parent.p?Int(parent.p,0x28):0);
+        // v83 LoadObject (63C0D0..63C0F0) hides every named state layer.
+        // These start=2 lifts have one static image and must be visible on
+        // entry. Match native SetObjectState (642C78..642C9D), state zero.
+        Object alpha;
+        Check(Method<HRESULT(__stdcall*)(void*,void**)>(p.layer,0xE4)(p.layer,&alpha.p));
+        if (!alpha.p) throw E_POINTER;
+        Check(Method<HRESULT(__stdcall*)(void*,int,int)>(alpha.p,0x40)(alpha.p,255,0));
     }
 }
 
 void __fastcall LoadHook(void* field, void*, int mapId) {
+    if (state.field) {
+        ClientLog::Append(ClientLog::Component::Lifecycle,
+            "[visitor-lifts] reload oldField=%p newField=%p map=%d updates=%u moves=%u\n",
+            state.field,field,mapId,state.updates,state.moves);
+    }
     state = {};
     if (mapId == 502023000) {
         try {
@@ -157,8 +178,10 @@ void __fastcall LoadHook(void* field, void*, int mapId) {
     state.loading = false;
     try {
         BindLayers(field); state.ready = true;
-        ClientLog::Append(ClientLog::Component::Lifecycle,"[visitor-lifts] loaded map=%d platforms=%u footholds=%u\n",
-            mapId,static_cast<unsigned>(state.platforms.size()),static_cast<unsigned>(state.serials.size()));
+        ClientLog::Append(ClientLog::Component::Lifecycle,
+            "[visitor-lifts] loaded map=%d platforms=%u footholds=%u field=%p space=%p update=%p\n",
+            mapId,static_cast<unsigned>(state.platforms.size()),static_cast<unsigned>(state.serials.size()),
+            field,state.space,Field<void*>(Field<void*>(field,0),0));
     } catch (...) {
         state = {};
         ClientLog::Append(ClientLog::Component::Lifecycle,"[visitor-lifts] incomplete native platform bindings\n");
@@ -166,15 +189,34 @@ void __fastcall LoadHook(void* field, void*, int mapId) {
 }
 
 void Tick(void* field, unsigned now) {
-    if (!state.ready || state.field != field || state.space != *reinterpret_cast<void**>(Native(0x00BEBFA0))) return;
+    if (!state.field) return;
+    auto* space = *reinterpret_cast<void**>(Native(0x00BEBFA0));
+    if (!state.updates++) {
+        state.firstUpdate = now;
+        ClientLog::Append(ClientLog::Component::Lifecycle,
+            "[visitor-lifts] first-update field=%p boundField=%p space=%p boundSpace=%p ready=%d tick=%u\n",
+            field,state.field,space,state.space,state.ready,now);
+    }
+    if (!state.ready || state.field != field || state.space != space) {
+        if (!state.reportedSkip) {
+            state.reportedSkip = true;
+            ClientLog::Append(ClientLog::Component::Lifecycle,
+                "[visitor-lifts] update-skipped field=%p boundField=%p space=%p boundSpace=%p ready=%d\n",
+                field,state.field,space,state.space,state.ready);
+        }
+        return;
+    }
     try {
         for (auto& p : state.platforms) {
             auto next = p.motion;
             if (!next.Step(now)) { p.motion = next; continue; }
             VARIANT missing{}; missing.vt = VT_ERROR; missing.scode = DISP_E_PARAMNOTFOUND;
-            // Same IWzVector2D::RelMove used by v83 LoadObject (63C212).
+            // The native layer already inherits an origin at (initialX,
+            // initialY). RelMove takes LOCAL coordinates, not map coordinates.
+            // Passing the map position twice displaced the visible platform
+            // away from its otherwise correctly moving collision surface.
             Check(Method<HRESULT(__stdcall*)(void*,int,int,VARIANT,VARIANT)>(p.layer,0x90)
-                (p.layer,next.x,next.y,missing,missing));
+                (p.layer,p.localX+next.x-p.initialX,p.localY+next.y-p.initialY,missing,missing));
             const int dx = next.x-p.motion.x, dy = next.y-p.motion.y;
             for (auto* fh : p.footholds) {
                 Field<int>(fh,0x0C) += dx; Field<int>(fh,0x14) += dx;
@@ -185,6 +227,25 @@ void Tick(void* field, unsigned now) {
             // position onto these endpoints, carrying the rider naturally.
             // Leave velocity, jump/rope state and movement packets native.
             p.motion = next;
+            ++state.moves;
+        }
+        if (!state.reportedMotion && (now-state.firstUpdate >= 2000 || state.updates >= 150)) {
+            state.reportedMotion = true;
+            const auto& p = state.platforms.front();
+            // A diagnostic getter must never stop an otherwise working lift.
+            try {
+                Object alpha;
+                Check(Method<HRESULT(__stdcall*)(void*,void**)>(p.layer,0xE4)(p.layer,&alpha.p));
+                if (!alpha.p) throw E_POINTER;
+                ClientLog::Append(ClientLog::Component::Lifecycle,
+                    "[visitor-lifts] motion-check updates=%u moves=%u tick=%u elapsed=%u name=%s start=(%d,%d) target=(%d,%d) vector=(%d,%d) foothold=(%d,%d) alpha=%d\n",
+                    state.updates,state.moves,now,now-state.firstUpdate,p.name.c_str(),p.initialX,p.initialY,
+                    p.motion.x,p.motion.y,Int(p.layer,0x20),Int(p.layer,0x28),
+                    Field<int>(p.footholds.front(),0x0C),Field<int>(p.footholds.front(),0x10),Int(alpha.p,0x20));
+            } catch (...) {
+                ClientLog::Append(ClientLog::Component::Lifecycle,
+                    "[visitor-lifts] motion-check vector unreadable updates=%u moves=%u\n",state.updates,state.moves);
+            }
         }
     } catch (...) {
         state.ready = false;
@@ -196,7 +257,12 @@ void __fastcall UpdateHook(void* field, void*) {
     nativeUpdate(field);
 }
 void __fastcall ClearHook(void* field, void*) {
-    if (state.field == field) state = {};
+    if (state.field) {
+        ClientLog::Append(ClientLog::Component::Lifecycle,
+            "[visitor-lifts] leave field=%p boundField=%p clear=%d updates=%u moves=%u\n",
+            field,state.field,state.field==field,state.updates,state.moves);
+        if (state.field == field) state = {};
+    }
     nativeClear(field);
 }
 }
