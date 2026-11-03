@@ -182,6 +182,7 @@
     <ClInclude Include="VisitorsMobClimb.h" />
     <ClInclude Include="VisitorsMovementDiagnostics.h" />
     <ClInclude Include="VisitorsShuttle.h" />
+    <ClInclude Include="VisitorsLabPlatforms.h" />
     <ClInclude Include="SetItemBonus.h" />
     <ClInclude Include="SetItemTooltip.h" />
     <ClInclude Include="VisitorsTimerTooltip.h" />
@@ -327,6 +328,9 @@
     <ClCompile Include="AranComboCommand.cpp" />
     <ClCompile Include="VisitorsMorph.cpp" />
     <ClCompile Include="VisitorsShuttle.cpp" />
+    <ClCompile Include="VisitorsLabPlatforms.cpp">
+      <ExceptionHandling>Sync</ExceptionHandling>
+    </ClCompile>
     <ClCompile Include="SetItemBonus.cpp" />
     <ClCompile Include="SetItemTooltip.cpp" />
     <ClCompile Include="VisitorsTimerTooltip.cpp" />

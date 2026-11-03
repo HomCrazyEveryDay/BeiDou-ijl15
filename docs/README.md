@@ -23,6 +23,7 @@
 - 界面与系统：[buff-countdown.md](buff-countdown.md)、[character-slots-20.md](character-slots-20.md)、[hired-merchant-clock.md](hired-merchant-clock.md)、[maple-life-localization.md](maple-life-localization.md)、[high-id-face-preview.md](high-id-face-preview.md)
 - 技能跳字与指令：[combo-tempest-damage-timing.md](combo-tempest-damage-timing.md)、[shadow-partner-damage-timing.md](shadow-partner-damage-timing.md)、[aran-combo-command.md](aran-combo-command.md)、[skill-point-sync.md](skill-point-sync.md)
 - 外星访客：[visitors-morph.md](visitors-morph.md) — Morph 64–67 输入、等级、动作、固定伤害与原生 Reactor 协议兼容；以当前实现和离线测试为依据，实机待验收
+- 能源实验室：[升降台与莉莉入口](../../BeiDou-Server/docs/visitors.md#能源实验室升降台与莉莉入口2026-11-03) — 092 动态平台原路线、图片/地面同步、原生角色站立投影；真实 IMG/PCOM 与原生查询离线回归通过，本地 DLL 已同步，实机乘坐和通关待验收。
 - OSSS 计时器：[visitors-timer-tooltip.md](visitors-timer-tooltip.md) — 2026-11-01 使用已有服务器时间显示已过分钟，背包静止悬停跨分钟刷新；离线边界与生命周期回归通过，实机待验收。
 - 战甲强化：[visitors-scroll.md](visitors-scroll.md) — 限定材料/装备/资源分类的拖放放行、247/249 双击保护与原生 0x56；以当前实现及离线测试为依据，实机待验收
 - 护送怪梯绳：[visitors-mob-climb.md](visitors-mob-climb.md) — 42 项私有动作表、rope/ladder stance、懒加载缺帧回退及缓存生命周期；实机待验收

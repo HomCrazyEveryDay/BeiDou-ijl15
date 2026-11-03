@@ -16,6 +16,7 @@
 #include "VisitorsMobClimb.h"
 #include "VisitorsMovementDiagnostics.h"
 #include "VisitorsShuttle.h"
+#include "VisitorsLabPlatforms.h"
 #include "SetItemBonus.h"
 #include "SetItemTooltip.h"
 #include "VisitorsTimerTooltip.h"
@@ -1311,6 +1312,9 @@ namespace
 		VisitorsMobClimb::Install(GetModuleHandleW(nullptr));
 		VisitorsMovementDiagnostics::Install();
 		VisitorsShuttle::Install(GetModuleHandleW(nullptr));
+		if (!VisitorsLabPlatforms::Install(GetModuleHandleW(nullptr))) {
+			ClientLog::Append(ClientLog::Component::Lifecycle, "visitors_lab_platforms_install_failed");
+		}
 		SetItemBonus::Install(GetModuleHandleW(nullptr));
 		if (SetItemTooltip::Install(GetModuleHandleW(nullptr))) {
 			VisitorsTimerTooltip::Install(GetModuleHandleW(nullptr));

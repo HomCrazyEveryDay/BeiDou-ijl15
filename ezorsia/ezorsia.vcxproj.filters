@@ -235,6 +235,9 @@
     <ClInclude Include="VisitorsShuttle.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="VisitorsLabPlatforms.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="SetItemBonus.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -415,6 +418,9 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="VisitorsShuttle.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="VisitorsLabPlatforms.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="SetItemBonus.cpp">
