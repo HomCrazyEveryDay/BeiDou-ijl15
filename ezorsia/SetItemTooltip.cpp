@@ -28,7 +28,8 @@ constexpr unsigned activeColor = 0xffffffff;
 constexpr unsigned inactiveColor = 0xff7b8c91;
 constexpr unsigned backgroundColor = 0xa0000040;
 const GUID vectorId = {0xf28bd1ed,0x3deb,0x4f92,{0x9e,0xec,0x10,0xef,0x5a,0x1c,0x3f,0xb4}};
-const wchar_t* statKeys[] = {L"incPDD", L"incMDD", L"incACC", L"incEVA", L"incPAD", L"incMAD", L"incCriticalDamage"};
+const wchar_t* statKeys[] = {L"incPDD", L"incMDD", L"incACC", L"incEVA", L"incPAD", L"incMAD", L"incCriticalDamage",
+    L"incSTR", L"incDEX", L"incINT", L"incLUK"};
 const unsigned statLabels[] = {659, 660, 661, 662};
 bool installed = false;
 LONG failureLogged = 0, resourceLogged = 0;
@@ -71,7 +72,7 @@ struct Text {
     ~Text() { SysFreeString(value); }
 };
 struct Member { int item; int category; };
-struct Effect { int threshold; std::array<int, 7> values; int setKey = 0; };
+struct Effect { int threshold; std::array<int, 11> values; int setKey = 0; };
 struct Definition {
     int id = 0, completeCount = 0;
     std::wstring name;
@@ -402,8 +403,13 @@ Layout Compose(const Definition& set, Equipped equipped, LabelReader label) {
         top += lineHeight;
         for (size_t index = 0; index < effect.values.size(); ++index) {
             if (!effect.values[index]) continue;
-            const std::wstring name = index < 4 ? label(statLabels[index]) : index == 4 ? L"\u7269\u7406\u653b\u51fb\u529b :"
-                : index == 5 ? L"\u9b54\u6cd5\u653b\u51fb\u529b :" : L"\u66b4\u51fb\u4f24\u5bb3 :";
+            const bool allStats = index >= 7 && effect.values[7] > 0 && effect.values[7] == effect.values[8]
+                && effect.values[7] == effect.values[9] && effect.values[7] == effect.values[10];
+            if (allStats && index > 7) continue;
+            const wchar_t* extraLabels[] = {L"\u7269\u7406\u653b\u51fb\u529b :", L"\u9b54\u6cd5\u653b\u51fb\u529b :",
+                L"\u66b4\u51fb\u4f24\u5bb3 :", L"\u529b\u91cf :", L"\u654f\u6377 :", L"\u667a\u529b :", L"\u5e78\u8fd0 :"};
+            const std::wstring name = index < 4 ? label(statLabels[index])
+                : allStats ? L"\u5168\u5c5e\u6027 :" : extraLabels[index - 4];
             result.lines.push_back({name + L" +" + std::to_wstring(effect.values[index]) + (index == 6 ? L"%" : L""), L"",
                 equipped.count >= effect.threshold ? activeColor : inactiveColor, top});
             top += lineHeight;

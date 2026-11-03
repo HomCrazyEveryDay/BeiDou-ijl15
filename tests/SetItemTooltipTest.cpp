@@ -167,7 +167,7 @@ void VectorTests() {
     std::puts("PASS: real PCOM vector absolute getters, owned origin getter, relative RelMove, nested origins and 100-call idempotence");
 }
 void* __fastcall FrameMock(Frame* frame, void*, void** canvas, int left, int top, int border, int high, int origin, unsigned color) {
-    Require(frame->kind == 1 && frame->width >= 236 && frame->height == 231 && border == 1 && high == 0 && origin == 0
+    Require(frame->kind == 1 && frame->width >= 236 && frame->height == 263 && border == 1 && high == 0 && origin == 0
         && color == backgroundColor && left == 0 && top == 0, "native frame thiscall and all seven arguments");
     auto result = NewCanvas(frame->width, frame->height);
     using Rectangle = HRESULT(__stdcall*)(void*, int, int, int, int, unsigned);
@@ -333,9 +333,9 @@ void ModelTests() {
     const auto set = LoadDefinition();
     Require(Valid(set) && set.id == 5 && set.completeCount == 4 && set.members.size() == 16, "native PCOM reads patched set 5");
     Require(set.name == L"\u8fdb\u5316\u6218\u7532\u5957\u88c5", "patched Chinese title");
-    Require(set.effects.size() == 2 && set.effects[0].threshold == 2 && set.effects[0].values == std::array<int,7>{20,20,0,0}
-        && set.effects[1].threshold == 4 && set.effects[1].values == std::array<int,7>{0,0,20,20}
-        && set.effects[0].setKey == 0 && set.effects[1].setKey == 10000, "native PCOM reads unchanged bonuses and cube protection setKey");
+    Require(set.effects.size() == 2 && set.effects[0].threshold == 2 && set.effects[0].values == std::array<int,11>{100,100,0,0,0,0,0,5,5,5,5}
+        && set.effects[1].threshold == 4 && set.effects[1].values == std::array<int,11>{0,0,20,20,0,0,0,10,10,10,10}
+        && set.effects[0].setKey == 0 && set.effects[1].setKey == 10000, "native PCOM reads two thresholds, primary bonuses and preserved cube protection setKey");
     for (const auto& member : set.members) Require(EnabledItem(member.item), "every member also has native info/setItemID=5");
     for (int item : {1003115,1052277,1072449,1082277,1003108,1000000}) Require(!EnabledItem(item), "base pieces, other sets and ordinary equips excluded");
     for (int id : {0,1,2,3,4,7}) { auto other = set; other.id = id; Require(!Valid(other), "server-aligned enabled-set whitelist"); }
@@ -345,16 +345,17 @@ void ModelTests() {
         auto state = Count(set, equipped);
         Require(state.count == count, "count every equipped member instance once");
         const auto layout = Compose(set, state, Label);
-        Require(layout.width == 236 && layout.height == 231 && layout.divider == 104 && layout.lines.size() == 12, "092 base geometry with localized cube immunity line");
-        Require(layout.lines[11].top == 209 && layout.lines[11].color == (count >= 4 ? activeColor : inactiveColor), "cube immunity activates at four pieces");
-        Require(layout.lines[11].left == L"\u4e0d\u4f1a\u53d7\u5230\u7acb\u65b9\u4f53\u5185\u5947\u5f02\u529b\u91cf\u7684\u4f24\u5bb3\u3002", "reviewed cube protection translation");
+        Require(layout.width == 236 && layout.height == 263 && layout.divider == 104 && layout.lines.size() == 14, "092 base geometry with localized cube immunity line");
+        Require(layout.lines[13].top == 241 && layout.lines[13].color == (count >= 4 ? activeColor : inactiveColor), "cube immunity activates at four pieces");
+        Require(layout.lines[13].left == L"\u4e0d\u4f1a\u53d7\u5230\u7acb\u65b9\u4f53\u5185\u5947\u5f02\u529b\u91cf\u7684\u4f24\u5bb3\u3002", "reviewed cube protection translation");
         Require(layout.lines[0].centered && layout.lines[0].top == 8 && layout.lines[0].color == titleColor, "centered green title without invented x/N suffix");
         for (int index = 0; index < 4; ++index)
             Require(layout.lines[index + 1].top == 35 + 16 * index
                 && layout.lines[index + 1].color == (index < count ? activeColor : inactiveColor), "member categories highlight independently");
-        Require(layout.lines[5].color == titleColor && layout.lines[8].color == titleColor, "092 headers stay green even for inactive thresholds");
-        for (int index : {6,7}) Require(layout.lines[index].color == (count >= 2 ? activeColor : inactiveColor), "two-piece block activates cumulatively");
-        for (int index : {9,10}) Require(layout.lines[index].color == (count >= 4 ? activeColor : inactiveColor), "four-piece block activates at four");
+        Require(layout.lines[5].color == titleColor && layout.lines[9].color == titleColor, "092 headers stay green even for inactive thresholds");
+        for (int index : {6,7,8}) Require(layout.lines[index].color == (count >= 2 ? activeColor : inactiveColor), "two-piece block activates cumulatively");
+        for (int index : {10,11,12}) Require(layout.lines[index].color == (count >= 4 ? activeColor : inactiveColor), "four-piece block activates at four");
+        Require(layout.lines[8].left == L"\u5168\u5c5e\u6027 : +5" && layout.lines[12].left == L"\u5168\u5c5e\u6027 : +10", "equal STR DEX INT LUK render as one all-stats line per threshold");
         if (count != 4) equipped.push_back(ids[count]);
     }
     Require(Count(set, {ids[0],ids[0],1003115}).count == 1, "duplicate copies cannot fill multiple set categories");
@@ -366,32 +367,32 @@ void ModelTests() {
     Require(vipLayout.lines.back().left.find(L"+5%")!=std::wstring::npos,"critical damage percentage displayed");
     Require(vip.effects[0].values[4]+vip.effects[1].values[4]==13
         && vip.effects[0].values[5]+vip.effects[1].values[5]==13,"2/3 thresholds total 13 attack and magic");
-    auto position = Place(100,80,260,360,236,231,800,600);
+    auto position = Place(100,80,260,360,236,263,800,600);
     Require(position.mainX == 100 && position.mainY == 80 && position.panelX == 360 && position.panelY == 80, "right-hand default");
-    position = Place(540,400,260,360,236,231,800,600);
+    position = Place(540,400,260,360,236,263,800,600);
     Require(position.mainX == 304 && position.mainY == 240 && position.panelX == 564 && position.panelY == 240, "092 shifts the whole group left and up without flipping");
-    position = Place(304,240,260,360,236,231,800,600);
+    position = Place(304,240,260,360,236,263,800,600);
     Require(position.mainX == 304 && position.mainY == 240 && position.panelX == 564, "exact viewport boundary is unchanged");
-    position = Place(210,100,400,360,236,231,800,600);
+    position = Place(210,100,400,360,236,263,800,600);
     Require(position.mainX == 164 && position.panelX == 564, "combined width controls horizontal shift");
-    position = Place(1000,600,260,360,236,231,1280,720);
+    position = Place(1000,600,260,360,236,263,1280,720);
     Require(position.mainX == 784 && position.panelX == 1044 && position.panelY == 360, "configured high-resolution edges");
-    position = Place(-30,-40,260,360,236,231,800,600);
+    position = Place(-30,-40,260,360,236,263,800,600);
     Require(position.mainX == 0 && position.mainY == 0 && position.panelX == 260, "negative coordinates clamp to zero");
-    position = Place(100,80,700,700,236,231,800,600);
+    position = Place(100,80,700,700,236,263,800,600);
     Require(position.mainX == 0 && position.mainY == 0 && position.panelX == 700, "oversized group keeps the panel on the right instead of hiding it");
     position = Place(100,80,260,360,236,900,800,600);
     Require(position.mainX == 100 && position.mainY == 0 && position.panelY == 0, "oversized panel height clamps the whole group to the top");
     Bounds first{{540,420},260,180};
-    auto comparison = PlaceGroup({{540,60},260,360}, &first, 236,231,800,600);
+    auto comparison = PlaceGroup({{540,60},260,360}, &first, 236,263,800,600);
     Require(comparison.main == Point{304,60} && comparison.comparison == Point{304,420} && comparison.panel == Point{564,60},
         "vertical comparison retains native offsets and aligns the set to the main top");
     first = {{540,240},260,180};
-    comparison = PlaceGroup({{280,240},260,360}, &first, 236,231,800,600);
+    comparison = PlaceGroup({{280,240},260,360}, &first, 236,263,800,600);
     Require(comparison.main == Point{44,240} && comparison.comparison == Point{304,240} && comparison.panel == Point{564,240},
         "horizontal comparison preserves the two native equip positions modulo one necessary group shift");
     first = {{500,240},500,180};
-    comparison = PlaceGroup({{0,240},500,360}, &first, 236,231,800,600);
+    comparison = PlaceGroup({{0,240},500,360}, &first, 236,263,800,600);
     Require(comparison.main == Point{0,240} && comparison.comparison == Point{500,240} && comparison.panel == Point{1000,240},
         "oversized comparison is not hidden");
     std::puts("PASS: real PCOM patched XML/IMG fields, all 16 member IMG links, whitelist, 0/1/2/3/4 counts, duplicates and 092 layout model");
@@ -471,7 +472,7 @@ void LifecycleTests() {
     resized.frame.height = 500;
     PositionPanel(resized);
     Require(ScreenPoint(resized.mainLayer, ScreenOrigin()) == Point{400,220}, "a taller set shifts the group up just enough");
-    resized.frame.height = 231;
+    resized.frame.height = 263;
     PositionPanel(resized);
     Require(ScreenPoint(resized.mainLayer, ScreenOrigin()) == Point{400,359}, "a shorter set returns to the retained native baseline without cumulative offset");
     ClearOwner();
@@ -494,7 +495,7 @@ void LifecycleTests() {
         reference.erase(0, consumed+skipped);
         ++referenceLines;
     }
-    std::printf("EVIDENCE: 092 English cube text uses %d line(s); compatible PCOM reference panel %dx%d; Chinese panel 236x231\n",
+    std::printf("EVIDENCE: 092 English cube text uses %d line(s); compatible PCOM reference panel %dx%d; Chinese panel 236x263\n",
         referenceLines, referenceWidth, 104 + (6+referenceLines)*16 + 15);
     inventory.clear();
     for (int count = 0; count <= 4; ++count) {

@@ -15,6 +15,14 @@ DWORD testThread = 0;
 bool nestedRefresh = false;
 unsigned char ordinary[6] = {0,0,0,0,0x7E,0};
 const int baseValues[] = {100,200,300,400,500,600};
+const int basePrimary[] = {21,32,43,54};
+
+void InitializePrimary() {
+    for (size_t index = 0; index < _countof(primaryOffsets); ++index) {
+        auto* encoded = context + 0x20BC + primaryOffsets[index];
+        Set(encoded, 8, reinterpret_cast<WriteSecureInt>(Native(0x004165B1))(basePrimary[index], encoded));
+    }
+}
 
 unsigned __fastcall WriteInt(int value, void* encoded) {
     ++writeCount;
@@ -46,7 +54,13 @@ void ExpectValues(const int* bonuses, int pad = 0, int mad = 0) {
 void __fastcall Validate(void* receiver, void*) {
     Require(receiver == context && GetCurrentThreadId() == testThread, "ValidateStat receiver and game-thread affinity");
     ++refreshCount;
+    InitializePrimary();
+    ApplyPrimaryBonus(context);
     InitializeStats(context + 0x2134);
+    auto* intelligence = context + 0x20BC + primaryOffsets[2];
+    const int intBonus = ReadInt(intelligence, *reinterpret_cast<unsigned*>(intelligence + 8)) - basePrimary[2];
+    auto* magic = context + 0x2134 + offsets[5];
+    Set(magic, 8, WriteInt(baseValues[5] + intBonus, magic));
     ApplyBonus(context + 0x2134);
     if (nestedRefresh) {
         Require(!SetItemBonus::HandlePacket(ordinary, sizeof(ordinary)), "nested non-owned packet passes through");
@@ -85,6 +99,10 @@ void InstallTests(HMODULE image) {
     VirtualQuery(site, &information, sizeof(information));
     Require(information.Protect == PAGE_EXECUTE_READ, "code page restored to RX");
     VirtualProtect(site, 6, PAGE_EXECUTE_READWRITE, &ignored);
+    auto* primary = reinterpret_cast<unsigned char*>(signatures[1].address);
+    Require(primary[0] == 0xE9 && primary[5] == 0x90
+        && primary + 5 + *reinterpret_cast<int*>(primary + 1) == reinterpret_cast<void*>(AfterBasicStats),
+        "post-BasicStat pre-SecondaryStat gate installed together");
 }
 
 void PacketTests() {
@@ -175,6 +193,56 @@ void LifecycleTests() {
     ExpectValues(full);
 }
 
+void PrimaryTests() {
+    const int zeros[] = {0,0,0,0};
+    auto packet = Packet(4,100,100,20,20);
+    packet.resize(28); packet[6] = 3;
+    packet[16] = 13; packet[18] = 13;
+    for (int index = 0; index < 4; ++index) packet[20 + index * 2] = static_cast<unsigned char>(15 + index);
+    for (int repeat = 0; repeat < 3; ++repeat) {
+        Receive(packet);
+        const int defense[] = {100,100,20,20};
+        ExpectValues(defense,13,30); // INT +17 also contributes to magic exactly once.
+        for (size_t index = 0; index < 4; ++index) {
+            auto* encoded = context + 0x20BC + primaryOffsets[index];
+            Require(ReadInt(encoded, *reinterpret_cast<unsigned*>(encoded + 8)) == basePrimary[index] + 15 + index,
+                "primary stats use distinct authoritative fields without accumulating across rebuilds");
+        }
+    }
+    const int writes = writeCount;
+    ApplyPrimaryBonus(otherSecondary);
+    Require(writeCount == writes, "foreign context cannot receive primary bonuses");
+    auto invalid = packet; invalid[27] = 0x80;
+    Receive(invalid); ExpectValues(zeros);
+    Require(!state.snapshot.values[6] && !state.snapshot.values[9], "negative primary field clears whole snapshot");
+    for (unsigned long size = 6; size <= 29; ++size) {
+        if (size == 28) continue;
+        auto malformed = packet; malformed.resize(29);
+        SetItemBonus::HandlePacket(malformed.data(), size);
+        Require(!state.snapshot.values[6], "v3 accepts only exact extended length");
+    }
+    Receive(packet);
+    Receive(Packet(0,0,0,0,0));
+    ExpectValues(zeros);
+    for (size_t index = 0; index < 4; ++index) {
+        auto* encoded = context + 0x20BC + primaryOffsets[index];
+        Require(ReadInt(encoded, *reinterpret_cast<unsigned*>(encoded + 8)) == basePrimary[index], "v1 clears v3 primary bonuses");
+    }
+    Receive(packet);
+    auto v2 = Packet(2,20,20,0,0); v2.resize(20); v2[6]=2;
+    Receive(v2);
+    Require(!state.snapshot.values[6] && !state.snapshot.values[9], "v2 clears v3 primary bonuses");
+    Receive(packet);
+    Set(context,0x20B8,static_cast<void*>(otherCharacter));
+    Validate(context,nullptr); ExpectValues(zeros);
+    Require(!state.snapshot.values[6], "identity change clears primary bonus before deriving secondary stats");
+    Set(context,0x20B8,static_cast<void*>(character));
+    Receive(packet);
+    unsigned char login[6]{};
+    SetItemBonus::HandlePacket(login,sizeof(login));
+    Validate(context,nullptr); ExpectValues(zeros);
+}
+
 __declspec(naked) void StatTail() {
     __asm {
         pop ecx
@@ -188,6 +256,7 @@ __declspec(naked) void WithNativeArgument() {
     }
 }
 void GateTests() {
+    Receive(Packet(4,20,20,20,20));
     Jump(statResume, StatTail);
     InitializeStats(context + 0x2134);
     int storage[64]{};
@@ -202,6 +271,25 @@ void GateTests() {
     Require((registers.flags & 0x8C5) == 0x84, "OR EAX,-1 flags replay");
     const int full[] = {20,20,20,20};
     ExpectValues(full);
+
+    Jump(primaryResume, Accepted);
+    InitializePrimary();
+    auto primary = Packet(4,0,0,0,0); primary.resize(28); primary[6]=3;
+    for (int index=0;index<4;++index) primary[20+index*2]=15;
+    Receive(primary);
+    InitializePrimary();
+    registers = RegistersFor(storage + 32);
+    registers.edi = reinterpret_cast<DWORD>(context);
+    const auto beforePrimary = registers;
+    Invoke(AfterBasicStats, &registers);
+    Require(reached == 1 && registers.ecx == reinterpret_cast<DWORD>(character), "primary gate replays context CharacterData load");
+    Require(registers.eax == beforePrimary.eax && registers.ebx == beforePrimary.ebx && registers.edx == beforePrimary.edx
+        && registers.esi == beforePrimary.esi && registers.edi == beforePrimary.edi && registers.ebp == beforePrimary.ebp
+        && (registers.flags & 0x8C5) == (beforePrimary.flags & 0x8C5), "primary gate preserves registers, flags and stack");
+    for (size_t index=0;index<4;++index) {
+        auto* encoded=context+0x20BC+primaryOffsets[index];
+        Require(ReadInt(encoded,*reinterpret_cast<unsigned*>(encoded+8))==basePrimary[index]+15,"primary gate adds all four totals");
+    }
 }
 }
 
@@ -221,6 +309,7 @@ int main(int argc, char** argv) {
     ApplyBonus(context + 0x2134);
     PacketTests();
     LifecycleTests();
+    PrimaryTests();
     GateTests();
     std::puts("PASS: on-disk signatures, strict 0x1011 LE parsing, reset, game-thread refresh, secure ABI/checksum, local-only totals, no double counting and x86 stack/flags");
     return 0;
