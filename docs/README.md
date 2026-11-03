@@ -12,6 +12,8 @@
 
 ## 诊断
 
+- [游戏关闭后进程残留](sound-exit-hang.md) — 2026-11-03 真实残留快照定位到声音组件等待已终止线程；针对进程最终清理的修复与四项原生回归通过，实机退出待用户验收。
+
 [disconnect-diagnostics.md](disconnect-diagnostics.md)、[death-dialog-recovery.md](death-dialog-recovery.md)、[login-request-initialization.md](login-request-initialization.md)、[reactor-timing-diagnostics.md](reactor-timing-diagnostics.md)、[snail-timing-diagnostics.md](snail-timing-diagnostics.md)、[evan-attack-diagnostics.md](evan-attack-diagnostics.md)、[evan-timing-diagnostics.md](evan-timing-diagnostics.md)
 
 ## 功能与兼容

@@ -474,6 +474,9 @@
     <ClCompile Include="SoundAllocationFallback.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="SoundExitFix.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
     <ClCompile Include="MobInitializationFix.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>

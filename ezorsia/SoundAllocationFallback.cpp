@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "SoundAllocationFallback.h"
+#include "SoundExitFix.h"
 #include "ClientLog.h"
 #include "detours.h"
 
@@ -188,6 +189,7 @@ void PatchIfLoaded(const char* trigger)
 {
     HMODULE module = GetModuleHandleW(L"Sound_DX8.dll");
     if (!module) return;
+    SoundExitFix::Install(module);
     const DWORD base = reinterpret_cast<DWORD>(module);
     if (static_cast<DWORD>(InterlockedCompareExchange(&g_patchedBase, 0, 0)) == base) return;
     const bool patched = Patch(base);

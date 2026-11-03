@@ -199,6 +199,7 @@
     <ClInclude Include="MemoryStatus.h" />
     <ClInclude Include="MemoryTelemetry.h" />
     <ClInclude Include="SoundAllocationFallback.h" />
+    <ClInclude Include="SoundExitFix.h" />
     <ClInclude Include="FlashRendererFix.h" />
     <ClInclude Include="PcomExitFix.h" />
     <ClInclude Include="PoolGuard.h" />
@@ -357,6 +358,7 @@
     <ClCompile Include="LegacyStringConversionFix.cpp" />
     <ClCompile Include="MemoryTelemetry.cpp" />
     <ClCompile Include="SoundAllocationFallback.cpp" />
+    <ClCompile Include="SoundExitFix.cpp" />
     <ClCompile Include="MobInitializationFix.cpp" />
     <ClCompile Include="InventoryRefreshFix.cpp" />
     <ClCompile Include="MainPetInventoryMark.cpp" />

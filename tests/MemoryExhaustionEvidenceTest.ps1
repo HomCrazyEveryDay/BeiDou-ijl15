@@ -15,6 +15,7 @@ $detours = Join-Path $PSScriptRoot '..\detours'
 $sources = @(
     (Join-Path $PSScriptRoot 'MemoryExhaustionEvidenceTest.cpp'),
     (Join-Path $ezorsia 'SoundAllocationFallback.cpp'),
+    (Join-Path $ezorsia 'SoundExitFix.cpp'),
     (Join-Path $ezorsia 'MemoryTelemetry.cpp'),
     (Join-Path $ezorsia 'ClientLog.cpp'),
     (Join-Path $ezorsia 'CrashReporter.cpp'),
