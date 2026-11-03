@@ -50,6 +50,7 @@
 #include "NativeExitDiagnostics.h"
 #include "PoolGuard.h"
 #include "NativeLoopCleanupFix.h"
+#include "FieldCameraBoundsFix.h"
 #include "ClientLog.h"
 #include "DisconnectDiagnostics.h"
 #include "ProcessExitMonitor.h"
@@ -1287,6 +1288,8 @@ namespace
 		MixedDyeWnd::Install();
 		if(!WardrobeWnd::Install())CrashReporter::RecordEvent("wardrobe.install","disabled: signature or hook installation failed");
 		if (!MonthlyShop::Install()) CrashReporter::RecordEvent("monthly.shop", "install_failed");
+		ClientLog::Append(ClientLog::Component::Lifecycle, "field_camera_bounds_fix install=%d",
+			FieldCameraBoundsFix::Install(GetModuleHandleW(nullptr)) ? 1 : 0);
 		PrivateCleanSlateHook::Install();
 		SecondPendantSlot::Install(enableEquipmentSlotLog);
 		if (!MainPetInventoryMark::Install(GetModuleHandleW(nullptr))) {

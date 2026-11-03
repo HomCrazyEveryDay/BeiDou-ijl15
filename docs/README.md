@@ -12,6 +12,7 @@
 
 ## 诊断
 
+- [进入商城时闪退](field-camera-bounds-fix.md) — 2026-11-04 根据 7 次生产记录补齐原生画面边界计算的地图空值检查；真实指令隔离复现及 500 次转换回归通过，实机待验收。
 - [游戏关闭后进程残留](sound-exit-hang.md) — 2026-11-03 真实残留快照定位到声音组件等待已终止线程；针对进程最终清理的修复与四项原生回归通过，实机退出待用户验收。
 
 [disconnect-diagnostics.md](disconnect-diagnostics.md)、[death-dialog-recovery.md](death-dialog-recovery.md)、[login-request-initialization.md](login-request-initialization.md)、[reactor-timing-diagnostics.md](reactor-timing-diagnostics.md)、[snail-timing-diagnostics.md](snail-timing-diagnostics.md)、[evan-attack-diagnostics.md](evan-attack-diagnostics.md)、[evan-timing-diagnostics.md](evan-timing-diagnostics.md)

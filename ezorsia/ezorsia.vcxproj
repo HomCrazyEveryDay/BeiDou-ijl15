@@ -217,6 +217,7 @@
     <ClInclude Include="ResourceLookupDiagnostics.h" />
     <ClInclude Include="NativeExitDiagnostics.h" />
     <ClInclude Include="NativeLoopCleanupFix.h" />
+    <ClInclude Include="FieldCameraBoundsFix.h" />
     <ClInclude Include="ClientLog.h" />
     <ClInclude Include="D3D8Batch.h" />
     <ClInclude Include="ClientDiagnostics.h" />
@@ -372,6 +373,7 @@
     <ClCompile Include="ResourceLookupDiagnostics.cpp" />
     <ClCompile Include="NativeExitDiagnostics.cpp" />
     <ClCompile Include="NativeLoopCleanupFix.cpp" />
+    <ClCompile Include="FieldCameraBoundsFix.cpp" />
     <ClCompile Include="ClientLog.cpp" />
     <ClCompile Include="D3D8Batch.cpp">
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
