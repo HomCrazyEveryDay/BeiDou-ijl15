@@ -30,7 +30,7 @@
 - 外星访客：[visitors-morph.md](visitors-morph.md) — Morph 64–67 输入、等级、动作、固定伤害与原生 Reactor 协议兼容；以当前实现和离线测试为依据，实机待验收
 - 能源实验室：[升降台与莉莉入口](../../BeiDou-Server/docs/visitors.md#能源实验室升降台与莉莉入口2026-11-03) — 已修正命名图层透明及父级原点重复叠加；真实 IMG/Gr2D 图片渲染、原路线与地面对齐、原生站立投影回归通过，本地 DLL 已同步，实机乘坐和通关待验收。
 - 背包缺图标拖动：[19:18 崩溃复核](../../BeiDou-Server/docs/visitors.md#能源实验室升降台与莉莉入口2026-11-03) — `4310049` 空图标导致原生拖动崩溃，已在创建图层前安全退出；原生分支与图标生命周期回归通过，本地 DLL 已同步，实机待复测。
-- OSSS 计时器：[visitors-timer-tooltip.md](visitors-timer-tooltip.md) — 2026-11-01 使用已有服务器时间显示已过分钟，背包静止悬停跨分钟刷新；离线边界与生命周期回归通过，实机待验收。
+- OSSS 计时器：[visitors-timer-tooltip.md](visitors-timer-tooltip.md) — 2026-11-06 补齐两个服务端永久期限值的标题回退，正常任务仍按服务器时间逐分钟显示；离线边界与生命周期回归、Release x86 构建通过，已同步本地客户端，实机待验收。
 - 战甲强化：[visitors-scroll.md](visitors-scroll.md) — 限定材料/装备/资源分类的拖放放行、247/249 双击保护与原生 0x56；11-03 补齐魔法沙漏续期限制的两处内置提示汉化，区分战甲晶体续期规则；以当前实现及离线测试为依据，实机待验收
 - 护送怪梯绳：[visitors-mob-climb.md](visitors-mob-climb.md) — 42 项私有动作表、rope/ladder stance、懒加载缺帧回退及缓存生命周期；实机待验收
 - OS4 飞船：[visitors-shuttle.md](visitors-shuttle.md) — 1932037 模型分类、四职业 1065 施放/效果、原生限制与上下马计数；含 2026-10-24 限时技能及相关到期提示汉化，实机待验收

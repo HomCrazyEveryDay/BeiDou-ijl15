@@ -104,6 +104,9 @@ void TimeTests() {
     Require(Minutes(start+duration,start+duration+ticksPerMinute)==60,"expired timer caps at sixty");
     Require(Minutes(start+duration+1,start)==0,"future item cannot produce negative minutes");
     Require(Minutes(0,start)==-1 && Minutes(~0ull,start)==-1 && Minutes(start,0)==-1,"invalid and permanent dates fall back");
+    for (auto sentinel : {150842304000000000ull, 150841440000000000ull, 94354848000000000ull}) {
+        Require(Minutes(sentinel,start)==-1,"server sentinel must not display elapsed minutes");
+    }
 }
 }
 int main(int argc,char** argv) {
@@ -194,6 +197,10 @@ int main(int argc,char** argv) {
     Require(draws==beforeReplacement+1 && !hover.owner && rendered==originalTitle,"replacement item at same coordinates invalidates old timer title");
     ClearNative(); Open(timerItem,~0ull);
     Require(!hover.owner && rendered==originalTitle,"permanent GM timer falls back to original text");
+    for (auto sentinel : {150842304000000000ull, 150841440000000000ull}) {
+        ClearNative(); Open(timerItem,sentinel);
+        Require(!hover.owner && rendered==originalTitle,"wire permanent timer keeps native title without refresh");
+    }
     Packet(1); Require(!Now(testTick).stamp,"malformed time does not use client wall clock as fallback");
     std::printf("PASS: 120 minute boundaries; native hook ABI and rollback; stationary refresh; lifecycle; server-clock synchronization; no item writes\n");
     return 0;

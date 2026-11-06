@@ -18,7 +18,11 @@ constexpr ULONGLONG ticksPerMinute = 600000000ull;
 constexpr ULONGLONG duration = 60 * ticksPerMinute;
 // All ordinary wire dates are FILETIME, including the server's timezone offset.
 // Reject permanent/sentinel values before doing unsigned time arithmetic.
-bool Date(ULONGLONG value) { return value >= 125911584000000000ull && value < 157469184000000000ull; }
+bool Date(ULONGLONG value) {
+    // PacketCreator.getTime(-1/-3): these valid-looking FILETIMEs mean no expiry.
+    return value != 150842304000000000ull && value != 150841440000000000ull
+        && value >= 125911584000000000ull && value < 157469184000000000ull;
+}
 auto tickCount = &GetTickCount64;
 auto protectMemory = &VirtualProtect;
 bool installed = false;
