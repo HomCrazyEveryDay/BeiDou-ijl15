@@ -136,6 +136,12 @@ namespace
 
 	bool IconExpired(const StackedBuffIcon& icon, DWORD now)
 	{
+		if (!icon.skill && (icon.iconId / 1000 == 5211 || icon.iconId / 1000 == 5360))
+		{
+			// Coupon icons are independent of monster-card secondary stats. Their
+			// authoritative 64-bit lifetime also prevents expired icons being re-added.
+			return BuffCountdown::ShouldRemoveCouponIcon(kNativeIconTypeItem, icon.iconId);
+		}
 		if (icon.leftDuration <= 0)
 		{
 			return false;

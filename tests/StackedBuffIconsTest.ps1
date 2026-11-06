@@ -17,11 +17,14 @@ function Get-Block([string]$start, [string]$end) {
     return $source.Substring($first, $last - $first)
 }
 $types = Get-Block 'constexpr DWORD kOpcodeUpdateStackedBuffIcons' 'bool WriteCodeBytes('
+$types = $types.Replace('constexpr DWORD kTemporaryStatViewAddIconAddr = 0x007B24D5;',
+    'const DWORD kTemporaryStatViewAddIconAddr = reinterpret_cast<DWORD>(&TestNativeAddIcon);')
 [IO.File]::WriteAllText((Join-Path $outputDir 'BuffIconTypes.h'), $types)
 $implementation = Get-Block 'int NativeTypeForIcon(' 'void __fastcall NativeAddIconHook('
 $implementation += Get-Block 'void __fastcall NativeDrawHook(' 'void DebugLog(const char* format, ...)'
 $implementation += Get-Block 'unsigned short ReadUInt16LE(' 'std::unordered_map<unsigned long long, int> CountNativeIconsByKey('
 $implementation += Get-Block 'std::unordered_map<unsigned long long, int> CountNativeIconsByKey(' 'bool TryCallNativeAddIcon('
+$implementation += Get-Block 'bool TryCallNativeAddIcon(' 'bool TryRemoveNativeNode('
 $implementation += Get-Block 'int PruneStackedNativeIcons(' 'void DrawNativeTemporaryStatView('
 $sync = Get-Block 'int ReadNativeIconCount(' 'namespace StackedBuffIcons'
 $implementation += [regex]::Replace($sync, '\}\s*\z', '')

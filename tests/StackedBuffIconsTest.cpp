@@ -28,6 +28,7 @@ bool ShouldRemoveCouponIcon(int nativeType, int iconId) {
 }
 
 namespace {
+void __fastcall TestNativeAddIcon(DWORD, void*, int, int, int, DWORD, DWORD, DWORD, DWORD, DWORD);
 #include "BuffIconTypes.h"
 
 void Require(bool condition, const char* message) {
@@ -57,9 +58,16 @@ void __fastcall TestNativeDraw(DWORD view, void*) {
 void __fastcall NativeDrawHook(DWORD, void*);
 void DrawNativeTemporaryStatView(DWORD view) { NativeDrawHook(view, nullptr); }
 
-bool TryCallNativeAddIcon(DWORD view, int type, int id, int duration) {
+void SetNativeAddIconStringDedupDisabled(bool disabled) { g_addIconStringDedupDisabled = disabled; }
+
+void __fastcall TestNativeAddIcon(DWORD view, void*, int type, int id, int duration,
+    DWORD mask0, DWORD mask1, DWORD mask2, DWORD mask3, DWORD unknown) {
     Require(view == TestView(), "add uses the context-owned buff bar");
-    if (!g_canAdd) return false;
+    Require(!(mask0 | mask1 | mask2 | mask3 | unknown),
+        "production x86 bridge passes no secondary-stat bits to independent icons");
+    Require(g_callingVirtualAddIcon && g_addIconStringDedupDisabled,
+        "production bridge isolates its native add from ordinary buff deduplication");
+    if (!g_canAdd) { RaiseException(0xE0000001, 0, 0, nullptr); return; }
     auto* node = new TestNode{};
     const DWORD oldHead = Word(view + kTemporaryStatViewListHeadOffset);
     node->nextRaw = oldHead ? oldHead - 0x10 : 0;
@@ -71,7 +79,6 @@ bool TryCallNativeAddIcon(DWORD view, int type, int id, int duration) {
     ++Word(view + kTemporaryStatViewListCountOffset);
     g_nodes.push_back(node);
     DrawNativeTemporaryStatView(view);
-    return true;
 }
 bool TryRemoveNativeNode(DWORD view, DWORD node) {
     if (!g_canRemove) return false;
@@ -92,7 +99,7 @@ bool TryRemoveNativeNode(DWORD view, DWORD node) {
 }
 
 // Exercise production packet parsing, pointer validation, native list reconciliation,
-// draw interception and field lifecycle; only the native UI calls are substituted.
+// draw interception, x86 native-call bridge and field lifecycle; native UI calls are substituted.
 #include "BuffIconsUnderTest.h"
 
 int CountIcon(int id, int type = kNativeIconTypeSkill) {
@@ -247,6 +254,87 @@ void SendCoupons(std::initializer_list<std::pair<int, long long>> coupons) {
     Require(StackedBuffIcons::HandlePacket(&packet), "coupon snapshot is consumed");
 }
 
+void SendCouponIcons(std::initializer_list<std::pair<int, int>> coupons) {
+    std::vector<BYTE> data(10 + 17 * coupons.size());
+    data[4] = 0x02; data[5] = 0x10;
+    data[6] = BYTE(kStackedBuffIconPacketMagic); data[7] = BYTE(kStackedBuffIconPacketMagic >> 8);
+    data[8] = static_cast<BYTE>(coupons.size());
+    size_t offset = 10;
+    for (const auto& coupon : coupons) {
+        const int sourceId = -coupon.first;
+        const int duration = coupon.second > 0 ? coupon.second : 0x7fffffff;
+        std::memcpy(data.data() + offset, &sourceId, 4);
+        std::memcpy(data.data() + offset + 4, &coupon.first, 4);
+        std::memcpy(data.data() + offset + 9, &coupon.second, 4);
+        std::memcpy(data.data() + offset + 13, &duration, 4);
+        offset += 17;
+    }
+    CInPacket packet{};
+    packet.Data = data.data(); packet.DataLen = static_cast<unsigned>(data.size());
+    Require(StackedBuffIcons::HandlePacket(&packet), "coupon display uses the existing complete icon packet");
+}
+
+void RemoveNativeItemIcon(int id) {
+    DWORD node = GetNativeListHead(TestView());
+    while (node) {
+        const DWORD next = GetNativeNodeNext(node);
+        const DWORD entry = GetNativeNodeEntry(node);
+        if (Word(entry + 0x1C) == 1 && Word(entry + 0x20) == static_cast<DWORD>(id))
+            Require(TryRemoveNativeNode(TestView(), node), "simulate native item reset");
+        node = next;
+    }
+    DrawNativeTemporaryStatView(TestView());
+}
+
+void TestIndependentCouponIconsAndMonsterCards() {
+    ResetCase();
+    StackedBuffIcons::OnFieldUpdate();
+    SendCoupons({{5211060, 7200000}, {5360003, -1}});
+    SendCouponIcons({{5211060, 7200000}, {5360003, 0}});
+    Require(CountIcon(5211060, 1) == 1 && CountIcon(5360003, 1) == 1,
+        "coupons are created without a native GIVE_BUFF or a monster-card secondary stat");
+    TryCallNativeAddIcon(TestView(), 1, 2382021, 1200000);
+    Require(CountIcon(2382021, 1) == 1 && CountIcon(5360003, 1) == 1,
+        "monster card and drop coupon coexist");
+    RemoveNativeItemIcon(2382021);
+    Require(CountIcon(2382021, 1) == 0 && CountIcon(5360003, 1) == 1,
+        "card expiry or right-click does not remove the coupon");
+    // A node left over from an older server may still carry the shared native mask.
+    RemoveNativeItemIcon(5360003);
+    Require(CountIcon(5360003, 1) == 1,
+        "native reset of a legacy coupon is recovered from the independent display snapshot");
+    TryCallNativeAddIcon(TestView(), 1, 2382021, 1200000);
+    SendCoupons({{5211060, 7200000}});
+    SendCouponIcons({{5211060, 7200000}});
+    Require(CountIcon(5360003, 1) == 0 && CountIcon(2382021, 1) == 1,
+        "17:00 or coupon removal clears only the coupon, retaining the monster card");
+}
+
+void TestVirtualCouponLongExpiryDoesNotReappear() {
+    ResetCase();
+    g_now = 0xfffffff0ULL;
+    StackedBuffIcons::OnFieldUpdate();
+    const long long thirtyDays = 30LL * 24 * 60 * 60 * 1000;
+    SendCoupons({{5211060, thirtyDays}, {5360003, -1}});
+    SendCouponIcons({{5211060, 0x7fffffff}, {5360003, 0}});
+    g_now += 0x7fffffffULL;
+    DrawNativeTemporaryStatView(TestView());
+    StackedBuffIcons::OnFieldUpdate();
+    Require(CountIcon(5211060, 1) == 1 && SnapshotIcons().size() == 2,
+        "independent coupon uses 64-bit validity beyond its 32-bit display duration");
+    g_now += thirtyDays - 0x7fffffffLL;
+    StackedBuffIcons::OnFieldUpdate();
+    DrawNativeTemporaryStatView(TestView());
+    Require(CountIcon(5211060, 1) == 0 && CountIcon(5360003, 1) == 1,
+        "expired independent coupon cannot be resurrected by draw resynchronization");
+    SendCoupons({}); // Even before the next full icon packet, expiry is authoritative.
+    g_now += 250;
+    StackedBuffIcons::OnFieldUpdate();
+    DrawNativeTemporaryStatView(TestView());
+    Require(CountIcon(5360003, 1) == 0 && SnapshotIcons().empty(),
+        "empty lifetime snapshot removes permanent coupon from both native and requested icons");
+}
+
 void TestIdleCouponExpiry() {
     ResetCase();
     StackedBuffIcons::OnFieldUpdate();
@@ -363,6 +451,8 @@ int main() {
     TestIdleCouponExpiry();
     TestCashShopCouponExpiry();
     TestCouponRenewalAndLongLifetimes();
+    TestIndependentCouponIconsAndMonsterCards();
+    TestVirtualCouponLongExpiryDoesNotReappear();
     ResetCase();
     DeleteCriticalSection(&g_iconLock);
     VirtualFree(reinterpret_cast<void*>(page), 0, MEM_RELEASE);
