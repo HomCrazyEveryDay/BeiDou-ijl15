@@ -36,7 +36,7 @@
 - OS4 飞船：[visitors-shuttle.md](visitors-shuttle.md) — 1932037 模型分类、四职业 1065 施放/效果、原生限制与上下马计数；含 2026-10-24 限时技能及相关到期提示汉化，实机待验收
 - 骑宠抓绳：[mount-rope-alignment-20261018](records/mount-rope-alignment-20261018.md) — 以 2026-10-24 井口回归修正为准：显示位置查询未命中时回退原生位置，离线通过、实机待验证
 - 访客套装：[set-item-bonus.md](set-item-bonus.md) — 0x1011 v3 权威快照支持四维及攻击/魔攻，支持战甲 set 5（2 件双防 +100／全属性 +5、4 件累计全属性 +15）与至尊饰品 set 6，暴伤沿用装备暴击快照；2026-11-04 离线通过、本地已安装，实机待验收
-- 套装提示框：[set-item-tooltip.md](set-item-tooltip.md) — 092 布局、set 5/6 中文资源、去重计数与至尊饰品效果；坐标转换和幂等定位已离线验证，2026-11-01 本地已安装，待复测
+- 套装提示框：[set-item-tooltip.md](set-item-tooltip.md) — 092 布局、set 5/6 中文资源与至尊饰品效果；2026-11-07 所有套装统一按穿戴件数计算，同款可多件计入，与服务端同步；计数、坐标转换和幂等定位已离线验证，2026-11-07 新 DLL 已安装本地，待实机复测
 - 龙神 084 → 083：[单点重置卷与窗口兼容](../../BeiDou-Server/docs/evan-sp-accounting.md)（10-28，待用户实机验收）、[evan-ui-localization.md](evan-ui-localization.md)、[evan-killer-wings.md](evan-killer-wings.md)、[evan-phantom-imprint.md](evan-phantom-imprint.md)、[evan-soul-stone.md](evan-soul-stone.md)、[evan-maple-hero-animation.md](evan-maple-hero-animation.md)、[evan-dark-fog-animation.md](evan-dark-fog-animation.md)、[evan-thrust-flame-wheel-effects.md](evan-thrust-flame-wheel-effects.md)、[evan-dragon-visibility.md](evan-dragon-visibility.md)、[evan-dragon-follow-facing.md](evan-dragon-follow-facing.md)、[evan-dream-frame-scaling.md](evan-dream-frame-scaling.md)、[evan-incubation-scaling.md](evan-incubation-scaling.md)
 
 ## 主题的现行依据在 records 中

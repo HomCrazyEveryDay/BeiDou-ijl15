@@ -358,11 +358,28 @@ void ModelTests() {
         Require(layout.lines[8].left == L"\u5168\u5c5e\u6027 : +5" && layout.lines[12].left == L"\u5168\u5c5e\u6027 : +10", "equal STR DEX INT LUK render as one all-stats line per threshold");
         if (count != 4) equipped.push_back(ids[count]);
     }
-    Require(Count(set, {ids[0],ids[0],1003115}).count == 1, "duplicate copies cannot fill multiple set categories");
+    Require(Count(set, {ids[0],ids[0],1003115}).count == 2, "copy counting is shared by all sets and excludes nonmembers");
     const auto vip = LoadDefinition(6);
     Require(Valid(vip) && vip.members.size()==4 && vip.effects.size()==3,"VIP accessory definition");
     for(const auto& member:vip.members)Require(EnabledItem(member.item),"VIP resource membership");
-    Require(Count(vip,{1112439,1112439,1032084}).count==2,"duplicate rings do not inflate VIP set");
+    Require(Count(vip,{1112439,1112439,1032084}).count==3,"duplicate rings count separately in VIP set");
+    Require(Count(vip,{1112439,1112439,1112439,1112439}).count==4,"four equipped rings complete VIP set");
+    Require(Count(vip,{1122085,1122085,1032084,1132040}).count==4,"two active pendants complete VIP set");
+    Require(Count(vip,{1112439,1112439,1112439,1112439,1122085,1122085,1032084,1132040}).count==8,"extra accessories retain their actual count");
+    auto futureSet=vip;
+    futureSet.id=99;
+    futureSet.completeCount=5;
+    futureSet.effects.back().threshold=5;
+    Require(Count(futureSet,{1112439,1112439,1032084,1132040}).count==4,"future set IDs use the same copy counting");
+    Require(Compose(futureSet,Count(futureSet,{1112439,1112439,1032084,1132040}),Label).lines.back().color==inactiveColor,
+        "future five-piece effect is inactive with four equipped copies");
+    Require(Compose(futureSet,Count(futureSet,{1112439,1112439,1032084,1132040,1122085}),Label).lines.back().color==activeColor,
+        "future five-piece effect uses actual count independently of legacy wire summary");
+    const auto duplicateLayout=Compose(vip,Count(vip,{1112439,1112439,1032084,1132040}),Label);
+    Require(duplicateLayout.lines.back().color==activeColor,"two rings earrings and belt activate four-piece critical damage");
+    Require(duplicateLayout.lines[3].color==inactiveColor,"absent pendant remains gray even when four-piece effect is active");
+    Require(Compose(vip,Count(vip,{1112439,1032084,1132040}),Label).lines.back().color==inactiveColor,
+        "removing one ring deactivates four-piece critical damage");
     const auto vipLayout=Compose(vip,Count(vip,{1112439,1032084,1122085,1132040}),Label);
     Require(vipLayout.lines.back().left.find(L"+5%")!=std::wstring::npos,"critical damage percentage displayed");
     Require(vip.effects[0].values[4]+vip.effects[1].values[4]==13
@@ -402,6 +419,20 @@ void LifecycleTests() {
     Move(root, -400, -300);
     *reinterpret_cast<void**>(Native(0x00BE7918)) = context;
     Set(context, 0x20b8, static_cast<void*>(character));
+    const auto vip = LoadDefinition(6);
+    Item ring{{},1112439}, secondRing{{},1112439}, earring{{},1032084}, belt{{},1132040};
+    Item pendant{{},1122085}, secondPendant{{},1122085};
+    inventory = {{-12,&ring},{-13,&secondRing},{-4,&earring},{-50,&belt}};
+    Require(ReadEquipped(vip,character).count==4,"native equipment slots count both rings");
+    inventory.erase(-13);
+    Require(ReadEquipped(vip,character).count==3,"native equipment slots reflect ring removal");
+    inventory = {{-17,&pendant},{-51,&secondPendant},{-4,&earring},{-50,&belt}};
+    for (DWORD enabled : {0u,1u,0u}) {
+        Set(context,0x387c,enabled);
+        Require(ReadEquipped(vip,character).count==(enabled ? 4 : 3),"second pendant counts only while its slot is active");
+    }
+    inventory.clear();
+    Require(inventoryReferences==0,"accessory reads release native item references");
     Object white, gray;
     const GUID fontId = {0x2bef046d,0xccd6,0x445a,{0x88,0xc4,0x92,0x9f,0xc3,0x5d,0x30,0xac}};
     Check(pcomFactory(L"Canvas#Font", &fontId, &white.value, nullptr));

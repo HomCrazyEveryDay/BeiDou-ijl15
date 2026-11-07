@@ -323,7 +323,8 @@ Equipped Count(const Definition& set, const std::vector<int>& items) {
     Equipped result;
     for (const auto item : items) {
         auto found = std::find_if(set.members.begin(), set.members.end(), [item](const Member& member) { return member.item == item; });
-        if (found != set.members.end() && !(result.categories & (1ull << found->category))) {
+        if (found != set.members.end()) {
+            // Every set counts equipped copies; category bits only control member labels.
             ++result.count;
             result.categories |= 1ull << found->category;
         }
